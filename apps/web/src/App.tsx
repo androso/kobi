@@ -128,7 +128,7 @@ export function App() {
                   <span className="sr-only">Correo electronico</span>
                   <div className="flex items-center rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
                     <input
-                      className="w-full bg-transparent text-base outline-none placeholder:text-slate-300"
+                      className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
                       placeholder="Correo electronico"
                       type="email"
                     />
@@ -139,7 +139,7 @@ export function App() {
                   <span className="sr-only">Contrasena</span>
                   <div className="flex items-center rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
                     <input
-                      className="w-full bg-transparent text-base outline-none placeholder:text-slate-300"
+                      className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
                       placeholder="Contrasena"
                       type="password"
                     />
@@ -165,7 +165,7 @@ export function App() {
                   <span className="sr-only">Codigo de clase</span>
                   <div className="flex items-center rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
                     <input
-                      className="w-full bg-transparent text-base uppercase outline-none placeholder:normal-case placeholder:text-slate-300"
+                      className="w-full bg-transparent text-base uppercase text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:normal-case placeholder:text-slate-300"
                       placeholder="Codigo de clase"
                       type="text"
                     />
@@ -176,7 +176,7 @@ export function App() {
                   <span className="sr-only">Nombre</span>
                   <div className="flex items-center rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
                     <input
-                      className="w-full bg-transparent text-base outline-none placeholder:text-slate-300"
+                      className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
                       placeholder="Nombre"
                       type="text"
                     />
