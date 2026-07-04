@@ -1,0 +1,12 @@
+{
+  "name": "kobi",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "echo 'add real scripts once apps/web and apps/worker are scaffolded'"
+  }
+}
