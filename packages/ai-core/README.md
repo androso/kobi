@@ -1,0 +1,18 @@
+# packages/ai-core
+
+Model routing for every AI stage. Cheap online path, expensive offline path — see `docs/product-spec.md` section 5.
+
+| Stage | Model class | Mode | Notes |
+|---|---|---|---|
+| Transcription | Gemini Flash, 45-60s chunks | rolling async | chunked > streaming: cheaper, resilient |
+| Lesson-state builder | small model, structured output | every ~2 min | emits `lesson_state` JSON; raw transcript never travels downstream |
+| Retrieval | pgvector top-3 + metadata filters | sync | curriculum chunks are atomic, objective-level, ~150-300 tokens |
+| Planner + generator | frontier model | background (pre-creation) | retrieval-first: adapt existing before authoring new |
+| Verifier | mid model, rubric → JSON scores | background | checks alignment, age-fit, duration, answer-key correctness, duplicates |
+| Variant maker | small model | on approval | 3 difficulty variants of the approved activity |
+
+Cost guardrail: with this routing + prompt caching, a 45-min session should cost well under $0.50.
+
+Prompt text lives in `/prompts`, not here, so prompts can be tuned without redeploying this package.
+
+Status: placeholder — no model client code yet.
