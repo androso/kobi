@@ -33,7 +33,16 @@ Each artifact is a single self-contained `index.html` bundle plus a manifest:
     "est_minutes": 6,
     "entry": "index.html",
     "sdk_version": "activity-sdk/v1",
-    "allowed_capabilities": ["dom", "css", "svg"]
+    "allowed_capabilities": ["dom", "css", "svg"],
+    "content": {
+      "items": [
+        {
+          "prompt": "Clasifica cada palabra según su función en una noticia.",
+          "answer_key": ["titular", "entradilla", "fuente"],
+          "hints": ["Busca palabras que presentan el hecho principal."]
+        }
+      ]
+    }
   },
   "bundle_ref": "artifact-bundles/...",
   "verifier_scores": {},
