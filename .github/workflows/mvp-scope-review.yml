@@ -24,13 +24,39 @@ jobs:
           persist-credentials: false
 
       - name: Load trusted MVP review files from base branch
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
         run: |
-          git fetch origin "${{ github.base_ref }}" --depth=1
+          git fetch origin "$BASE_REF:refs/remotes/origin/$BASE_REF" --depth=1
 
-          git checkout "origin/${{ github.base_ref }}" -- \
-            docs/product/mvp.md \
-            .github/codex/prompts/mvp-review.md \
-            .github/codex/schemas/mvp-review.schema.json
+          trusted_files=(
+            "docs/product/mvp.md"
+            ".github/codex/prompts/mvp-review.md"
+            ".github/codex/schemas/mvp-review.schema.json"
+          )
+
+          missing_files=()
+
+          for file in "${trusted_files[@]}"; do
+            if git cat-file -e "origin/${BASE_REF}:${file}" 2>/dev/null; then
+              git checkout "origin/${BASE_REF}" -- "$file"
+            else
+              missing_files+=("$file")
+            fi
+          done
+
+          if [ "${#missing_files[@]}" -gt 0 ]; then
+            if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+              echo "Trusted MVP review files are missing from $BASE_REF:"
+              printf '  %s\n' "${missing_files[@]}"
+              exit 1
+            fi
+
+            echo "Using PR copies for MVP review files missing from $BASE_REF during same-repository bootstrap:"
+            printf '  %s\n' "${missing_files[@]}"
+          fi
 
       - name: Run Codex MVP review
         id: run_codex
