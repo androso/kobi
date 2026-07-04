@@ -1,0 +1,143 @@
+name: MVP Scope Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  codex-review:
+    name: Run Codex MVP review
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    outputs:
+      final_message: ${{ steps.run_codex.outputs.final-message }}
+
+    steps:
+      - name: Checkout PR merge result
+        uses: actions/checkout@v5
+        with:
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Load trusted MVP review files from base branch
+        run: |
+          git fetch origin "${{ github.base_ref }}" --depth=1
+
+          git checkout "origin/${{ github.base_ref }}" -- \
+            docs/product/mvp.md \
+            .github/codex/prompts/mvp-review.md \
+            .github/codex/schemas/mvp-review.schema.json
+
+      - name: Run Codex MVP review
+        id: run_codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: .github/codex/prompts/mvp-review.md
+          output-file: codex-mvp-review.json
+          sandbox: read-only
+          codex-args: '["--output-schema", ".github/codex/schemas/mvp-review.schema.json"]'
+
+  post-feedback:
+    name: Post Codex MVP feedback
+    runs-on: ubuntu-latest
+    needs: codex-review
+    if: always() && needs.codex-review.outputs.final_message != ''
+
+    permissions:
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        env:
+          CODEX_FINAL_MESSAGE: ${{ needs.codex-review.outputs.final_message }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const result = JSON.parse(process.env.CODEX_FINAL_MESSAGE);
+
+            const conflicts = result.mvp_conflicts.length
+              ? result.mvp_conflicts.map((conflict) => {
+                  return [
+                    `- **${conflict.severity.toUpperCase()}** in \`${conflict.file}\``,
+                    `  - Issue: ${conflict.issue}`,
+                    `  - MVP rule: ${conflict.mvp_rule}`
+                  ].join("\n");
+                }).join("\n")
+              : "No MVP conflicts found.";
+
+            const body = [
+              "## Codex MVP Scope Review",
+              "",
+              `**Decision:** ${result.decision}`,
+              "",
+              `**Summary:** ${result.summary}`,
+              "",
+              "### MVP conflicts",
+              "",
+              conflicts,
+              "",
+              "### Recommended action",
+              "",
+              result.recommended_action
+            ].join("\n");
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body
+            });
+
+  mvp-gate:
+    name: Required MVP gate
+    runs-on: ubuntu-latest
+    needs: codex-review
+    if: always()
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Fail if Codex review failed
+        if: needs.codex-review.result != 'success'
+        run: |
+          echo "Codex MVP review did not complete successfully."
+          exit 1
+
+      - name: Evaluate Codex MVP decision
+        env:
+          CODEX_FINAL_MESSAGE: ${{ needs.codex-review.outputs.final_message }}
+        run: |
+          echo "$CODEX_FINAL_MESSAGE" > codex-mvp-review.json
+
+          decision="$(jq -r '.decision // empty' codex-mvp-review.json)"
+
+          echo "Codex MVP decision: $decision"
+
+          if [ "$decision" = "BLOCK" ]; then
+            echo "This PR is blocked because Codex detected MVP scope drift."
+            jq . codex-mvp-review.json
+            exit 1
+          fi
+
+          if [ "$decision" = "WARN" ]; then
+            echo "This PR has MVP scope warnings but is not automatically blocked."
+            jq . codex-mvp-review.json
+            exit 0
+          fi
+
+          if [ "$decision" = "PASS" ]; then
+            echo "This PR passed the MVP scope review."
+            exit 0
+          fi
+
+          echo "Invalid or missing Codex decision. Failing closed."
+          jq . codex-mvp-review.json || true
+          exit 1
