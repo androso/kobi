@@ -1,6 +1,6 @@
 ---
 description: TypeScript conventions for Kobi apps and packages
-globs: **/*.{ts,tsx}
+globs: "**/*.{ts,tsx}"
 alwaysApply: false
 ---
 
