@@ -6,6 +6,7 @@ alwaysApply: false
 
 # Contracts And Data Shapes
 
+- Use this rule to preserve the MVP contract, not to add new data shapes or product scope.
 - Treat `docs/contracts.md` as the team agreement for `lesson_state`, activity JSON, and telemetry events.
 - For contract changes, update documentation, schema or type definitions, validators, and affected producers or consumers together.
 - Activity schema ownership belongs in `packages/activities`; avoid embedding one-off activity assumptions in web or worker code.

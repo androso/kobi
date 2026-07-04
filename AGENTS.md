@@ -6,6 +6,7 @@ Kobi is an AI classroom assistant for El Salvador. The v0 loop is:
 Listen -> Understand -> Propose -> Approve -> Deliver -> Measure.
 
 Use `README.md`, `docs/product-spec.md`, and `docs/contracts.md` as the source of truth before changing behavior or data shapes.
+This file is guidance for coding agents only; it must not expand MVP scope or override the product spec or contracts.
 
 ## Stack
 

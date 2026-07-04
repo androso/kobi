@@ -5,6 +5,7 @@ alwaysApply: true
 
 # Kobi Project Context
 
+- These rules are review infrastructure only; they summarize existing project guidance and must not expand MVP scope.
 - Treat `AGENTS.md` as the portable agent guide and keep this rule aligned with it.
 - Use `README.md`, `docs/product-spec.md`, and `docs/contracts.md` as source-of-truth documents before changing behavior, architecture, or data shapes.
 - Kobi v0 follows the loop: Listen -> Understand -> Propose -> Approve -> Deliver -> Measure.
