@@ -63,6 +63,8 @@ jobs:
         uses: openai/codex-action@v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          model: gpt-5.4-mini
+          effort: low
           prompt-file: .github/codex/prompts/mvp-review.md
           output-file: codex-mvp-review.json
           sandbox: read-only
