@@ -17,13 +17,14 @@ Kobi v0 turns the last 10 minutes of any class into a personalized, curriculum-g
 | # | Decision | Rationale |
 |---|---|---|
 | D1 | Subject: 7th-grade Lenguaje (reading comprehension + vocabulary) | Team owns the Ministry textbooks; avoids math's complex interaction mechanics |
-| D2 | Activities are data, not code | Every activity is schema-validated JSON rendered by one generic player — makes activities storable, verifiable, reusable, diffable |
+| D2 | Activity artifacts are verified HTML mini-apps plus manifests | Gate 0 decision on 2026-07-04: v0 uses self-contained HTML/CSS/JS artifacts in a sandboxed iframe, described by a structured manifest and verified before teacher display. This replaces the earlier JSON-player direction. |
 | D3 | TypeScript stack: Vite + React frontend, Node API/worker backend | 3 devs, 24 hours, TS-native team. Supabase (Postgres, pgvector, Realtime) gives the same layering as a Python split without adding another language |
 | D4 | Personalization v0 = difficulty banding, not learner modeling | 3 variants (support/core/challenge); don't ship personalization you can't measure |
-| D5 | No pet in v0 | Cut for scope; hints stay (belong to activity schema/player, not the pet); pet is a post-MVP retention layer |
+| D5 | No pet in v0 | Cut for scope; hints stay in the activity artifact manifest/runtime, not the pet; pet is a post-MVP retention layer |
 | D6 | Manual fallback at every AI stage | Transcription fails → teacher types 2-line topic summary; generation slow → pull from pre-seeded repository |
 | D7 | UI in Spanish, code/docs in English | Salvadoran classroom product |
 | D8 | Reaffirmed D3 during repo setup: no Python/FastAPI/uv | LangSmith, OpenAI, and Anthropic all ship first-class TS SDKs covering telemetry/eval needs — a second language/package-manager/deploy-target isn't worth it for a 3-dev, 24-hour build |
+| D9 | No legacy JSON activity migration | There are no production JSON activities or consumers yet, so v0 has no legacy compatibility path. Implement the HTML artifact contract directly. |
 
 ## System Architecture
 
@@ -55,12 +56,12 @@ flowchart TD
 |---|---|---|
 | A. Listening & Understanding | Turn live classroom audio into a machine-readable picture of what's being taught | mic audio → rolling `lesson_state` |
 | B. Curriculum & Retrieval | Make the textbook searchable and match it to the live lesson | textbook unit + `lesson_state` → matching objectives/chunks |
-| C. Activity Generation & Quality | Produce classroom-ready, verified activities grounded in curriculum | `lesson_state` + curriculum chunks + repository → 3 verified candidate activities |
+| C. Activity Generation & Quality | Produce classroom-ready, verified activity artifacts grounded in curriculum | `lesson_state` + curriculum chunks + repository → 3 verified candidate `ActivityArtifact`s |
 | D. Teacher Experience | Zero-prep control: start session, see understanding, approve with evidence, monitor, review | candidate activities + telemetry → approval decision + session report |
 | E. Student Experience & Activity Engine | Deliver activities as a clean, fast student experience, capture telemetry | approved activity + student band → rendered play + telemetry |
 | F. Platform & Data Backbone | Shared substrate: identity, storage, realtime delivery, background jobs | every other area reads/writes through it |
 
-Put one name on each area (one person can own two small ones). Agree the three JSON contracts (`lesson_state`, activity, telemetry event — see `docs/contracts.md`) first, then build in parallel.
+Put one name on each area (one person can own two small ones). Agree the shared contracts (`lesson_state`, `ActivityArtifact`, telemetry event — see `docs/contracts.md`) first, then build in parallel.
 
 ## Cut Lines (if behind schedule, cut in this order)
 
@@ -68,7 +69,7 @@ Put one name on each area (one person can own two small ones). Agree the three J
 2. Variant maker → single *core* variant for everyone
 3. Live transcription → teacher manual topic entry (this is a feature, per D6, not just a fallback)
 
-**Never cut:** teacher approval gate, generic activity player, curriculum grounding with visible evidence.
+**Never cut:** teacher approval gate, verified artifact delivery, curriculum grounding with visible evidence.
 
 ## Definition of Done (no-mock test)
 
@@ -79,6 +80,14 @@ Put one name on each area (one person can own two small ones). Agree the three J
 - The session report reflects real telemetry, not seeds
 - Kill the wifi mid-session → manual fallback still completes the loop
 
-## Post-MVP ideas
+## Activity Artifact Decision
 
-- **Generative HTML/JS "artifact" activities** — a 4th activity family alongside quiz/cloze/match: the model emits a self-contained HTML/CSS/JS mini-app (Claude-Artifact-style) instead of a fixed JSON shape. Rendered in a sandboxed iframe (CSP-restricted, no external network calls) inside the student player; reports completion/score back to the app via `postMessage`, feeding the same telemetry contract as everything else (see `docs/contracts.md`). Deferred past MVP because it's a harder verifier problem than JSON activities — there's no simple answer-key check on arbitrary generated code, unlike the mechanical verification D2 relies on today. Strictly additive: doesn't require reworking the JSON-first schema, just a new activity `type` and a new renderer branch.
+HTML activity artifacts are v0, not post-MVP. Each candidate activity is a single self-contained `index.html` bundle plus a structured manifest. The bundle runs only inside the sandboxed student iframe, uses no external imports/assets/network, and reports attempts, hints, and completion through the parent-owned SDK over `postMessage`.
+
+The three v0 families are:
+
+1. **Match/classify** — vocabulary or concept grouping.
+2. **Sequence/order** — process, story, or argument steps.
+3. **Guided practice/checkpoint** — short applied questions with hints and feedback.
+
+Seeded runnable artifacts use the same contract and verifier path as generated artifacts. If generation or verification fails, the D6 fallback is a pre-seeded verified artifact, not a manifest-only renderer.

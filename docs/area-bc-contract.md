@@ -40,13 +40,13 @@ You don't need to call this yourself in the MVP flow — `apps/worker/src/jobs/b
 
 If you need retrieval on-demand (e.g. re-running for a specific unit at "Hora de actividad" time), call `retrieveCurriculumMatches(supabase, { queryText, grade, subject, unit })` directly — it's a plain async function, not queue-only.
 
-## This contract doesn't change based on your activity type
+## This contract doesn't change based on the artifact family
 
-Whether your planner emits schema-JSON activities (quiz/cloze/match — the MVP path, per D2) or eventually a generated HTML/JS `interactive_artifact` (your post-MVP stretch goal), the curriculum evidence you consume is the same `CurriculumMatch[]` shape. Area B doesn't need to know or care how you render — build your planner against this contract now and it won't need to change later.
+Gate 0 now ratifies verified HTML `ActivityArtifact`s as v0, but the curriculum evidence Area C consumes is still the same `CurriculumMatch[]` shape. Area B doesn't need to know which artifact family is rendered — match/classify, sequence/order, or guided practice/checkpoint — and Area C should build its planner against this contract.
 
 ## `lesson_state` (upstream of Area B, in case your planner also wants it directly)
 
-Area A's output — see `docs/contracts.md` for the full shape (`topic`, `objective_guess`, `key_terms`, `transcript_summary`, `confidence`, `evidence`). Your planner likely wants both `lesson_state` (for phrasing/context) and `CurriculumMatch[]` (for grounding) as generation inputs, matching the product spec's contract for Area C: `lesson_state + curriculum chunks + repository -> 3 verified candidate activities`.
+Area A's output — see `docs/contracts.md` for the full shape (`topic`, `objective_guess`, `key_terms`, `transcript_summary`, `confidence`, `evidence`). Your planner likely wants both `lesson_state` (for phrasing/context) and `CurriculumMatch[]` (for grounding) as generation inputs, matching the product spec's contract for Area C: `lesson_state + curriculum chunks + repository -> 3 verified candidate ActivityArtifacts`.
 
 ## Tech choices on the B side, for context
 
