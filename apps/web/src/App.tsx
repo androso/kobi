@@ -49,21 +49,12 @@ export function App() {
           <div className="relative z-10 flex w-full flex-col">
             <div className="flex flex-1 flex-col justify-center">
               <div className="relative mx-auto mb-8 aspect-[1.38] w-full max-w-md">
-                {slides.map((item, index) => {
-                  const isActive = index === activeSlide;
-
-                  return (
-                    <img
-                      alt=""
-                      aria-hidden={!isActive}
-                      className={`absolute inset-0 h-full w-full object-contain transition-all duration-700 ease-out ${
-                        isActive ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0"
-                      }`}
-                      key={item.title}
-                      src={item.image}
-                    />
-                  );
-                })}
+                <img
+                  alt=""
+                  className="absolute inset-0 h-full w-full object-contain transition-all duration-700 ease-out"
+                  key={slide.image}
+                  src={slide.image}
+                />
               </div>
 
               <div className="min-h-36 max-w-xl transition-all duration-700" key={slide.title}>
