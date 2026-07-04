@@ -8,14 +8,14 @@ Full spec: [`docs/product-spec.md`](docs/product-spec.md) · Team contracts: [`d
 
 ## Stack
 
-TypeScript everywhere: one Next.js app (teacher + student portals + API routes, single deploy on Vercel), one Node worker (background AI pipeline, on Railway/Fly), Supabase (Postgres + pgvector + Realtime + Auth) as the single datastore. No Python/FastAPI — see decision D3/D8 in the product spec.
+TypeScript everywhere: one Vite + React frontend (teacher + student portals), one Node worker/API backend (background AI pipeline, on Railway/Fly), Supabase (Postgres + pgvector + Realtime + Auth) as the single datastore. No Python/FastAPI — see decision D3/D8 in the product spec.
 
 ## Structure
 
 ```
 kobi/
 ├─ apps/
-│  ├─ web/                  # Next.js: teacher portal + student portal + API routes — ONE deploy
+│  ├─ web/                  # Vite + React: teacher portal + student portal
 │  └─ worker/                # transcription, lesson-state builder, pre-gen, verifier, variant maker
 ├─ packages/
 │  ├─ db/                    # Supabase schema/migrations + shared TS types (7-8 tables)
@@ -42,7 +42,7 @@ kobi/
 
 ## Quickstart
 
-Scaffolding is placeholder-only right now (every folder has a README describing its contract). Once real tooling lands:
+The frontend is scaffolded; the worker/backend packages are still placeholder-only. To run the web app:
 
 ```bash
 pnpm install
