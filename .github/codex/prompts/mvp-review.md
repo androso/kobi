@@ -20,6 +20,7 @@ WARN:
 - The PR may support the MVP, but introduces complexity or product surface area that deserves human review.
 - The PR adds abstractions, UI, APIs, models, dependencies, or infra that may be useful but are not obviously required.
 - The PR changes an MVP user flow in a way that might be acceptable but needs justification.
+- The PR only introduces or maintains the MVP contract, review prompt, schema, or workflow as review infrastructure, and does not weaken the check or expand product scope.
 
 BLOCK:
 - The PR clearly adds features outside the MVP.
@@ -31,7 +32,9 @@ BLOCK:
 Important:
 - Do not block small implementation details unless they create real MVP drift.
 - Do not block refactors that are clearly necessary for the MVP.
+- Do not block a same-repository bootstrap or administrative PR solely because it adds or maintains docs/product/mvp.md, the MVP review prompt, the output schema, or the GitHub Actions workflow.
 - If the PR modifies docs/product/mvp.md, treat that as WARN or BLOCK unless the change is only clarification and does not expand scope.
+- If review-infrastructure changes weaken or disable this check, hide MVP drift, or expand the MVP contract, use BLOCK.
 - Prefer WARN when uncertain.
 - Use BLOCK only when the conflict is clear.
 
