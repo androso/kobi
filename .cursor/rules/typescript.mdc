@@ -1,0 +1,15 @@
+---
+description: TypeScript conventions for Kobi apps and packages
+globs: "**/*.{ts,tsx}"
+alwaysApply: false
+---
+
+# TypeScript Conventions
+
+- Keep TypeScript guidance within the MVP architecture already described in the product spec.
+- Use TypeScript for application, worker, package, and tooling code.
+- Prefer shared types, validators, and schemas from owning packages over duplicating JSON shape assumptions.
+- Keep framework-specific code inside its owning app: Next.js concerns in `apps/web`, worker pipeline concerns in `apps/worker`.
+- Put reusable model, curriculum, activity, database, and eval logic in the matching package under `packages/*`.
+- Avoid adding abstractions until they remove real duplication or match an established local pattern.
+- When adding scripts or tooling, wire them so they work from the repository root with pnpm workspaces.
