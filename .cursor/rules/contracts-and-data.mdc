@@ -1,0 +1,16 @@
+---
+description: Contract and schema guidance for lesson state, activities, and telemetry
+globs: docs/contracts.md,packages/activities/**,packages/db/**,apps/web/**,apps/worker/**
+alwaysApply: false
+---
+
+# Contracts And Data Shapes
+
+- Use this rule to preserve the MVP contract, not to add new data shapes or product scope.
+- Treat `docs/contracts.md` as the team agreement for `lesson_state`, activity JSON, and telemetry events.
+- For contract changes, update documentation, schema or type definitions, validators, and affected producers or consumers together.
+- Activity schema ownership belongs in `packages/activities`; avoid embedding one-off activity assumptions in web or worker code.
+- Database schema and shared database types belong in `packages/db`.
+- Raw transcript data should not travel downstream of the lesson-state builder unless the product spec changes.
+- Preserve teacher approval as a hard gate before student delivery.
+- Keep telemetry events explicit enough to support live monitoring and session reports.
