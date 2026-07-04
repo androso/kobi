@@ -19,17 +19,17 @@ If no path is provided, ask for the plan path before starting.
 
 ## Workflow
 
-1. Read the plan and relevant project context.
+1. Read the plan and relevant project context. Treat this as the current plan for round 1.
 2. Spawn exactly these four reviewer agents in parallel:
    - `architecture-reviewer`
    - `security-reviewer`
    - `test-reviewer`
    - `product-reviewer`
-3. Instruct each reviewer to review the plan only. They must not implement code.
+3. Instruct each reviewer to review the current plan only. They must not implement code.
 4. Wait for all reviewer agents to finish.
-5. Send the original plan and all reviewer outputs to `plan-coordinator`.
+5. Send the current plan, all reviewer outputs, and any prior coordinator decisions to `plan-coordinator`.
 6. Ask `plan-coordinator` to synthesize a revised plan and convergence report.
-7. If any reviewer or the coordinator reports blocking objections, run another review round using the revised plan.
+7. If any reviewer or the coordinator reports blocking objections, set the coordinator's revised plan as the current plan and run another review round using it.
 8. Stop when all reviewers approve, when `plan-coordinator` sets `implementation_ready: true`, or after 3 total rounds.
 9. If blockers remain after 3 rounds, stop and present the unresolved blockers for human decision.
 
