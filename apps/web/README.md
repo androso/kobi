@@ -14,13 +14,13 @@ Next.js app: teacher portal + student portal + API routes — **one deploy** (Ve
 **Student**
 6. Join — code entry, display name
 7. Waiting room — idle state until activity drops
-8. Activity player — generic renderer + hints
+8. Activity player — sandboxed artifact iframe + hints/results
 9. Results — score + light celebration
 
 ## Contracts consumed
 
 - `lesson_state` (from `packages/ai-core` via worker, delivered through Supabase Realtime)
-- activity JSON (from `packages/activities`, validated + rendered by the generic player)
+- `ActivityArtifact` manifest + authorized `bundle_ref` (from `packages/activities`, verified before display and rendered in a sandboxed iframe)
 - telemetry events (written to `events` table, read back for live monitor / session report)
 
 Status: placeholder only — not yet scaffolded with `create-next-app`.
