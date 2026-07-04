@@ -1,6 +1,6 @@
 # infra
 
-- **Web** — Vercel (Next.js app, teacher + student portals + API routes)
+- **Web** — Vercel or Netlify (Vite + React app, teacher + student portals)
 - **Worker** — Railway or Fly (Node/TS background worker)
 - **Data** — Supabase (Postgres + pgvector + Realtime + Auth) — one datastore, period
 - **Queue** — pg-boss on Postgres — no extra infra needed

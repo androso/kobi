@@ -1,10 +1,18 @@
 # packages/activities
 
-Area C: Activity Generation & Quality (artifact manifest schema, verifier, sandbox SDK, and rubric side — shared by `apps/web` and `apps/worker`).
+Area C: Activity Generation & Quality (owned by Androso) — artifact manifest schema, verifier, sandbox SDK, and rubric side shared by `apps/web` and `apps/worker`.
 
 **Contract:** `lesson_state` + curriculum chunks + repository → 3 verified candidate `ActivityArtifact`s.
 
 Gate 0 decision on 2026-07-04: v0 uses self-contained HTML/CSS/JS mini-app artifacts plus structured manifests. There are no legacy JSON activities or consumers, so no JSON migration path is needed.
+
+**What this package receives (Isaac's side of the contract — see `docs/area-bc-contract.md`):**
+
+- `lesson_state` (from `@kobi/ai-core`) — topic, objective guess, key terms, confidence, evidence.
+- `CurriculumMatch[]` (from `@kobi/curriculum`'s `retrieveCurriculumMatches()`) — top-3 curriculum chunks grounding the current lesson segment.
+- The activity repository (`activities` table) — for the reuse-vs-generate decision.
+
+**Expected usage flow:** ground a planner call in `lesson_state` + `CurriculumMatch[]`, check the repository for a reusable match first, generate new candidates only when nothing fits, verify each candidate, and produce 3 ranked candidates for the teacher shortlist.
 
 Three artifact families ship in v0:
 

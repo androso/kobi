@@ -1,0 +1,16 @@
+---
+description: Core project context and agent behavior for Kobi
+alwaysApply: true
+---
+
+# Kobi Project Context
+
+- These rules are review infrastructure only; they summarize existing project guidance and must not expand MVP scope.
+- Treat `AGENTS.md` as the portable agent guide and keep this rule aligned with it.
+- Use `README.md`, `docs/product-spec.md`, and `docs/contracts.md` as source-of-truth documents before changing behavior, architecture, or data shapes.
+- Kobi v0 follows the loop: Listen -> Understand -> Propose -> Approve -> Deliver -> Measure.
+- Preserve the TypeScript monorepo shape: `apps/web`, `apps/worker`, and shared packages under `packages/*`.
+- Do not introduce Python, FastAPI, or a second backend stack unless the product spec changes.
+- Keep changes scoped to the app or package that owns the behavior.
+- Treat `prompts/` as runtime-tunable prompt and rubric content, not application code.
+- Run the narrowest relevant validation for changed files, and state clearly when no real check exists yet.

@@ -1,4 +1,5 @@
 node_modules/
+.pnpm-store/
 .env
 .env.local
 .next/
@@ -6,3 +7,4 @@ dist/
 build/
 .turbo/
 *.log
+*.tsbuildinfo

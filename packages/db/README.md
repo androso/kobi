@@ -17,4 +17,4 @@ Supabase schema/migrations + shared TS types. One datastore (Postgres + pgvector
 
 Maps to the four memory tiers: active lesson → `segments`; teacher/class → `classes` + approval history; student pedagogical → `student_profiles`; repository → `activities`.
 
-Status: placeholder — schema/migrations not yet written.
+Status: initial schema/migration scaffolding exists. The `activities` table should be aligned with the `ActivityArtifact` contract before Area C implementation starts.

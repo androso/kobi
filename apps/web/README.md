@@ -1,6 +1,6 @@
 # apps/web
 
-Next.js app: teacher portal + student portal + API routes — **one deploy** (Vercel).
+Vite + React + TypeScript app: teacher portal + student portal.
 
 ## Screens
 
@@ -23,4 +23,4 @@ Next.js app: teacher portal + student portal + API routes — **one deploy** (Ve
 - `ActivityArtifact` manifest + authorized `bundle_ref` (from `packages/activities`, verified before display and rendered in a sandboxed iframe)
 - telemetry events (written to `events` table, read back for live monitor / session report)
 
-Status: placeholder only — not yet scaffolded with `create-next-app`.
+Status: scaffolded with Vite, React, TypeScript, Tailwind CSS, shadcn-compatible UI utilities, React Router, TanStack Query, Zustand, React Hook Form, Zod, Supabase JS, Vitest, and Playwright.

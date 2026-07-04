@@ -4,15 +4,23 @@ The team's first agreement — build in parallel against these shared contracts.
 
 ## 1. `lesson_state`
 
-Emitted by the lesson-state builder (`apps/worker` / `packages/ai-core`) roughly every 2 minutes from the rolling transcript. Raw transcript never travels downstream of this.
+Emitted by the lesson-state builder (`apps/worker` / `packages/ai-core`, see `buildLessonState()`) roughly every 2 minutes from the rolling transcript. Raw transcript never travels downstream of this. Implemented as `lessonStateSchema` in `packages/ai-core/src/lessonState.schema.ts`.
 
 ```json
 {
-  "topic": "el sustantivo",
-  "objective": "U3.2",
-  "confidence": 0.86
+  "topic": "El sustantivo y sus tipos",
+  "objective_guess": "Identificar sustantivos comunes y propios en textos breves",
+  "key_terms": ["sustantivo", "común", "propio", "texto"],
+  "transcript_summary": "La docente explicó la diferencia entre sustantivos comunes y propios usando ejemplos de personas, lugares y objetos.",
+  "confidence": 0.86,
+  "evidence": {
+    "quoted_phrases": ["los nombres de personas", "sustantivo común", "San Miguel"],
+    "reason": "La explicación se centró en clasificación de sustantivos con ejemplos."
+  }
 }
 ```
+
+The manual-fallback path (D6) produces the same `lesson_state` shape via `lessonStateFromManualEntry()` — downstream consumers never need a second code path.
 
 ## 2. `ActivityArtifact`
 
@@ -85,4 +93,8 @@ Written to the `events` table on every student interaction; read back for the li
 }
 ```
 
-Status: Gate 0 is recorded here. Implementation should freeze the exact TypeScript schemas and fixtures from these contracts before parallel build starts.
+## 4. `curriculum_match` (Area B -> Area C)
+
+See [`docs/area-bc-contract.md`](area-bc-contract.md) for the full write-up shared with Androso. Returned by `retrieveCurriculumMatches()` in `packages/curriculum`.
+
+Status: `lesson_state` and `curriculum_match` are implemented (see `packages/ai-core`, `packages/curriculum`) — these are the two contracts Isaac (Areas A/B) is responsible for. Gate 0 for `ActivityArtifact` is recorded here. Area C/E/F should freeze the exact TypeScript schemas, fixtures, telemetry shape, and sandbox contract before parallel implementation starts.

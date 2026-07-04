@@ -18,7 +18,7 @@ Kobi v0 turns the last 10 minutes of any class into a personalized, curriculum-g
 |---|---|---|
 | D1 | Subject: 7th-grade Lenguaje (reading comprehension + vocabulary) | Team owns the Ministry textbooks; avoids math's complex interaction mechanics |
 | D2 | Activity artifacts are verified HTML mini-apps plus manifests | Gate 0 decision on 2026-07-04: v0 uses self-contained HTML/CSS/JS artifacts in a sandboxed iframe, described by a structured manifest and verified before teacher display. This replaces the earlier JSON-player direction. |
-| D3 | TypeScript monolith: one Next.js app + one worker | 3 devs, 24 hours, TS-native team. Supabase (Postgres, pgvector, Realtime) gives the same layering as a Python split, single deploy |
+| D3 | TypeScript stack: Vite + React frontend, Node API/worker backend | 3 devs, 24 hours, TS-native team. Supabase (Postgres, pgvector, Realtime) gives the same layering as a Python split without adding another language |
 | D4 | Personalization v0 = difficulty banding, not learner modeling | 3 variants (support/core/challenge); don't ship personalization you can't measure |
 | D5 | No pet in v0 | Cut for scope; hints stay in the activity artifact manifest/runtime, not the pet; pet is a post-MVP retention layer |
 | D6 | Manual fallback at every AI stage | Transcription fails → teacher types 2-line topic summary; generation slow → pull from pre-seeded repository |
@@ -29,8 +29,8 @@ Kobi v0 turns the last 10 minutes of any class into a personalized, curriculum-g
 ## System Architecture
 
 3 deployables:
-- **Web app (Next.js on Vercel)** — teacher portal, student portal, API routes. Supabase Realtime pushes assignments and progress.
-- **Worker (Node on Railway/Fly)** — transcription, lesson-state builder, pre-generation, verifier. Queue: pg-boss on Postgres.
+- **Web app (Vite + React)** — teacher portal and student portal. Supabase Realtime pushes assignments and progress.
+- **Backend/worker (Node on Railway/Fly)** — API endpoints, transcription, lesson-state builder, pre-generation, verifier. Queue: pg-boss on Postgres.
 - **Supabase (Postgres + pgvector + Realtime + Auth)** — all state including embeddings.
 
 ```mermaid
