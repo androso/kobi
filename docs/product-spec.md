@@ -78,3 +78,7 @@ Put one name on each area (one person can own two small ones). Agree the three J
 - 3+ student devices receive banded variants and complete them
 - The session report reflects real telemetry, not seeds
 - Kill the wifi mid-session → manual fallback still completes the loop
+
+## Post-MVP ideas
+
+- **Generative HTML/JS "artifact" activities** — a 4th activity family alongside quiz/cloze/match: the model emits a self-contained HTML/CSS/JS mini-app (Claude-Artifact-style) instead of a fixed JSON shape. Rendered in a sandboxed iframe (CSP-restricted, no external network calls) inside the student player; reports completion/score back to the app via `postMessage`, feeding the same telemetry contract as everything else (see `docs/contracts.md`). Deferred past MVP because it's a harder verifier problem than JSON activities — there's no simple answer-key check on arbitrary generated code, unlike the mechanical verification D2 relies on today. Strictly additive: doesn't require reworking the JSON-first schema, just a new activity `type` and a new renderer branch.
