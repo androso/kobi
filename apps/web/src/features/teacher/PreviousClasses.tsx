@@ -163,9 +163,7 @@ export function PreviousClasses() {
                           className="bg-white p-5 rounded-3xl border border-slate-100 hover:border-[#004ac6]/20 hover:shadow-md transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
                         >
                           <div className="flex items-center gap-5">
-                            <div className="w-10 h-10 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
-                              <div className={`w-3 h-3 rounded-full ${session.dotColor}`} />
-                            </div>
+                            <div className={`w-3 h-3 rounded-full ${session.dotColor} shrink-0 ml-1.5 mr-1`} />
                             <div>
                               <span className={`inline-block text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border ${session.subjectColor} mb-1.5`}>
                                 {session.subject}
