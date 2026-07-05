@@ -5,8 +5,16 @@ let boss: PgBoss | undefined;
 export const JOB_TRANSCRIBE_CHUNK = "transcribe-chunk";
 export const JOB_BUILD_LESSON_STATE = "build-lesson-state";
 export const JOB_GENERATE_ACTIVITY_ARTIFACTS = "generate-activity-artifacts";
+export const JOB_CHECKPOINT_SCHEDULER = "checkpoint-scheduler";
+export const JOB_EVALUATE_CHECKPOINT = "evaluate-checkpoint";
 
-const QUEUE_NAMES = [JOB_TRANSCRIBE_CHUNK, JOB_BUILD_LESSON_STATE, JOB_GENERATE_ACTIVITY_ARTIFACTS];
+const QUEUE_NAMES = [
+  JOB_TRANSCRIBE_CHUNK,
+  JOB_BUILD_LESSON_STATE,
+  JOB_GENERATE_ACTIVITY_ARTIFACTS,
+  JOB_CHECKPOINT_SCHEDULER,
+  JOB_EVALUATE_CHECKPOINT,
+];
 
 /** Single pg-boss client for the worker process, backed by DATABASE_URL. */
 export async function getQueue(): Promise<PgBoss> {
