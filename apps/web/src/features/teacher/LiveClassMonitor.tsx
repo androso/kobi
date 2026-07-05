@@ -650,6 +650,9 @@ export function LiveClassMonitor() {
     if (monitoringClass) {
       const teacherId = useAuthStore.getState().user?.id;
       const session = buildSession(monitoringClass, elapsed, teacherId);
+      if (apiSessionIdRef.current) {
+        session.id = apiSessionIdRef.current;
+      }
       endSession(session); // guarda en historial + limpia el monitor activo
       setFinishedSession(session);
     }

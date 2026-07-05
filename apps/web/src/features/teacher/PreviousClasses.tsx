@@ -17,6 +17,7 @@ import {
 import { Sidebar } from "./components/Sidebar";
 import { CreateClassModal } from "./components/CreateClassModal";
 import { useClassStore, useAuthStore, type SavedSession } from "../../lib/store";
+import { supabase } from "../../lib/supabase";
 
 // ---------------------------------------------------------------------------
 // Seed history (structured for the combined summary & transcript layout).
@@ -103,6 +104,13 @@ const PREVIOUS_SESSIONS: SavedSession[] = [
   }
 ];
 
+function formatTimeMs(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 export function PreviousClasses() {
   const user = useAuthStore((state) => state.user);
   const teacherName = user?.displayName || user?.email?.split("@")[0] || "Docente";
@@ -150,10 +158,38 @@ export function PreviousClasses() {
       session.subject.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  function handleOpenDetailsModal(session: SavedSession) {
+  async function handleOpenDetailsModal(session: SavedSession) {
     setSelectedSession(session);
     setIsPlaying(false);
     setPlayProgress(15);
+
+    const isMock = session.id.startsWith("seed-");
+    if (!isMock && supabase) {
+      try {
+        const { data: chunks, error } = await supabase
+          .from("audio_chunks")
+          .select("transcript_text, start_ms, chunk_index")
+          .eq("session_id", session.id)
+          .order("chunk_index", { ascending: true });
+
+        if (!error && chunks) {
+          const lines = chunks
+            .filter((c) => c.transcript_text && c.transcript_text.trim().length > 0)
+            .map((c) => ({
+              time: formatTimeMs(c.start_ms),
+              speaker: "Docente",
+              text: c.transcript_text,
+            }));
+
+          setSelectedSession((curr) => curr && curr.id === session.id ? {
+            ...curr,
+            transcript: lines,
+          } : curr);
+        }
+      } catch (err) {
+        console.error("Error loading transcript from Supabase:", err);
+      }
+    }
   }
 
   function handleCloseModal() {
@@ -442,18 +478,28 @@ export function PreviousClasses() {
                 </div>
 
                 {/* Transcript dialogue listing */}
-                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-5">
-                  {selectedSession.transcript.map((line, idx) => (
-                    <div key={idx} className="flex gap-4 items-start">
-                      <span className="text-sm text-slate-400 tabular-nums shrink-0 mt-0.5 w-9">
-                        {line.time}
-                      </span>
-                      <p className="text-[15px] leading-relaxed">
-                        <span className="font-bold text-slate-900">{line.speaker}:</span>{" "}
-                        <span className="text-slate-600">{line.text}</span>
+                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-5 flex flex-col justify-start">
+                  {selectedSession.transcript && selectedSession.transcript.length > 0 ? (
+                    selectedSession.transcript.map((line, idx) => (
+                      <div key={idx} className="flex gap-4 items-start w-full">
+                        <span className="text-sm text-slate-400 tabular-nums shrink-0 mt-0.5 w-9">
+                          {line.time}
+                        </span>
+                        <p className="text-[15px] leading-relaxed">
+                          <span className="font-bold text-slate-900">{line.speaker}:</span>{" "}
+                          <span className="text-slate-600">{line.text}</span>
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-12 px-4 text-slate-400 my-auto">
+                      <Mic className="h-10 w-10 mx-auto mb-2 opacity-50 text-slate-400" />
+                      <p className="text-sm font-bold text-slate-600">No hay transcripción disponible</p>
+                      <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+                        Las clases grabadas se transcriben automáticamente en segundo plano. Los audios antiguos o locales pueden no tener texto guardado.
                       </p>
                     </div>
-                  ))}
+                  )}
                 </div>
 
               </div>
