@@ -7,6 +7,7 @@ import {
   generateOpenAiActivityCandidates,
   normalizeOpenAiActivityDrafts,
   type OpenAiActivityDraftClient,
+  type OpenAiActivityDraftRequest,
 } from "./openaiArtifactGenerator.js";
 
 const lessonState: LessonState = {
@@ -192,6 +193,30 @@ describe("OpenAI activity artifact generator", () => {
     expect(result.errors).toContain("draft schema: missing requested difficulty band core");
   });
 
+  it("sends fresh verifier errors after each failed repair", async () => {
+    const client = mockClient([
+      { artifacts: [{ ...rawArtifact("core"), index_html: "<!doctype html><html><script></script></html>" }] },
+      { artifacts: [{ ...rawArtifact("core"), index_html: validHtml("Actividad core", "Responde sobre la noticia en nivel core.").replace("</script>", "fetch('/x');</script>") }] },
+      { artifacts: [rawArtifact("core")] },
+    ]);
+
+    const result = await generateOpenAiActivityCandidates(
+      { lessonState, sessionContext, curriculumMatches, bands: ["core"] },
+      {
+        client,
+        model: "gpt-5.5",
+        templates: { system: "system", repair: "repair" },
+        maxRepairAttempts: 2,
+      },
+    );
+
+    const thirdPrompt = JSON.parse(client.requests[2].userPrompt);
+
+    expect(result.candidates).toHaveLength(1);
+    expect(thirdPrompt.verifier_errors.core).toContain("network fetch is forbidden");
+    expect(thirdPrompt.verifier_errors.core).not.toContain("bundle is missing SDK hook: getManifest");
+  });
+
   it("keeps raw transcript and likely student names out of prompt input", () => {
     const prompt = buildActivityGenerationPrompt({
       lessonState,
@@ -287,10 +312,14 @@ function validHtml(title: string, prompt: string) {
 </html>`;
 }
 
-function mockClient(responses: unknown[]): OpenAiActivityDraftClient & { calls: number } {
+function mockClient(
+  responses: unknown[],
+): OpenAiActivityDraftClient & { calls: number; requests: OpenAiActivityDraftRequest[] } {
   return {
     calls: 0,
-    async generateActivityDrafts() {
+    requests: [],
+    async generateActivityDrafts(request) {
+      this.requests.push(request);
       const response = responses[this.calls];
       this.calls += 1;
       return response;

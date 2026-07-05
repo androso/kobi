@@ -247,7 +247,7 @@ export async function generateOpenAiActivityCandidates(
   }
 
   const templates = options.templates ?? (await loadActivityPromptTemplates());
-  const bundleRefFactory = options.bundleRefFactory ?? createUnguessableBundleRef;
+  const bundleRefFactory = options.bundleRefFactory ?? (() => createUnguessableBundleRef("openai"));
   const maxRepairAttempts = options.maxRepairAttempts ?? 2;
   const errors: string[] = [];
   let attempts = 0;
@@ -309,6 +309,7 @@ export async function generateOpenAiActivityCandidates(
       if (result.ok) {
         accepted.set(candidate.manifest.difficulty_band, candidate);
       } else {
+        failedVerifierErrors[candidate.manifest.difficulty_band] = result.errors;
         errors.push(
           ...result.errors.map(
             (error) => `${candidate.manifest.difficulty_band} repair verifier: ${error}`,
@@ -548,6 +549,7 @@ function truncateExample(value: string): string {
   return value.length > 120 ? `${value.slice(0, 117)}...` : value;
 }
 
-export function createUnguessableBundleRef(): string {
-  return `artifact-bundles/${randomUUID()}/index.html`;
+export function createUnguessableBundleRef(namespace?: string): string {
+  const path = namespace ? `${namespace}/${randomUUID()}` : randomUUID();
+  return `artifact-bundles/${path}/index.html`;
 }
