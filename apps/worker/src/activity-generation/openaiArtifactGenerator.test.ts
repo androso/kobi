@@ -168,6 +168,23 @@ describe("OpenAI activity artifact generator", () => {
     expect(prompt).not.toContain("Maria Perez");
     expect(prompt).toContain("[nombre]");
   });
+
+  it("includes a creativity brief for interactive artifact design", () => {
+    const prompt = buildActivityGenerationPrompt({
+      lessonState,
+      sessionContext,
+      curriculumMatches,
+      bands: ["support", "core", "challenge"],
+    });
+    const parsed = JSON.parse(prompt);
+
+    expect(parsed.creativity_brief.design_goal).toContain("mini-app");
+    expect(parsed.creativity_brief.interaction_patterns).toContain("evidence map");
+    expect(parsed.creativity_brief.band_differentiation.challenge).toContain("synthesize");
+    expect(parsed.creativity_brief.avoid).toContain(
+      "generic multiple-choice unless it is clearly the strongest fit",
+    );
+  });
 });
 
 function rawArtifact(band: DifficultyBand) {

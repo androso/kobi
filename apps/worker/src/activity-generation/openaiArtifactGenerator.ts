@@ -437,6 +437,31 @@ export function buildActivityGenerationPrompt(input: BuildPromptInput): string {
           "broader interactive content with description, learning_goal, success_criteria, and telemetry_events",
         ],
       },
+      creativity_brief: {
+        design_goal:
+          "Create a memorable, curriculum-grounded mini-app that feels like a small classroom manipulative, lab, or studio rather than a static worksheet.",
+        interaction_patterns: [
+          "sorting board",
+          "evidence map",
+          "headline workshop",
+          "source-check desk",
+          "story sequencer",
+          "vocabulary lab",
+          "argument builder",
+          "timeline",
+          "checklist inspector",
+        ],
+        band_differentiation: {
+          support: "scaffold with fewer choices, clear labels, and guided hints",
+          core: "let students apply the concept with meaningful feedback",
+          challenge: "ask students to explain, justify, compare, or synthesize",
+        },
+        avoid: [
+          "generic multiple-choice unless it is clearly the strongest fit",
+          "decorative effects that do not support the learning task",
+          "long reading passages or dense instructions",
+        ],
+      },
       sdk: {
         version: ACTIVITY_SDK_VERSION,
         required_methods: [
