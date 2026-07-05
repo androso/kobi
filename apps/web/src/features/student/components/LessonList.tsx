@@ -1,4 +1,4 @@
-import { CheckCircle2, FileText, PlayCircle, type LucideIcon } from "lucide-react";
+import { CheckCircle2, FileText, PlayCircle, Trash2, type LucideIcon } from "lucide-react";
 import type { Artefacto, ArtefactoSubmission } from "../../../lib/store";
 
 interface LessonListProps {
@@ -9,6 +9,7 @@ interface LessonListProps {
   submissions: ArtefactoSubmission[];
   studentName: string;
   onSelect: (id: string) => void;
+  onDismiss?: (id: string) => void;
 }
 
 const kindIcon: Record<Artefacto["kind"], LucideIcon> = {
@@ -25,6 +26,7 @@ export function LessonList({
   submissions,
   studentName,
   onSelect,
+  onDismiss,
 }: LessonListProps) {
   return (
     <div>
@@ -48,29 +50,43 @@ export function LessonList({
               key={artefacto.id}
               style={{ animationDelay: `${index * 70}ms` }}
             >
-              <button
-                className={`relative flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition ${
+              <div
+                className={`relative flex w-full items-center gap-2 rounded-xl transition ${
                   isActive ? "bg-[#f1f0fb]" : "hover:bg-[#f5f3ee]"
                 }`}
-                onClick={() => onSelect(artefacto.id)}
-                type="button"
               >
                 {isActive ? (
                   <span className="absolute right-0 top-1.5 bottom-1.5 w-1 rounded-full bg-[#5b5bd6]" />
                 ) : null}
-                <Icon
-                  className={`h-6 w-6 shrink-0 ${isDone ? "text-[#5b5bd6]" : "text-[#9aa1ac]"}`}
-                  strokeWidth={1.75}
-                />
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-bold text-[#2b2b2b]">
-                    {String(index + 1).padStart(2, "0")}: {artefacto.title}
+                <button
+                  className="flex min-w-0 flex-1 items-center gap-3 px-3 py-3 text-left"
+                  onClick={() => onSelect(artefacto.id)}
+                  type="button"
+                >
+                  <Icon
+                    className={`h-6 w-6 shrink-0 ${isDone ? "text-[#5b5bd6]" : "text-[#9aa1ac]"}`}
+                    strokeWidth={1.75}
+                  />
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-bold text-[#2b2b2b]">
+                      {String(index + 1).padStart(2, "0")}: {artefacto.title}
+                    </span>
+                    <span className="block truncate text-xs text-[#8a8f98]">
+                      {artefacto.estimateLabel ?? artefacto.objective}
+                    </span>
                   </span>
-                  <span className="block truncate text-xs text-[#8a8f98]">
-                    {artefacto.estimateLabel ?? artefacto.objective}
-                  </span>
-                </span>
-              </button>
+                </button>
+                {onDismiss ? (
+                  <button
+                    aria-label={`Quitar actividad ${artefacto.title}`}
+                    className="mr-3 rounded-full p-2 text-[#9aa1ac] transition hover:bg-white hover:text-[#b91c1c]"
+                    onClick={() => onDismiss(artefacto.id)}
+                    type="button"
+                  >
+                    <Trash2 className="h-4 w-4" strokeWidth={1.8} />
+                  </button>
+                ) : null}
+              </div>
             </li>
           );
         })}

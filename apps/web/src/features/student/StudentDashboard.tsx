@@ -76,6 +76,18 @@ function artefactoFromAssignment(assignment: StudentAssignment, classId: string)
   };
 }
 
+function sameAssignment(left: StudentAssignment | null, right: StudentAssignment | null) {
+  if (!left || !right) return left === right;
+
+  return (
+    left.id === right.id &&
+    left.activityId === right.activityId &&
+    left.status === right.status &&
+    left.variant === right.variant &&
+    left.bundleHtml === right.bundleHtml
+  );
+}
+
 export function StudentDashboard() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -87,12 +99,15 @@ export function StudentDashboard() {
 
   const [assignment, setAssignment] = useState<StudentAssignment | null>(null);
   const [loadingAssignment, setLoadingAssignment] = useState(true);
+  const [backendDeliveryReady, setBackendDeliveryReady] = useState(false);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [telemetryStatus, setTelemetryStatus] = useState<string | null>(null);
   const [selectedArtefactoId, setSelectedArtefactoId] = useState<string | null>(null);
+  const [dismissingAssignment, setDismissingAssignment] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const eventsInWindowRef = useRef(0);
+  const pendingDismissalsRef = useRef(new Set<string>());
 
   useEffect(() => {
     if (!user || user.role !== "student") {
@@ -113,30 +128,37 @@ export function StudentDashboard() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadAssignment() {
+    async function loadAssignment(isInitialLoad = false) {
       if (!studentId || !deliveryStore) {
         setLoadingAssignment(false);
         setAssignment(null);
         return;
       }
 
-      setLoadingAssignment(true);
-      setAssignmentError(null);
+      if (isInitialLoad) {
+        setLoadingAssignment(true);
+        setAssignmentError(null);
+      }
 
       try {
         const loaded = await deliveryStore.loadLatestAssignmentForStudent(studentId);
-        if (!cancelled) setAssignment(loaded);
+        if (!cancelled) {
+          const visibleAssignment = loaded && pendingDismissalsRef.current.has(loaded.id) ? null : loaded;
+          setAssignment((current) => (sameAssignment(current, visibleAssignment) ? current : visibleAssignment));
+          setBackendDeliveryReady(true);
+          setAssignmentError(null);
+        }
       } catch (error) {
         if (!cancelled) {
           setAssignmentError(error instanceof Error ? error.message : "No se pudo cargar la actividad.");
         }
       } finally {
-        if (!cancelled) setLoadingAssignment(false);
+        if (!cancelled && isInitialLoad) setLoadingAssignment(false);
       }
     }
 
-    void loadAssignment();
-    const id = window.setInterval(loadAssignment, 5000);
+    void loadAssignment(true);
+    const id = window.setInterval(() => void loadAssignment(), 5000);
     return () => {
       cancelled = true;
       window.clearInterval(id);
@@ -198,8 +220,8 @@ export function StudentDashboard() {
     [allArtefactos, studentClass],
   );
   const artefactos = useMemo(
-    () => (deliveredArtefacto ? [deliveredArtefacto] : localArtefactos),
-    [deliveredArtefacto, localArtefactos],
+    () => (deliveredArtefacto ? [deliveredArtefacto] : deliveryStore && backendDeliveryReady ? [] : localArtefactos),
+    [backendDeliveryReady, deliveredArtefacto, deliveryStore, localArtefactos],
   );
 
   const assignmentSubmissions = useMemo<ArtefactoSubmission[]>(() => {
@@ -244,6 +266,34 @@ export function StudentDashboard() {
     navigate("/");
   }
 
+  async function handleDismissAssignment() {
+    if (!assignment || !studentId || !deliveryStore || dismissingAssignment) return;
+
+    const dismissedAssignment = assignment;
+    pendingDismissalsRef.current.add(dismissedAssignment.id);
+    setDismissingAssignment(true);
+    setAssignmentError(null);
+    setTelemetryStatus(null);
+    setSelectedArtefactoId(null);
+    setAssignment(null);
+
+    try {
+      await deliveryStore.dismissAssignmentForStudent({
+        assignmentId: dismissedAssignment.id,
+        studentId,
+        dismissedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      pendingDismissalsRef.current.delete(dismissedAssignment.id);
+      setAssignment(dismissedAssignment);
+      setSelectedArtefactoId(dismissedAssignment.id);
+      setAssignmentError(error instanceof Error ? error.message : "No se pudo quitar la actividad.");
+    } finally {
+      pendingDismissalsRef.current.delete(dismissedAssignment.id);
+      setDismissingAssignment(false);
+    }
+  }
+
   const progressSummary =
     completedCount === artefactos.length && artefactos.length > 0
       ? "Todo completado"
@@ -272,6 +322,7 @@ export function StudentDashboard() {
               <LessonList
                 activeId={activeArtefacto?.id}
                 artefactos={artefactos}
+                onDismiss={assignment ? handleDismissAssignment : undefined}
                 onSelect={setSelectedArtefactoId}
                 section={studentClass?.focus ?? activeArtefacto?.section ?? "Actividades"}
                 studentName={studentName}
@@ -281,7 +332,7 @@ export function StudentDashboard() {
             </div>
 
             <div className="px-6 py-10 sm:px-10">
-              {loadingAssignment && deliveryStore ? (
+              {loadingAssignment && deliveryStore && !assignment ? (
                 <div className="mx-auto max-w-2xl rounded-3xl bg-white/70 p-10 text-center shadow-sm">
                   <h2 className="text-xl font-semibold text-[#2b2b2b]">Buscando actividad...</h2>
                   <p className="mt-2 text-sm text-[#8a8f98]">Kobi revisa si tu docente ya publicó una actividad.</p>
@@ -296,11 +347,21 @@ export function StudentDashboard() {
                         Variante {bandLabels[assignment.variant]}. Tu progreso se guarda automáticamente.
                       </p>
                     </div>
-                    {telemetryStatus ? (
-                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-bold text-emerald-700">
-                        {telemetryStatus}
-                      </span>
-                    ) : null}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {telemetryStatus ? (
+                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-bold text-emerald-700">
+                          {telemetryStatus}
+                        </span>
+                      ) : null}
+                      <button
+                        className="rounded-full border border-[#e2ded6] px-3 py-1 text-sm font-bold text-[#6f7280] transition hover:border-[#d34d4d] hover:text-[#b91c1c] disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={dismissingAssignment}
+                        onClick={handleDismissAssignment}
+                        type="button"
+                      >
+                        {dismissingAssignment ? "Quitando..." : "Quitar de mi lista"}
+                      </button>
+                    </div>
                   </div>
                   <iframe
                     className="h-[620px] w-full rounded-2xl border border-[#ece9e2] bg-white"
