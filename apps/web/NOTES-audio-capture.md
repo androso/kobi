@@ -6,7 +6,7 @@ This is the contract for the teacher live-session screen (screen 2 in `docs/prod
 
 ```
 Teacher mic
-  -> MediaRecorder chunks every 45-60s
+  -> MediaRecorder chunks every ~15s
   -> POST {VITE_KOBI_API_URL}/api/sessions/:id/audio-chunks
   -> save chunk metadata + upload audio to Supabase Storage
   -> enqueue "transcribe-chunk" pg-boss job
@@ -16,9 +16,9 @@ Teacher mic
 
 ## Recording
 
-Use the browser-native `MediaRecorder` + `getUserMedia` APIs — no extra library needed for v0. Record in fixed-length segments (`MediaRecorder.start(timeslice)` or a manual stop/restart timer) so each chunk is a complete, independently-decodable file:
+Use the browser-native `MediaRecorder` + `getUserMedia` APIs — no extra library needed for v0. Implemented in `apps/web/src/features/teacher/LiveClassMonitor.tsx`: a single `getUserMedia` stream stays open for the whole session, but instead of one long-lived `MediaRecorder` with a `timeslice`, a new `MediaRecorder` instance is stopped and restarted on that same stream every `AUDIO_CHUNK_MS` (`rotateRecorderSegment` / `startNewRecorderSegment`). This matters because most browsers only put the container header in the *first* `ondataavailable` blob of a given `MediaRecorder` instance — later timeslice blobs from the same instance aren't independently decodable. Since each chunk is uploaded and transcribed on its own, every chunk must come from its own recorder instance to guarantee it's a complete, standalone file.
 
-- Chunk length: 45-60 seconds.
+- Chunk length: ~15 seconds (`AUDIO_CHUNK_MS` in `LiveClassMonitor.tsx`).
 - Format: whatever `MediaRecorder` gives you by default (e.g. `audio/webm`) is fine — Gemini's audio understanding handles common formats, no client-side transcoding needed.
 
 ## `POST /api/sessions/:id/audio-chunks`

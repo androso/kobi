@@ -23,7 +23,7 @@ import {
   uploadAudioChunk,
 } from "../../lib/audioApi";
 
-const AUDIO_CHUNK_MS = 45_000;
+const AUDIO_CHUNK_MS = 15_000;
 
 function logRecorder(message: string, details?: Record<string, unknown>) {
   if (!import.meta.env.DEV) return;
@@ -483,6 +483,8 @@ export function LiveClassMonitor() {
   const apiSessionIdRef = useRef<string | null>(null);
   const chunkIndexRef = useRef(0);
   const recordingStartedAtRef = useRef<number | null>(null);
+  const rotationTimerRef = useRef<number | null>(null);
+  const isStoppingRef = useRef(false);
 
   // Timer runs only while recording
   useEffect(() => {
@@ -498,6 +500,13 @@ export function LiveClassMonitor() {
   }, []);
 
   function stopBrowserRecording() {
+    isStoppingRef.current = true;
+
+    if (rotationTimerRef.current !== null) {
+      window.clearInterval(rotationTimerRef.current);
+      rotationTimerRef.current = null;
+    }
+
     const recorder = mediaRecorderRef.current;
     if (recorder && recorder.state !== "inactive") {
       logRecorder("stopping recorder", { state: recorder.state });
@@ -569,6 +578,41 @@ export function LiveClassMonitor() {
     }
   }
 
+  // Cada instancia de MediaRecorder produce un unico blob autocontenido al
+  // detenerse (sin timeslice). Encadenamos instancias para poder subir
+  // fragmentos periodicos que sean decodificables de forma independiente.
+  function attachRecorderHandlers(recorder: MediaRecorder) {
+    recorder.ondataavailable = (event) => {
+      void handleAudioChunk(event.data);
+    };
+    recorder.onerror = () => {
+      setRecordingError("No se pudo grabar el audio del navegador.");
+    };
+  }
+
+  function startNewRecorderSegment() {
+    const stream = mediaStreamRef.current;
+    if (!stream || isStoppingRef.current) return;
+
+    const recorder = new MediaRecorder(stream);
+    attachRecorderHandlers(recorder);
+    mediaRecorderRef.current = recorder;
+    recorder.start();
+    logRecorder("recorder segment started", { mimeType: recorder.mimeType });
+  }
+
+  function rotateRecorderSegment() {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === "inactive") return;
+
+    recorder.onstop = () => {
+      if (!isStoppingRef.current) {
+        startNewRecorderSegment();
+      }
+    };
+    recorder.stop();
+  }
+
   async function startRecording() {
     setElapsed(0);
     setUploadedChunkCount(0);
@@ -582,29 +626,23 @@ export function LiveClassMonitor() {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
       const sessionId = isAudioApiConfigured() ? await ensureBackendSession() : null;
-      const recorder = new MediaRecorder(stream);
 
       logRecorder("microphone permission granted", {
         trackCount: stream.getAudioTracks().length,
         apiSessionId: sessionId,
       });
 
-      mediaRecorderRef.current = recorder;
       apiSessionIdRef.current = sessionId;
       chunkIndexRef.current = 0;
       recordingStartedAtRef.current = Date.now();
+      isStoppingRef.current = false;
 
-      recorder.ondataavailable = (event) => {
-        void handleAudioChunk(event.data);
-      };
-      recorder.onerror = () => {
-        setRecordingError("No se pudo grabar el audio del navegador.");
-      };
+      startNewRecorderSegment();
+      rotationTimerRef.current = window.setInterval(rotateRecorderSegment, AUDIO_CHUNK_MS);
 
-      recorder.start(AUDIO_CHUNK_MS);
       logRecorder("recorder started", {
-        timesliceMs: AUDIO_CHUNK_MS,
-        mimeType: recorder.mimeType,
+        segmentMs: AUDIO_CHUNK_MS,
+        mimeType: mediaRecorderRef.current?.mimeType,
         uploadsEnabled: Boolean(sessionId),
       });
       setUploadStatus(
@@ -614,6 +652,15 @@ export function LiveClassMonitor() {
       );
       setIsRecording(true);
     } catch (error) {
+      isStoppingRef.current = true;
+      if (rotationTimerRef.current !== null) {
+        window.clearInterval(rotationTimerRef.current);
+        rotationTimerRef.current = null;
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+      mediaRecorderRef.current = null;
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
       const message = error instanceof Error ? error.message : "No se pudo iniciar la grabacion.";
