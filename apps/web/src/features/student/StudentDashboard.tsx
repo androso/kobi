@@ -46,7 +46,7 @@ export function StudentDashboard() {
   }, [navigate, user]);
 
   const studentName = user?.studentName?.trim() || "Estudiante";
-  const classCode = user?.classCode?.trim() || "KOBI7";
+  const classCode = user?.joinCode?.trim() || "KOBI7";
   const activeSection = getStudentRouteSection(location.pathname);
 
   const studentClass = useMemo(() => findClassByCode(classes, classCode), [classes, classCode]);

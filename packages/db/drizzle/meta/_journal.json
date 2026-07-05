@@ -8,6 +8,13 @@
       "when": 1783208275297,
       "tag": "0000_hard_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783366800000,
+      "tag": "0001_session_activity_candidates_backfill",
+      "breakpoints": true
     }
   ]
 }

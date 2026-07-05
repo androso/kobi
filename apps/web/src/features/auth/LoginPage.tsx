@@ -22,29 +22,24 @@ const slides = [
   }
 ];
 
-const DEMO_TEACHER = {
-  email: "maestra@kobi.demo",
-  password: "kobi123"
-};
-
-const DEMO_CLASS = {
-  code: "KOBI7",
-  studentName: "Ana"
-};
-
 export function LoginPage() {
   const navigate = useNavigate();
   const loginTeacher = useAuthStore((state) => state.loginTeacher);
+  const signupTeacher = useAuthStore((state) => state.signupTeacher);
   const loginStudent = useAuthStore((state) => state.loginStudent);
 
   const [activeSlide, setActiveSlide] = useState(0);
   const [role, setRole] = useState<"teacher" | "student">("teacher");
+  const [teacherAuthMode, setTeacherAuthMode] = useState<"login" | "signup">("login");
   const [teacherEmail, setTeacherEmail] = useState("");
   const [teacherPassword, setTeacherPassword] = useState("");
   const [showTeacherPassword, setShowTeacherPassword] = useState(false);
+  const [isTeacherLoginPending, setIsTeacherLoginPending] = useState(false);
+  const [isStudentLoginPending, setIsStudentLoginPending] = useState(false);
   const [classCode, setClassCode] = useState("");
   const [studentName, setStudentName] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [fieldErrors, setFieldErrors] = useState<{
     email?: string;
     password?: string;
@@ -62,7 +57,7 @@ export function LoginPage() {
 
   const slide = slides[activeSlide];
 
-  function handleTeacherLogin() {
+  async function handleTeacherSubmit() {
     const nextFieldErrors: { email?: string; password?: string } = {};
     const normalizedEmail = teacherEmail.trim().toLowerCase();
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -70,29 +65,38 @@ export function LoginPage() {
     if (!normalizedEmail) nextFieldErrors.email = "Ingresa tu correo.";
     else if (!emailPattern.test(normalizedEmail)) nextFieldErrors.email = "Escribe un correo valido.";
     if (!teacherPassword.trim()) nextFieldErrors.password = "Ingresa tu contrasena.";
+    else if (teacherAuthMode === "signup" && teacherPassword.length < 6) {
+      nextFieldErrors.password = "Usa al menos 6 caracteres.";
+    }
 
     if (Object.keys(nextFieldErrors).length > 0) {
       setFieldErrors(nextFieldErrors);
       setError("");
+      setNotice("");
       return;
     }
 
-    if (normalizedEmail === DEMO_TEACHER.email && teacherPassword === DEMO_TEACHER.password) {
-      setError("");
+    setIsTeacherLoginPending(true);
+    const result =
+      teacherAuthMode === "login"
+        ? await loginTeacher(normalizedEmail, teacherPassword)
+        : await signupTeacher(normalizedEmail, teacherPassword);
+    setIsTeacherLoginPending(false);
+
+    if (result.error) {
+      setError(result.error);
+      setNotice("");
       setFieldErrors({});
-      loginTeacher(normalizedEmail);
-      navigate("/teacher");
       return;
     }
 
-    setFieldErrors({
-      email: `Credencial demo: ${DEMO_TEACHER.email}`,
-      password: `Credencial demo: ${DEMO_TEACHER.password}`
-    });
-    setError("Credenciales incorrectas. Revisa las credenciales demo que aparecen debajo.");
+    setError("");
+    setNotice("");
+    setFieldErrors({});
+    navigate("/teacher");
   }
 
-  function handleStudentLogin() {
+  async function handleStudentLogin() {
     const nextFieldErrors: { code?: string; name?: string } = {};
     const normalizedCode = classCode.trim().toUpperCase();
     const normalizedName = studentName.trim();
@@ -104,28 +108,41 @@ export function LoginPage() {
     if (Object.keys(nextFieldErrors).length > 0) {
       setFieldErrors(nextFieldErrors);
       setError("");
+      setNotice("");
       return;
     }
 
-    if (normalizedCode === DEMO_CLASS.code) {
+    setIsStudentLoginPending(true);
+    const result = await loginStudent(normalizedCode, normalizedName);
+    setIsStudentLoginPending(false);
+
+    if (!result.error) {
       setError("");
+      setNotice("");
       setFieldErrors({});
-      loginStudent(normalizedName || DEMO_CLASS.studentName, normalizedCode);
       navigate("/student");
       return;
     }
 
-    setFieldErrors({
-      code: `Credencial demo: ${DEMO_CLASS.code}`,
-      name: "Escribe cualquier nombre."
-    });
-    setError("Credenciales incorrectas. Revisa el codigo demo que aparece debajo.");
+    setFieldErrors({});
+    setNotice("");
+    setError(result.error);
   }
 
   function clearLoginErrors() {
     setError("");
+    setNotice("");
     setFieldErrors({});
   }
+
+  const teacherSubmitLabel =
+    teacherAuthMode === "signup"
+      ? isTeacherLoginPending
+        ? "Creando..."
+        : "Crear cuenta"
+      : isTeacherLoginPending
+        ? "Entrando..."
+        : "Entrar";
 
   return (
     <main className="font-login flex min-h-screen items-center justify-center bg-[#eef5fb] px-4 py-8 text-foreground sm:px-6">
@@ -213,9 +230,47 @@ export function LoginPage() {
             </div>
 
             {error ? <p className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p> : null}
+            {notice ? <p className="mb-5 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</p> : null}
 
             {role === "teacher" ? (
-              <form className="space-y-7">
+              <form
+                className="space-y-7"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleTeacherSubmit();
+                }}
+              >
+                <div className="grid grid-cols-2 gap-2 rounded-full bg-slate-50 p-1">
+                  <button
+                    className={`rounded-full px-3 py-2 text-sm font-medium transition ${
+                      teacherAuthMode === "login"
+                        ? "bg-white text-[#1077e5] shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    onClick={() => {
+                      setTeacherAuthMode("login");
+                      clearLoginErrors();
+                    }}
+                    type="button"
+                  >
+                    Iniciar sesion
+                  </button>
+                  <button
+                    className={`rounded-full px-3 py-2 text-sm font-medium transition ${
+                      teacherAuthMode === "signup"
+                        ? "bg-white text-[#1077e5] shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    onClick={() => {
+                      setTeacherAuthMode("signup");
+                      clearLoginErrors();
+                    }}
+                    type="button"
+                  >
+                    Crear cuenta
+                  </button>
+                </div>
+
                 <label className="group block">
                   <span className="sr-only">Correo electronico</span>
                   <div className="flex items-center rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
@@ -258,21 +313,35 @@ export function LoginPage() {
                 </label>
 
                 <div className="flex flex-wrap items-center justify-between gap-4">
-                  <Button onClick={handleTeacherLogin} type="button">
-                    Entrar
+                  <Button disabled={isTeacherLoginPending} onClick={handleTeacherSubmit} type="button">
+                    {teacherSubmitLabel}
                   </Button>
-                  <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <input className="h-4 w-4 accent-[#1077e5]" type="checkbox" />
-                    Recordarme
-                  </label>
+                  {teacherAuthMode === "login" ? (
+                    <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <input className="h-4 w-4 accent-[#1077e5]" type="checkbox" />
+                      Recordarme
+                    </label>
+                  ) : null}
                 </div>
 
-                <button className="block text-sm font-medium text-[#1077e5]" type="button">
-                  Olvidaste tu contrasena?
-                </button>
+                {teacherAuthMode === "login" ? (
+                  <button className="block text-sm font-medium text-[#1077e5]" type="button">
+                    Olvidaste tu contrasena?
+                  </button>
+                ) : (
+                  <p className="text-sm leading-6 text-muted-foreground">
+                    Crea tu acceso docente para preparar clases y revisar actividad en vivo.
+                  </p>
+                )}
               </form>
             ) : (
-              <form className="space-y-7">
+              <form
+                className="space-y-7"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void handleStudentLogin();
+                }}
+              >
                 <label className="group block">
                   <span className="sr-only">Codigo de clase</span>
                   <div className="flex items-center rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
@@ -302,8 +371,8 @@ export function LoginPage() {
                   {fieldErrors.name ? <p className="mt-2 text-xs text-[#1077e5]">{fieldErrors.name}</p> : null}
                 </label>
 
-                <Button onClick={handleStudentLogin} type="button">
-                  Entrar a clase
+                <Button disabled={isStudentLoginPending} type="submit">
+                  {isStudentLoginPending ? "Entrando..." : "Entrar a clase"}
                 </Button>
               </form>
             )}

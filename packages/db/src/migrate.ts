@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
@@ -22,14 +22,13 @@ async function main() {
 
   await migrate(db, { migrationsFolder: path.join(__dirname, "..", "drizzle") });
 
-  // The ivfflat index and match_curriculum_chunks() RPC aren't expressible
-  // via drizzle-kit (custom access method / raw SQL function) — applied here
-  // as idempotent SQL, after the tables they depend on already exist.
-  const vectorExtrasSql = readFileSync(
-    path.join(__dirname, "..", "migrations", "0002_vector_extras.sql"),
-    "utf8",
-  );
-  await client.unsafe(vectorExtrasSql);
+  // Raw SQL migrations cover constraints, custom indexes, and RPCs that aren't
+  // expressible through drizzle-kit. They must be idempotent.
+  const rawMigrationsDir = path.join(__dirname, "..", "migrations");
+  for (const fileName of readdirSync(rawMigrationsDir).filter((file) => file.endsWith(".sql")).sort()) {
+    const sql = readFileSync(path.join(rawMigrationsDir, fileName), "utf8");
+    await client.unsafe(sql);
+  }
 
   await client.end();
 }

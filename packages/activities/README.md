@@ -2,7 +2,7 @@
 
 Area C: Activity Generation & Quality (owned by Androso) — artifact manifest schema, verifier, sandbox SDK, and rubric side shared by `apps/web` and `apps/worker`.
 
-**Contract:** `lesson_state` + curriculum chunks + repository → 3 verified candidate `ActivityArtifact`s.
+**Contract:** `lesson_state` + curriculum chunks + repository -> 3 verified candidate `ActivityArtifact`s.
 
 Gate 0 decision on 2026-07-04: v0 uses self-contained HTML/CSS/JS mini-app artifacts plus structured manifests. There are no legacy JSON activities or consumers, so no JSON migration path is needed.
 
@@ -26,31 +26,39 @@ Each artifact is a single self-contained `index.html` bundle plus a manifest:
 {
   "contract_version": "activity-artifact/v1",
   "manifest": {
-    "family": "match_classify",
-    "title": "Vocabulario en contexto: La noticia",
+    "family": "guided_practice",
+    "title": "Practica: La noticia y sus partes",
     "difficulty_band": "core",
     "curriculum": { "grade": 7, "subject": "lenguaje", "unit": "U4", "objective": "L7.4.2" },
     "est_minutes": 6,
     "entry": "index.html",
     "sdk_version": "activity-sdk/v1",
-    "allowed_capabilities": ["dom", "css", "svg"],
+    "allowed_capabilities": ["dom", "css"],
     "content": {
       "items": [
         {
-          "prompt": "Clasifica cada palabra según su función en una noticia.",
+          "prompt": "Responde usando el objetivo L7.4.2: identificar titular, entradilla y fuente.",
           "answer_key": ["titular", "entradilla", "fuente"],
-          "hints": ["Busca palabras que presentan el hecho principal."]
+          "hints": ["Vuelve al vocabulario clave antes de responder."]
         }
-      ]
+      ],
+      "telemetry_events": ["attempt", "hint", "complete"]
     }
   },
-  "bundle_ref": "artifact-bundles/...",
+  "bundle_ref": "artifact-bundles/.../index.html",
   "verifier_scores": {},
   "evidence": [],
   "status": "verified"
 }
 ```
 
-The verifier checks manifest schema, forbidden APIs, sandbox boot, SDK telemetry assertions, manifest/code consistency, curriculum alignment, answer correctness, hint leakage, and Spanish suitability.
+Implemented exports:
 
-Status: initial manifest schema, deterministic verifier, repository ranking helpers, candidate generator, assignment helper, and contract tests are implemented. Full sandbox/browser verification and LLM-backed generation are still future work behind the same contract.
+- manifest, artifact, evidence, verifier-score, source, and SDK `postMessage` validators
+- `buildActivitySessionContext()` for bounded context from structured `lesson_state` rows only
+- `createActivityArtifactCandidates()` for deterministic support/core/challenge HTML fallback artifacts
+- `verifyActivityArtifact()` for schema, static bundle, SDK hook, and manifest/code consistency checks
+- `authorizeActivityTelemetryMessage()` for parent-owned assignment telemetry validation
+- repository ranking helpers that bias objective match, verifier score, usage, outcomes, and topic overlap
+
+The verifier currently performs deterministic checks plus local rubric scoring. Browser sandbox boot remains Area E-owned and should call these same schemas before teacher display.

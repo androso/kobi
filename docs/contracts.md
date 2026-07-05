@@ -32,22 +32,23 @@ For the teacher approval flow, Area C writes support/core/challenge rows to `ses
 {
   "contract_version": "activity-artifact/v1",
   "manifest": {
-    "family": "match_classify",
-    "title": "Vocabulario en contexto: La noticia",
+    "family": "guided_practice",
+    "title": "Practica: La noticia y sus partes",
     "difficulty_band": "core",
     "curriculum": { "grade": 7, "subject": "lenguaje", "unit": "U4", "objective": "L7.4.2" },
     "est_minutes": 6,
     "entry": "index.html",
     "sdk_version": "activity-sdk/v1",
-    "allowed_capabilities": ["dom", "css", "svg"],
+    "allowed_capabilities": ["dom", "css"],
     "content": {
       "items": [
         {
-          "prompt": "Clasifica cada palabra según su función en una noticia.",
+          "prompt": "Responde usando el objetivo L7.4.2: identificar titular, entradilla y fuente.",
           "answer_key": ["titular", "entradilla", "fuente"],
-          "hints": ["Busca palabras que presentan el hecho principal."]
+          "hints": ["Vuelve al vocabulario clave antes de responder."]
         }
-      ]
+      ],
+      "telemetry_events": ["attempt", "hint", "complete"]
     }
   },
   "bundle_ref": "artifact-bundles/...",
@@ -75,10 +76,12 @@ For the teacher approval flow, Area C writes support/core/challenge rows to `ses
 
 - Bundle format is one self-contained `index.html` with inline CSS/JS.
 - No external imports, assets, network calls, credentialed requests, storage APIs, top navigation, popups, or same-origin assumptions.
+- Allowed families are `match_classify`, `sequence_order`, and `guided_practice`.
+- `content.items[]` is required and must include prompts plus answer keys; hints default to an empty list when omitted.
 - `bundle_ref` must be unguessable and authorized by assignment/class before iframe delivery.
 - The parent injects only manifest, assignment id, and difficulty band. It must not inject Supabase credentials, student PII, raw transcript, or broader class/session context.
 - The iframe communicates only through the Activity SDK over `postMessage`: `getManifest()`, `getBand()`, `reportAttempt()`, `reportHint()`, and `reportComplete()`.
-- The parent validates message source, schema, assignment/student authorization, method allowlist, payload size, and telemetry rate limits.
+- The parent validates message source, schema, assignment authorization, method allowlist, payload size, and telemetry rate limits.
 - Teacher edits are manifest-only and must pass schema validation, escaped rendering, forbidden field checks, and manifest/code consistency smoke validation.
 
 ## 3. Telemetry event

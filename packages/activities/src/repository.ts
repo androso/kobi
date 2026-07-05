@@ -23,7 +23,7 @@ export function rankActivityRepositoryRows(
       const usageScore = Math.min(row.times_used / 10, 1);
       const outcomeScore = row.avg_score ?? 0.5;
       const topicScore = textOverlapScore(
-        `${row.manifest.title} ${row.manifest.content.items.map((item) => item.prompt).join(" ")}`,
+        activitySearchText(row),
         [context.latest_topic, context.latest_objective ?? "", ...context.vocabulary].join(" "),
       );
 
@@ -57,6 +57,15 @@ export function pickReusableActivitiesByBand(
   return picked;
 }
 
+function activitySearchText(row: ActivityRepositoryRow): string {
+  return [
+    row.manifest.title,
+    ...row.manifest.content.items.map((item) => item.prompt),
+    ...row.manifest.content.items.flatMap((item) => item.answer_key),
+    ...row.manifest.content.items.flatMap((item) => item.hints),
+  ].join(" ");
+}
+
 function textOverlapScore(left: string, right: string): number {
   const leftTokens = tokenize(left);
   const rightTokens = tokenize(right);
@@ -76,7 +85,7 @@ function tokenize(value: string): Set<string> {
       .toLocaleLowerCase("es-SV")
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
-      .split(/[^a-z0-9n]+/i)
+      .split(/[^a-z0-9ñ]+/i)
       .filter((token) => token.length > 3),
   );
 }
