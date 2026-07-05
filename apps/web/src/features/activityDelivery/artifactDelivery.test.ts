@@ -11,6 +11,7 @@ import {
   handleStudentActivityMessage,
   loadOrCreateReadyCandidates,
   publishAssignments,
+  SupabaseActivityDeliveryStore,
 } from "./artifactDelivery";
 import type { ActivityManifest, DifficultyBand } from "@kobi/activities";
 
@@ -65,6 +66,7 @@ function store(overrides: Partial<ActivityDeliveryStore> = {}): ActivityDelivery
     loadLatestAssignmentForStudent: vi.fn(async () => null),
     writeEvent: vi.fn(async () => {}),
     markAssignmentComplete: vi.fn(async () => {}),
+    dismissAssignmentForStudent: vi.fn(async () => {}),
     ...overrides,
   };
 }
@@ -95,8 +97,18 @@ describe("artifact delivery bridge", () => {
     });
 
     expect(rows).toEqual([
-      expect.objectContaining({ student_id: "student-1", variant: "core", activity_id: "activity-core" }),
-      expect.objectContaining({ student_id: "student-2", variant: "core", activity_id: "activity-core" }),
+      expect.objectContaining({
+        student_id: "student-1",
+        variant: "core",
+        activity_id: "activity-core",
+        dismissed_at: null,
+      }),
+      expect.objectContaining({
+        student_id: "student-2",
+        variant: "core",
+        activity_id: "activity-core",
+        dismissed_at: null,
+      }),
     ]);
   });
 
@@ -135,6 +147,31 @@ describe("artifact delivery bridge", () => {
       ]),
     );
     expect(published.map((row) => row.variant)).toEqual(["core", "support"]);
+    expect(fakeStore.upsertAssignments).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ dismissed_at: null })]),
+    );
+  });
+
+  it("dismisses an assignment for the owning student without deleting it", async () => {
+    const query = {
+      eq: vi.fn(),
+      then: vi.fn((resolve: (value: { error: null }) => void) => resolve({ error: null })),
+    };
+    query.eq.mockReturnValue(query);
+    const update = vi.fn(() => query);
+    const from = vi.fn(() => ({ update }));
+    const deliveryStore = new SupabaseActivityDeliveryStore({ from } as never);
+
+    await deliveryStore.dismissAssignmentForStudent({
+      assignmentId: "assignment-1",
+      studentId: "student-1",
+      dismissedAt: "2026-07-05T08:00:00.000Z",
+    });
+
+    expect(from).toHaveBeenCalledWith("assignments");
+    expect(update).toHaveBeenCalledWith({ dismissed_at: "2026-07-05T08:00:00.000Z" });
+    expect(query.eq).toHaveBeenCalledWith("id", "assignment-1");
+    expect(query.eq).toHaveBeenCalledWith("student_id", "student-1");
   });
 
   it("authorizes iframe telemetry and stamps the parent assignment id", async () => {
