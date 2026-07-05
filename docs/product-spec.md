@@ -8,9 +8,9 @@ Kobi v0 turns the last 10 minutes of any class into a personalized, curriculum-g
 
 ## In / out of scope (v0)
 
-**In:** one class/grade/subject, 3 activity template families, difficulty-banded personalization (3 variants), plain student experience (activity + hints + results), repository reuse within own content, teacher approval as a hard gate, session report (completion + correctness).
+**In:** one class/grade/subject, 3 activity artifact families, difficulty-banded personalization (support/core/challenge artifacts), plain student experience (activity + hints + results), repository reuse within own content, teacher approval as a hard gate, session report (completion + correctness).
 
-**Out:** multi-school/admin portals, arbitrary generative game mechanics, deep learner modeling, pet companion, cross-school repositories, auto-delivery without review, longitudinal analytics.
+**Out:** multi-school/admin portals, unbounded generative game mechanics outside the verified artifact contract, deep learner modeling, pet companion, cross-school repositories, auto-delivery without review, longitudinal analytics.
 
 ## Decision Log
 
@@ -42,13 +42,12 @@ flowchart TD
     CUR[(Curriculum chunks)] --> PRE
     REPO[(Activity repository)] --> PRE
     PRE --> VER[Verifier]
-    VER --> SHORT[Teacher shortlist UI]
-    SHORT -->|approve| VAR[Variant maker]
-    VAR --> DEL[Student delivery - realtime]
+    VER --> SHORT[Teacher band approval UI]
+    SHORT -->|approve per band| DEL[Student delivery - realtime]
     DEL --> TEL[(Telemetry)]
     TEL --> REP[Session report]
     TEL --> PROF[(Student profiles)]
-    PROF --> VAR
+    PROF --> DEL
 ```
 
 ## Ownership Areas
@@ -67,7 +66,7 @@ Put one name on each area (one person can own two small ones). Agree the shared 
 ## Cut Lines (if behind schedule, cut in this order)
 
 1. Live monitor → simple completed-count
-2. Variant maker → single *core* variant for everyone
+2. Support/challenge bands → approved *core* artifact for everyone
 3. Live transcription → teacher manual topic entry (this is a feature, per D6, not just a fallback)
 
 **Never cut:** teacher approval gate, verified artifact delivery, curriculum grounding with visible evidence.
@@ -75,9 +74,9 @@ Put one name on each area (one person can own two small ones). Agree the shared 
 ## Definition of Done (no-mock test)
 
 - A teacher creates a class and runs a session on real audio with no developer help
-- 3 curriculum-grounded options appear ≤ 60s after "Hora de actividad"
-- Each option shows evidence: objective + textbook section + reused/new
-- 3+ student devices receive banded variants and complete them
+- Support/core/challenge curriculum-grounded artifacts appear ≤ 60s after "Hora de actividad"
+- Each artifact shows evidence: objective + textbook section + reused/new
+- 3+ student devices receive approved banded artifacts and complete them
 - The session report reflects real telemetry, not seeds
 - Kill the wifi mid-session → manual fallback still completes the loop
 
@@ -85,10 +84,9 @@ Put one name on each area (one person can own two small ones). Agree the shared 
 
 HTML activity artifacts are v0, not post-MVP, but they are limited to the three ratified v0 families below. Each candidate activity is a single self-contained `index.html` bundle plus a structured manifest. The bundle runs only inside the sandboxed student iframe, uses no external imports/assets/network, and reports attempts, hints, and completion through the parent-owned SDK over `postMessage`.
 
-The three v0 families are:
+The v0 families are:
 
 1. **Match/classify** — vocabulary or concept grouping.
 2. **Sequence/order** — process, story, or argument steps.
 3. **Guided practice/checkpoint** — short applied questions with hints and feedback.
-
 Seeded runnable artifacts use the same contract and verifier path as generated artifacts. If generation or verification fails, the D6 fallback is a pre-seeded verified artifact, not a manifest-only renderer.

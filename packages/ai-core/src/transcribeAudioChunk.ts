@@ -1,5 +1,6 @@
 import { google } from "@ai-sdk/google";
 import { generateText } from "ai";
+import { URL } from "node:url";
 
 const DEFAULT_GEMINI_TRANSCRIPTION_MODEL = "gemini-2.0-flash";
 const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";

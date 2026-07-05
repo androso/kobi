@@ -6,8 +6,8 @@ Vite + React + TypeScript app: teacher portal + student portal.
 
 **Teacher**
 1. Class & unit setup — create class, pick textbook unit, show join code
-2. Live session — mic status, lesson-state cards, "preparando 3 actividades…" indicator
-3. Shortlist & approve — 3 candidates with evidence; edit; approve (the wow moment)
+2. Live session — mic status, lesson-state cards, "preparando actividades por nivel…" indicator
+3. Band review & approve — support/core/challenge artifacts with evidence; edit; approve per band (the wow moment)
 4. Live monitor — per-student progress, stuck flags
 5. Session report — completion, correctness, what to review tomorrow
 

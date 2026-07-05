@@ -1,4 +1,4 @@
-# Area B <-> Area C contract
+# pArea B <-> Area C contract
 
 For Androso (Area C — Activity Generation & Quality), from Isaac (Area A — Listening & Understanding, Area B — Curriculum & Retrieval). Stack is fully TypeScript throughout, per D3/D8 in `docs/product-spec.md` — no Python anywhere in this repo.
 

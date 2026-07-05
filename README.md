@@ -16,10 +16,10 @@ TypeScript everywhere: one Vite + React frontend (teacher + student portals), on
 kobi/
 ├─ apps/
 │  ├─ web/                  # Vite + React: teacher portal + student portal
-│  └─ worker/                # transcription, lesson-state builder, pre-gen, verifier, variant maker
+│  └─ worker/                # transcription, lesson-state builder, pre-gen, verifier, banded artifacts
 ├─ packages/
 │  ├─ db/                    # Supabase schema/migrations + shared TS types (7-8 tables)
-│  ├─ ai-core/                # model routing: transcription/lesson-state/planner/verifier/variant models
+│  ├─ ai-core/                # model routing: transcription/lesson-state/planner/verifier/banding models
 │  ├─ curriculum/            # ingestion, chunking, embedding, pgvector retrieval (Area B)
 │  ├─ activities/            # artifact manifest schema + verifier + sandbox SDK (Area C — shared by web + worker)
 │  └─ evals/                 # eval harness/runner code
@@ -35,7 +35,7 @@ kobi/
 |---|---|---|
 | A. Listening & Understanding | Isaac | mic audio → rolling `lesson_state` |
 | B. Curriculum & Retrieval | Isaac | textbook + `lesson_state` → matching objectives/chunks |
-| C. Activity Generation & Quality | Androso | `lesson_state` + curriculum + repository → 3 verified candidate `ActivityArtifact`s |
+| C. Activity Generation & Quality | Androso | `lesson_state` + curriculum + repository → verified support/core/challenge `ActivityArtifact`s |
 | D. Teacher Experience | Mauricio | approval flow, evidence UI, session report |
 | E. Student Experience & Activity Engine | Mauricio | activity player, hints, results |
 | F. Platform & Data Backbone | Androso | auth, storage, realtime, background jobs |
