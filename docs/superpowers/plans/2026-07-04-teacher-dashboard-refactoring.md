@@ -15,7 +15,7 @@
 **Files:**
 - Create: `apps/web/src/lib/store.ts`
 
-- [ ] **Step 1: Write the store file**
+- [x] **Step 1: Write the store file**
   Create the global state manager holding mock authentication functions and current active user context.
 
 ```typescript
@@ -42,7 +42,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 }));
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add apps/web/src/lib/store.ts
@@ -56,7 +56,7 @@ git commit -m "feat: initialize global auth state store using Zustand"
 **Files:**
 - Create: `apps/web/src/features/student/StudentDashboard.tsx`
 
-- [ ] **Step 1: Implement Student Dashboard**
+- [x] **Step 1: Implement Student Dashboard**
   Create the StudentDashboard component leveraging the Zustand store and redirecting back to root `/` on logout.
 
 ```typescript
@@ -125,7 +125,7 @@ export function StudentDashboard() {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add apps/web/src/features/student/StudentDashboard.tsx
@@ -139,7 +139,7 @@ git commit -m "feat: extract student dashboard layout component"
 **Files:**
 - Create: `apps/web/src/features/auth/LoginPage.tsx`
 
-- [ ] **Step 1: Implement Login page**
+- [x] **Step 1: Implement Login page**
   Extract the auth screen containing dynamic slideshow and credentials verification.
 
 ```typescript
@@ -460,7 +460,7 @@ export function LoginPage() {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add apps/web/src/features/auth/LoginPage.tsx
@@ -477,7 +477,7 @@ git commit -m "feat: extract login page component and wire routing transition"
 - Create: `apps/web/src/features/teacher/components/ClassCard.tsx`
 - Create: `apps/web/src/features/teacher/TeacherDashboard.tsx`
 
-- [ ] **Step 1: Write Sidebar component**
+- [x] **Step 1: Write Sidebar component**
 
 ```typescript
 import { GraduationCap, FolderOpen, BarChart3, Plus, CircleHelp, BookOpen, LogOut, type LucideIcon } from "lucide-react";
@@ -563,7 +563,7 @@ export function Sidebar() {
 }
 ```
 
-- [ ] **Step 2: Write Header component**
+- [x] **Step 2: Write Header component**
 
 ```typescript
 import { Search, Settings2, Grid3X3, type LucideIcon } from "lucide-react";
@@ -604,7 +604,7 @@ export function Header() {
 }
 ```
 
-- [ ] **Step 3: Write ClassCard component**
+- [x] **Step 3: Write ClassCard component**
 
 ```typescript
 import { ChevronRight, Users, type LucideIcon } from "lucide-react";
@@ -667,7 +667,7 @@ export function ClassCard({ item, viewMode }: { item: ClassItem; viewMode: "grid
 }
 ```
 
-- [ ] **Step 4: Write TeacherDashboard container page**
+- [x] **Step 4: Write TeacherDashboard container page**
 
 ```typescript
 import { useState } from "react";
@@ -782,7 +782,7 @@ export function TeacherDashboard() {
 }
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/web/src/features/teacher/
@@ -796,7 +796,7 @@ git commit -m "feat: extract teacher dashboard and its layout components"
 **Files:**
 - Modify: `apps/web/src/App.tsx`
 
-- [ ] **Step 1: Replace App.tsx contents**
+- [x] **Step 1: Replace App.tsx contents**
   Simplify App.tsx to only configuration and react-router mappings.
 
 ```typescript
@@ -819,7 +819,7 @@ export function App() {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add apps/web/src/App.tsx
@@ -833,12 +833,12 @@ git commit -m "refactor: simplify App.tsx to route definitions using react-route
 **Files:**
 - Modify: `apps/web/src/App.test.tsx` (if any adjustments are needed for context rendering, but standard react-router context inside App should handle routing tests natively).
 
-- [ ] **Step 1: Run local vitest tests**
+- [x] **Step 1: Run local vitest tests**
 
 Run: `pnpm --filter @kobi/web test`
 Expected: 7 passed tests.
 
-- [ ] **Step 2: Commit if any fixes are applied to test suite**
+- [x] **Step 2: Commit if any fixes are applied to test suite**
 
 ```bash
 git commit -a -m "test: verify all unit tests pass with new router layout"
