@@ -1,13 +1,13 @@
 # Frontend notes: teacher mic capture (Area A, not built yet)
 
-This is a spec for whoever implements the teacher live-session screen (screen 2 in `docs/product-spec.md`). No component or API route exists yet — this is the contract to build against, so it plugs straight into the worker jobs in `apps/worker`.
+This is the contract for the teacher live-session screen (screen 2 in `docs/product-spec.md`). The worker-owned HTTP API now exposes the upload/session endpoints; the Vite web app calls that API instead of defining Next.js routes.
 
 ## Flow
 
 ```
 Teacher mic
   -> MediaRecorder chunks every 45-60s
-  -> POST /api/sessions/:id/audio-chunks
+  -> POST {VITE_KOBI_API_URL}/api/sessions/:id/audio-chunks
   -> save chunk metadata + upload audio to Supabase Storage
   -> enqueue "transcribe-chunk" pg-boss job
   -> worker transcribes, builds lesson_state, retrieves curriculum matches
@@ -23,11 +23,11 @@ Use the browser-native `MediaRecorder` + `getUserMedia` APIs — no extra librar
 
 ## `POST /api/sessions/:id/audio-chunks`
 
-This route handler doesn't exist yet. When built, it should:
+This route handler is implemented in `apps/worker/src/api.ts`. It:
 
-1. Accept the audio blob (`multipart/form-data` or raw body) plus `chunk_index`, `start_ms`, `end_ms`.
+1. Accept the audio blob as `multipart/form-data` plus `chunk_index`, `start_ms`, `end_ms`.
 2. Upload the blob to Supabase Storage, get back a path/URL.
-3. Insert a row into `audio_chunks` (`packages/db/migrations/0001_init.sql`) with `status: 'pending'`.
+3. Insert a row into `audio_chunks` with `status: 'pending'`.
 4. Enqueue a `transcribe-chunk` pg-boss job with `{ audioChunkId, audioUrl, mimeType, sessionId }` — matches `apps/worker/src/jobs/transcribeChunk.job.ts`'s expected job data shape exactly.
 
 Response: `{ audioChunkId }` is enough for the client to show "chunk N uploaded" status.
