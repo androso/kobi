@@ -19,8 +19,8 @@ interface SidebarProps {
 }
 
 const teacherNavItems: Array<{ label: string; icon: LucideIcon; active?: boolean }> = [
-  { label: "Panel", icon: LayoutGrid },
-  { label: "Monitoreo en vivo", icon: TrendingUp, active: true },
+  { label: "Panel", icon: LayoutGrid, active: true },
+  { label: "Monitoreo en vivo", icon: TrendingUp },
   { label: "Repositorios", icon: FolderOpen },
   { label: "Analíticas", icon: BarChart3 },
   { label: "Actividades recientes", icon: History }
