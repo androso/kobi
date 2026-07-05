@@ -6,15 +6,17 @@ Supabase schema/migrations + shared TS types. One datastore (Postgres + pgvector
 
 | Table | Purpose | Key fields |
 |---|---|---|
-| `users` / `classes` / `enrollments` | Auth-lite: teachers via magic link; students via join code + display name | role, class_code |
+| `teacher_profiles` / `classes` / `students` | Auth-lite: teachers via magic link; students via join code + display name | teacher_id, join_code, display_name |
 | `sessions` | One class period | class_id, status, started_at |
 | `segments` | Rolling lesson state | session_id, lesson_state (jsonb), confidence, transcript_summary |
 | `curriculum_chunks` | Ingested textbook unit, objective-level | unit, objective_code, text, embedding |
+| `activity_bundles` | Self-contained runnable HTML bundles | ref, index_html, checksum |
 | `activities` | The repository: verified activity artifacts | contract_version, manifest (jsonb), bundle_ref, evidence (jsonb), parent_id, status, embedding, curriculum_tags, source, verifier_scores, times_used, avg_score |
-| `assignments` | activity × student × variant | student_id, variant, status, score |
+| `session_activity_candidates` | Teacher-visible support/core/challenge shortlist | session_id, activity_id, difficulty_band, status, evidence |
+| `assignments` | delivered activity × student × session | session_id, candidate_id, student_id, variant, status, score |
 | `events` | Telemetry | type (attempt/hint/complete), payload, ts |
-| `student_profiles` | Pedagogical band, teacher-editable | band (support/core/challenge), modality_pref, notes |
+| `student_profiles` | Teacher-editable student notes/preferences | modality_pref, notes |
 
-Maps to the four memory tiers: active lesson → `segments`; teacher/class → `classes` + approval history; student pedagogical → `student_profiles`; repository → `activities`.
+Maps to the four memory tiers: active lesson → `segments`; teacher/class → `classes` + `session_activity_candidates`; student pedagogical → per-session `assignments.variant` plus `student_profiles` notes; repository → `activities`.
 
-Status: initial schema/migration scaffolding exists. The `activities` table should be aligned with the `ActivityArtifact` contract before Area C implementation starts.
+Status: Drizzle schema/migration scaffolding exists. Area C should write candidates to `session_activity_candidates`; Area E should create one `assignments` row per student, defaulting unselected students to the core variant.

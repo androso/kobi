@@ -1,42 +1,35 @@
-export type SessionStatus = "active" | "ended";
+import type {
+  teacherProfiles,
+  classes,
+  students,
+  studentProfiles,
+  sessions,
+  audioChunks,
+  segments,
+  curriculumChunks,
+  activityBundles,
+  activities,
+  sessionActivityCandidates,
+  assignments,
+  events,
+} from "./schema/index.js";
 
-export interface Session {
-  id: string;
-  class_id: string;
-  status: SessionStatus;
-  started_at: string;
-}
+export type TeacherProfile = typeof teacherProfiles.$inferSelect;
+export type Class = typeof classes.$inferSelect;
+export type Student = typeof students.$inferSelect;
+export type StudentProfile = typeof studentProfiles.$inferSelect;
 
-export type AudioChunkStatus = "pending" | "transcribing" | "transcribed" | "failed";
+export type Session = typeof sessions.$inferSelect;
+export type AudioChunk = typeof audioChunks.$inferSelect;
+export type AudioChunkStatus = AudioChunk["status"];
+export type Segment = typeof segments.$inferSelect;
 
-export interface AudioChunk {
-  id: string;
-  session_id: string;
-  chunk_index: number;
-  storage_path: string;
-  start_ms: number;
-  end_ms: number;
-  status: AudioChunkStatus;
-  transcript_text: string | null;
-  created_at: string;
-}
+/** @deprecated use `CurriculumChunk` — kept for the pre-Drizzle name used by packages/curriculum. */
+export type CurriculumChunkRow = typeof curriculumChunks.$inferSelect;
+export type CurriculumChunk = typeof curriculumChunks.$inferSelect;
 
-export interface Segment {
-  id: string;
-  session_id: string;
-  lesson_state: unknown;
-  confidence: number;
-  transcript_summary: string;
-  created_at: string;
-}
-
-export interface CurriculumChunkRow {
-  id: string;
-  grade: number;
-  subject: string;
-  unit: string;
-  objective_code: string;
-  text: string;
-  embedding: number[] | null;
-  created_at: string;
-}
+export type ActivityBundle = typeof activityBundles.$inferSelect;
+export type Activity = typeof activities.$inferSelect;
+export type SessionActivityCandidate = typeof sessionActivityCandidates.$inferSelect;
+export type Assignment = typeof assignments.$inferSelect;
+export type Event = typeof events.$inferSelect;

@@ -24,9 +24,9 @@ The manual-fallback path (D6) produces the same `lesson_state` shape via `lesson
 
 ## 2. `ActivityArtifact`
 
-Gate 0 decision on 2026-07-04: v0 activities are verified HTML artifacts, not JSON-rendered activities. There are no legacy JSON activities or consumers, so no migration or compatibility adapter is required.
+Produced by the planner/generator, checked by the verifier, stored in `activities` (the repository), and delivered through the sandbox host. Per the revised D2, an activity is one of the three verified HTML artifact families plus a manifest: `activities.bundle_ref` points at the self-contained HTML bundle, and `activities.manifest` (jsonb) is the schema-validated contract for curriculum tags, answer key, hints, `est_minutes`, variants, and family. Gate 0 decision on 2026-07-04: v0 activities are verified HTML artifacts within the three MVP families, not JSON-rendered activities. There are no legacy JSON activities or consumers, so no migration or compatibility adapter is required. Schema and SDK contracts are owned by `packages/activities`.
 
-Produced by the planner/generator, checked by the verifier, stored in `activities` (the repository), and delivered through the sandbox host. Schema and SDK contracts are owned by `packages/activities`.
+For the teacher approval flow, Area C writes support/core/challenge rows to `session_activity_candidates`. The teacher may assign selected students to support or challenge; every unselected student receives the approved core candidate by default. Area E records the final per-student delivery in `assignments.variant`.
 
 ```json
 {
