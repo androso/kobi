@@ -91,7 +91,7 @@ describe("App", () => {
 
     renderApp();
 
-    const passwordInput = screen.getByPlaceholderText(/contrase[nñ]a/i);
+    const passwordInput = screen.getByPlaceholderText(/^contrase[nñ]a$/i);
     expect(passwordInput).toHaveAttribute("type", "password");
 
     await user.click(screen.getByRole("button", { name: /mostrar contrase[nñ]a/i }));
@@ -104,7 +104,7 @@ describe("App", () => {
 
     renderApp();
     await user.type(screen.getByPlaceholderText(/correo electr[oó]nico/i), "maestra@kobi.test");
-    await user.type(screen.getByPlaceholderText(/contrase[nñ]a/i), "securepass");
+    await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "securepass");
     await user.click(screen.getByRole("button", { name: /^entrar$/i }));
 
     expect(screen.getByRole("heading", { name: /bienvenida de nuevo, sra\. henderson/i })).toBeInTheDocument();
@@ -117,7 +117,8 @@ describe("App", () => {
     renderApp();
     await user.click(screen.getByRole("button", { name: /reg[ií]strate/i }));
     await user.type(screen.getByPlaceholderText(/correo electr[oó]nico/i), "nueva@kobi.test");
-    await user.type(screen.getByPlaceholderText(/contrase[nñ]a/i), "securepass");
+    await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "securepass");
+    await user.type(screen.getByPlaceholderText(/confirmar contrase[nñ]a/i), "securepass");
     await user.click(screen.getByRole("button", { name: /^crear cuenta$/i }));
 
     expect(screen.getByRole("heading", { name: /bienvenida de nuevo, sra\. henderson/i })).toBeInTheDocument();
@@ -132,7 +133,8 @@ describe("App", () => {
     renderApp();
     await user.click(screen.getByRole("button", { name: /reg[ií]strate/i }));
     await user.type(screen.getByPlaceholderText(/correo electr[oó]nico/i), "nueva@kobi.test");
-    await user.type(screen.getByPlaceholderText(/contrase[nñ]a/i), "securepass");
+    await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "securepass");
+    await user.type(screen.getByPlaceholderText(/confirmar contrase[nñ]a/i), "securepass");
     await user.click(screen.getByRole("button", { name: /^crear cuenta$/i }));
 
     expect(screen.getByText(/desactiva la confirmacion por correo/i)).toBeInTheDocument();
@@ -184,12 +186,12 @@ describe("App", () => {
 
     renderApp();
     await user.type(screen.getByPlaceholderText(/correo electr[oó]nico/i), "maestra@kobi.test");
-    await user.type(screen.getByPlaceholderText(/contrase[nñ]a/i), "securepass");
+    await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "securepass");
     await user.click(screen.getByRole("button", { name: /^entrar$/i }));
     await user.click(screen.getByRole("button", { name: /salir/i }));
 
     expect(screen.getByPlaceholderText(/correo electr[oó]nico/i)).toHaveValue("");
-    expect(screen.getByPlaceholderText(/contrase[nñ]a/i)).toHaveValue("");
+    expect(screen.getByPlaceholderText(/^contrase[nñ]a$/i)).toHaveValue("");
   });
 
   it("shows the Supabase error after a failed teacher login", async () => {
@@ -200,7 +202,7 @@ describe("App", () => {
 
     renderApp();
     await user.type(screen.getByPlaceholderText(/correo electr[oó]nico/i), "wrong@example.com");
-    await user.type(screen.getByPlaceholderText(/contrase[nñ]a/i), "wrongpass");
+    await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "wrongpass");
     await user.click(screen.getByRole("button", { name: /^entrar$/i }));
 
     expect(screen.getByText(/invalid login credentials/i)).toBeInTheDocument();
@@ -213,7 +215,7 @@ describe("App", () => {
     
     // Login
     await user.type(screen.getByPlaceholderText(/correo electr[oó]nico/i), "maestra@kobi.test");
-    await user.type(screen.getByPlaceholderText(/contrase[nñ]a/i), "securepass");
+    await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "securepass");
     await user.click(screen.getByRole("button", { name: /^entrar$/i }));
 
     // Verify initial classes
@@ -248,7 +250,7 @@ describe("App", () => {
 
     renderApp();
     await user.type(screen.getByPlaceholderText(/correo electr[oó]nico/i), "maestra@kobi.test");
-    await user.type(screen.getByPlaceholderText(/contrase[nñ]a/i), "securepass");
+    await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "securepass");
     await user.click(screen.getByRole("button", { name: /^entrar$/i }));
 
     await user.click(screen.getAllByRole("button", { name: /compartir/i })[0]);
@@ -301,8 +303,8 @@ describe("App", () => {
     const user = userEvent.setup();
 
     renderApp();
-    await user.type(screen.getByPlaceholderText(/correo electr[oó]nico/i), "maestra@kobi.test");
-    await user.type(screen.getByPlaceholderText(/contrase[nñ]a/i), "securepass");
+    await user.type(screen.getByPlaceholderText(/^correo electr[oó]nico$/i), "maestra@kobi.test");
+    await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "securepass");
     await user.click(screen.getByRole("button", { name: /^entrar$/i }));
 
     await user.click(screen.getByRole("button", { name: /ayuda/i }));
@@ -316,7 +318,7 @@ describe("App", () => {
 
     renderApp();
     await user.type(screen.getByPlaceholderText(/correo electr[oó]nico/i), "maestra@kobi.test");
-    await user.type(screen.getByPlaceholderText(/contrase[nñ]a/i), "securepass");
+    await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "securepass");
     await user.click(screen.getByRole("button", { name: /^entrar$/i }));
     await user.click(screen.getByRole("button", { name: /ayuda/i }));
 

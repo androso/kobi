@@ -34,6 +34,9 @@ export function LoginPage() {
   const [teacherEmail, setTeacherEmail] = useState("");
   const [teacherPassword, setTeacherPassword] = useState("");
   const [showTeacherPassword, setShowTeacherPassword] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [isTeacherLoginPending, setIsTeacherLoginPending] = useState(false);
   const [isStudentLoginPending, setIsStudentLoginPending] = useState(false);
   const [classCode, setClassCode] = useState("");
@@ -43,6 +46,7 @@ export function LoginPage() {
   const [fieldErrors, setFieldErrors] = useState<{
     email?: string;
     password?: string;
+    confirmPassword?: string;
     code?: string;
     name?: string;
   }>({});
@@ -55,10 +59,18 @@ export function LoginPage() {
     return () => window.clearInterval(intervalId);
   }, []);
 
+  useEffect(() => {
+    const savedEmail = typeof window !== "undefined" ? window.localStorage.getItem("kobi_remembered_email") : null;
+    if (savedEmail) {
+      setTeacherEmail(savedEmail);
+      setRememberMe(true);
+    }
+  }, []);
+
   const slide = slides[activeSlide];
 
   async function handleTeacherSubmit() {
-    const nextFieldErrors: { email?: string; password?: string } = {};
+    const nextFieldErrors: { email?: string; password?: string; confirmPassword?: string } = {};
     const normalizedEmail = teacherEmail.trim().toLowerCase();
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -67,6 +79,13 @@ export function LoginPage() {
     if (!teacherPassword.trim()) nextFieldErrors.password = "Ingresa tu contraseña.";
     else if (teacherAuthMode === "signup" && teacherPassword.length < 6) {
       nextFieldErrors.password = "Usa al menos 6 caracteres.";
+    }
+    if (teacherAuthMode === "signup") {
+      if (!confirmPassword.trim()) {
+        nextFieldErrors.confirmPassword = "Confirma tu contraseña.";
+      } else if (confirmPassword !== teacherPassword) {
+        nextFieldErrors.confirmPassword = "Las contraseñas no coinciden.";
+      }
     }
 
     if (Object.keys(nextFieldErrors).length > 0) {
@@ -88,6 +107,14 @@ export function LoginPage() {
       setNotice("");
       setFieldErrors({});
       return;
+    }
+
+    if (typeof window !== "undefined") {
+      if (rememberMe) {
+        window.localStorage.setItem("kobi_remembered_email", normalizedEmail);
+      } else {
+        window.localStorage.removeItem("kobi_remembered_email");
+      }
     }
 
     setError("");
@@ -133,6 +160,8 @@ export function LoginPage() {
     setError("");
     setNotice("");
     setFieldErrors({});
+    setConfirmPassword("");
+    setShowConfirmPassword(false);
   }
 
   const teacherSubmitLabel =
@@ -284,13 +313,47 @@ export function LoginPage() {
                   {fieldErrors.password ? <p className="mt-2 text-xs text-[#1077e5]">{fieldErrors.password}</p> : null}
                 </label>
 
+                {teacherAuthMode === "signup" ? (
+                  <label className="group block">
+                    <span className="sr-only">Confirmar contraseña</span>
+                    <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                      <Lock className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
+                      <input
+                        className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
+                        onChange={(event) => setConfirmPassword(event.target.value)}
+                        placeholder="Confirmar contraseña"
+                        type={showConfirmPassword ? "text" : "password"}
+                        value={confirmPassword}
+                      />
+                      <button
+                        aria-label={showConfirmPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                        className="shrink-0 text-slate-300 transition hover:text-sky-400 focus-visible:text-[#1077e5] focus-visible:outline-none"
+                        onClick={() => setShowConfirmPassword((current) => !current)}
+                        type="button"
+                      >
+                        {showConfirmPassword ? (
+                          <EyeOff className="h-5 w-5" />
+                        ) : (
+                          <Eye className="h-5 w-5" />
+                        )}
+                      </button>
+                    </div>
+                    {fieldErrors.confirmPassword ? <p className="mt-2 text-xs text-[#1077e5]">{fieldErrors.confirmPassword}</p> : null}
+                  </label>
+                ) : null}
+
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <Button disabled={isTeacherLoginPending} onClick={handleTeacherSubmit} type="button">
                     {teacherSubmitLabel}
                   </Button>
                   {teacherAuthMode === "login" ? (
                     <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
-                      <input className="h-4 w-4 accent-[#1077e5]" type="checkbox" />
+                      <input
+                        className="h-4 w-4 accent-[#1077e5]"
+                        type="checkbox"
+                        checked={rememberMe}
+                        onChange={(event) => setRememberMe(event.target.checked)}
+                      />
                       Recordarme
                     </label>
                   ) : null}
