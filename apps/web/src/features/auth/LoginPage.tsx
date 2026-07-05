@@ -110,7 +110,7 @@ export function LoginPage() {
     if (normalizedCode === DEMO_CLASS.code) {
       setError("");
       setFieldErrors({});
-      loginStudent(normalizedName || DEMO_CLASS.studentName);
+      loginStudent(normalizedName || DEMO_CLASS.studentName, normalizedCode);
       navigate("/student");
       return;
     }

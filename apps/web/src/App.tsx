@@ -16,7 +16,9 @@ export function App() {
       <Route path="/teacher/repositories" element={<PreviousClasses />} />
       <Route path="/teacher/analytics" element={<SessionAnalytics />} />
       <Route path="/teacher/ayuda" element={<HelpCenter />} />
-      <Route path="/student" element={<StudentDashboard />} />
+      <Route path="/student" element={<Navigate to="/student/asignaciones" replace />} />
+      <Route path="/student/asignaciones" element={<StudentDashboard />} />
+      <Route path="/student/progreso" element={<StudentDashboard />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

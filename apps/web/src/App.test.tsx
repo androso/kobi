@@ -71,8 +71,17 @@ describe("App", () => {
     await user.type(screen.getByPlaceholderText(/nombre/i), "Ana");
     await user.click(screen.getByRole("button", { name: /entrar a clase/i }));
 
-    expect(screen.getByRole("heading", { name: /hola, ana/i })).toBeInTheDocument();
-    expect(screen.getByText(/actividad lista/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^ana$/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: /asignaciones y artefactos/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /noticia/i }));
+    await user.click(screen.getByRole("button", { name: /entregar respuesta/i }));
+
+    expect(screen.getAllByText(/actividad completada/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/respuesta correcta/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("link", { name: /progreso/i }));
+    expect(screen.getByRole("heading", { name: /progreso/i })).toBeInTheDocument();
   });
 
   it("clears login fields after logout", async () => {
