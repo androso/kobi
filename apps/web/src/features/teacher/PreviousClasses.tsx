@@ -1,15 +1,14 @@
 import { useState } from "react";
-import { 
-  FolderOpen, 
-  Calendar, 
-  Clock, 
-  Filter, 
-  TrendingUp, 
-  Mail, 
-  Bell, 
-  Search, 
+import {
+  FolderOpen,
+  Calendar,
+  Clock,
+  Filter,
+  TrendingUp,
+  Mail,
+  Search,
   X,
-  Phone,
+  Mic,
   Play,
   Pause,
   Volume2,
@@ -18,6 +17,7 @@ import {
   ChevronRight
 } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
+import { Header } from "./components/Header";
 import { CreateClassModal } from "./components/CreateClassModal";
 
 // ---------------------------------------------------------------------------
@@ -137,36 +137,7 @@ export function PreviousClasses() {
         <div className="flex flex-col p-3 sm:p-4 lg:p-5 h-screen">
           <div className="flex-1 flex flex-col bg-[#f8f9ff] rounded-[30px] border border-slate-200/50 overflow-hidden shadow-sm min-h-0">
             
-            {/* Header (Integrated Top Bar) */}
-            <header className="h-[72px] shrink-0 flex items-center justify-between px-6 bg-white border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-slate-800 uppercase tracking-wider">Historial de Clases</span>
-              </div>
-              
-              {/* Search Bar */}
-              <div className="flex-grow flex justify-center max-w-md mx-6">
-                <div className="relative w-full">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 h-4 w-4" />
-                  <input 
-                    className="w-full bg-[#f1f5f9] border-none rounded-xl py-2 pl-11 pr-4 focus:ring-2 focus:ring-[#004ac6]/20 outline-none transition-all text-sm placeholder:text-slate-400 placeholder:italic" 
-                    placeholder="Buscar por clase, tema o categoría..." 
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-              </div>
-              
-              {/* User Avatar & Icons */}
-              <div className="flex items-center gap-4">
-                <button className="text-slate-500 hover:text-[#004ac6] transition-colors p-1" title="Notificaciones">
-                  <Bell className="h-5 w-5" />
-                </button>
-                <div className="w-9 h-9 rounded-full border border-slate-200 overflow-hidden bg-violet-100 flex items-center justify-center text-xs font-bold text-violet-700">
-                  SH
-                </div>
-              </div>
-            </header>
+            <Header />
 
             {/* Dashboard Content split (Main list on left, stats sidebar on right) */}
             <div className="flex-grow flex min-h-0 overflow-hidden">
@@ -357,7 +328,7 @@ export function PreviousClasses() {
                 <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm flex flex-col gap-4">
                   <div className="flex items-center gap-4">
                     <div className="w-11 h-11 rounded-full bg-[#004ac6]/10 flex items-center justify-center text-[#004ac6] shrink-0">
-                      <Phone className="w-5 h-5 text-[#004ac6]" />
+                      <Mic className="w-5 h-5 text-[#004ac6]" />
                     </div>
                     <div>
                       <h4 className="font-bold text-slate-800 text-sm leading-tight">Clase finalizada</h4>
@@ -442,7 +413,7 @@ export function PreviousClasses() {
                 <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4.5 mb-6 flex items-center justify-between shrink-0">
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-full bg-[#004ac6]/10 flex items-center justify-center text-[#004ac6]">
-                      <Phone className="w-4.5 h-4.5" />
+                      <Mic className="w-4.5 h-4.5" />
                     </div>
                     <div>
                       <h5 className="font-bold text-slate-800 text-sm leading-tight">{selectedSession.title}</h5>
