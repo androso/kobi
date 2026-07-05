@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
+import type { ArtifactContent, ArtifactKind, QuizAnswer } from "./artifacts";
 
 interface UserProfile {
   role: "teacher" | "student" | null;
@@ -220,6 +221,51 @@ export interface ClassItem {
   image?: string;
 }
 
+/**
+ * Difficulty variant of an artefacto: apoyo (support), base (core), reto (challenge).
+ */
+export type ArtefactoBand = "support" | "core" | "challenge";
+
+/**
+ * An "artefacto" is the student-facing activity the teacher publishes to a
+ * class — the shared contract between the teacher flow and the student
+ * dashboard. Its typed `content` (see lib/artifacts.ts) is what the client
+ * renders, analogous to a Claude artifact.
+ */
+export interface Artefacto {
+  id: string;
+  classId: string;
+  title: string;
+  section: string;
+  objective: string;
+  band: ArtefactoBand;
+  kind: ArtifactKind;
+  content: ArtifactContent;
+  estimateLabel?: string;
+  breadcrumb?: string[];
+  status: "draft" | "assigned";
+  due: string;
+  createdAt: number;
+}
+
+/**
+ * A student's submission for an artefacto; flows back so teacher analytics can
+ * report real progress. Keyed uniquely by (artefactoId, studentName).
+ */
+export interface ArtefactoSubmission {
+  id: string;
+  artefactoId: string;
+  classId: string;
+  studentName: string;
+  answers: QuizAnswer[];
+  score: number;
+  total: number;
+  attempts: number;
+  hintsUsed: number;
+  status: "in_progress" | "submitted" | "completed";
+  submittedAt: number;
+}
+
 export interface SessionTranscriptLine {
   time: string;
   speaker: string;
@@ -247,6 +293,8 @@ interface ClassState {
   classError: string | null;
   monitoringClassId: string | null;
   sessions: SavedSession[];
+  artefactos: Artefacto[];
+  submissions: ArtefactoSubmission[];
   loadTeacherClasses: (teacherId: string) => Promise<void>;
   startMonitoring: (id: string) => void;
   stopMonitoring: () => void;
@@ -257,6 +305,14 @@ interface ClassState {
     grade: number;
     subject: "lenguaje" | "ciencias" | "matematicas" | "sociales";
   }, teacherId: string) => Promise<{ error?: string; classItem?: ClassItem }>;
+  /** Teacher publishes an artefacto to a class. */
+  assignArtefacto: (
+    artefacto: Omit<Artefacto, "id" | "status" | "createdAt"> & Partial<Pick<Artefacto, "status">>,
+  ) => void;
+  /** Student submits a quiz attempt; upserts by (artefactoId, studentName). */
+  submitArtefacto: (
+    submission: Omit<ArtefactoSubmission, "id" | "submittedAt" | "status">,
+  ) => void;
   resetClasses: () => void;
 }
 
@@ -378,12 +434,175 @@ const defaultClasses: ClassItem[] = [
   }
 ];
 
+// Seeded artefactos for the demo class (join code KOBI7 -> class-1). Stand in
+// for teacher-published activities until artifacts are backend-driven.
+const defaultArtefactos: Artefacto[] = [
+  {
+    id: "artefacto-1",
+    classId: "class-1",
+    title: "Vocabulario en contexto: La noticia",
+    section: "Unidad 4 · Lección 5",
+    objective: "L7.4.2",
+    band: "core",
+    kind: "quiz",
+    estimateLabel: "Quiz · 3 preguntas",
+    breadcrumb: ["Lengua", "La noticia", "Vocabulario"],
+    content: {
+      type: "quiz",
+      questions: [
+        {
+          id: "q1",
+          prompt: "El periodista redacto la ___ antes del mediodia.",
+          choices: [
+            { id: "a", label: "noticia" },
+            { id: "b", label: "novela" },
+            { id: "c", label: "receta" },
+          ],
+          correctChoiceId: "a",
+          hints: [
+            "Piensa en la palabra que nombra lo que escribio el periodista.",
+            "La frase habla de un texto informativo, no de una historia o una comida.",
+          ],
+          explanation: "Una noticia es un texto informativo sobre un hecho reciente.",
+        },
+        {
+          id: "q2",
+          prompt: "¿Qué parte de la noticia resume lo esencial al inicio?",
+          choices: [
+            { id: "a", label: "la entradilla" },
+            { id: "b", label: "el epílogo" },
+            { id: "c", label: "la moraleja" },
+          ],
+          correctChoiceId: "a",
+          hints: ["Va justo después del titular."],
+          explanation: "La entradilla resume el qué, quién, cuándo y dónde.",
+        },
+        {
+          id: "q3",
+          prompt: "Una noticia responde principalmente a la pregunta ___.",
+          choices: [
+            { id: "a", label: "qué pasó" },
+            { id: "b", label: "cómo cocinar" },
+            { id: "c", label: "quién ganó ayer" },
+          ],
+          correctChoiceId: "a",
+          hints: ["Busca la opción más general."],
+          explanation: "Toda noticia parte del hecho: qué pasó.",
+        },
+      ],
+    },
+    status: "assigned",
+    due: "Hoy",
+    createdAt: 0,
+  },
+  {
+    id: "artefacto-2",
+    classId: "class-1",
+    title: "Lectura rápida",
+    section: "Unidad 4 · Lección 5",
+    objective: "L7.4.1",
+    band: "support",
+    kind: "quiz",
+    estimateLabel: "Quiz · 2 preguntas",
+    breadcrumb: ["Lengua", "La noticia", "Lectura"],
+    content: {
+      type: "quiz",
+      questions: [
+        {
+          id: "q1",
+          prompt: "El propósito principal de una noticia es ___.",
+          choices: [
+            { id: "a", label: "informar" },
+            { id: "b", label: "entretener con ficción" },
+            { id: "c", label: "dar una receta" },
+          ],
+          correctChoiceId: "a",
+          hints: ["Piensa en para qué sirve un periódico."],
+        },
+        {
+          id: "q2",
+          prompt: "El título breve que encabeza la noticia se llama ___.",
+          choices: [
+            { id: "a", label: "titular" },
+            { id: "b", label: "índice" },
+            { id: "c", label: "portada" },
+          ],
+          correctChoiceId: "a",
+          hints: ["Es lo primero que lees, en letra grande."],
+        },
+      ],
+    },
+    status: "assigned",
+    due: "Mañana",
+    createdAt: 0,
+  },
+  {
+    id: "artefacto-3",
+    classId: "class-1",
+    title: "Reto extra",
+    section: "Unidad 4 · Lección 5",
+    objective: "L7.4.3",
+    band: "challenge",
+    kind: "quiz",
+    estimateLabel: "Quiz · 1 pregunta",
+    breadcrumb: ["Lengua", "La noticia", "Reto"],
+    content: {
+      type: "quiz",
+      questions: [
+        {
+          id: "q1",
+          prompt: "La parte de la noticia que resume lo esencial se llama ___.",
+          choices: [
+            { id: "a", label: "entradilla" },
+            { id: "b", label: "epílogo" },
+            { id: "c", label: "moraleja" },
+          ],
+          correctChoiceId: "a",
+          hints: ["Va justo después del titular.", "Resume el qué, quién y cuándo."],
+        },
+      ],
+    },
+    status: "assigned",
+    due: "Opcional",
+    createdAt: 0,
+  },
+];
+
+/** Resolve a class by its join code (case-insensitive). */
+export function findClassByCode(classes: ClassItem[], code: string): ClassItem | undefined {
+  const normalized = code.trim().toUpperCase();
+  return classes.find((item) => item.joinCode.toUpperCase() === normalized);
+}
+
+/** Artefactos assigned to a class, oldest first. */
+export function selectClassArtefactos(
+  state: Pick<ClassState, "artefactos">,
+  classId: string,
+): Artefacto[] {
+  return state.artefactos
+    .filter((item) => item.classId === classId && item.status === "assigned")
+    .sort((a, b) => a.createdAt - b.createdAt);
+}
+
+/** A student's submission for a given artefacto, if any. */
+export function selectSubmission(
+  state: Pick<ClassState, "submissions">,
+  artefactoId: string,
+  studentName: string,
+): ArtefactoSubmission | undefined {
+  return state.submissions.find(
+    (item) => item.artefactoId === artefactoId && item.studentName === studentName,
+  );
+}
+
 export const useClassStore = create<ClassState>((set) => ({
   classes: defaultClasses,
   loadingClasses: false,
   classError: null,
   monitoringClassId: null,
   sessions: [],
+  artefactos: defaultArtefactos,
+  submissions: [],
   loadTeacherClasses: async (teacherId) => {
     if (!supabase) {
       set({ classError: "Supabase no esta configurado." });
@@ -468,5 +687,46 @@ export const useClassStore = create<ClassState>((set) => ({
 
     return { error: "No se pudo generar un codigo unico para la clase." };
   },
-  resetClasses: () => set({ classes: defaultClasses, loadingClasses: false, classError: null }),
+  assignArtefacto: (artefacto) =>
+    set((state) => ({
+      artefactos: [
+        ...state.artefactos,
+        {
+          ...artefacto,
+          id: `artefacto-${Date.now()}`,
+          status: artefacto.status ?? "assigned",
+          createdAt: Date.now(),
+        },
+      ],
+    })),
+  submitArtefacto: (submission) =>
+    set((state) => {
+      const status: ArtefactoSubmission["status"] =
+        submission.score >= submission.total ? "completed" : "submitted";
+      const existing = state.submissions.find(
+        (item) =>
+          item.artefactoId === submission.artefactoId && item.studentName === submission.studentName,
+      );
+
+      const record: ArtefactoSubmission = {
+        ...submission,
+        id: existing?.id ?? `submission-${Date.now()}`,
+        status,
+        submittedAt: Date.now(),
+      };
+
+      return {
+        submissions: existing
+          ? state.submissions.map((item) => (item.id === existing.id ? record : item))
+          : [...state.submissions, record],
+      };
+    }),
+  resetClasses: () =>
+    set({
+      classes: defaultClasses,
+      loadingClasses: false,
+      classError: null,
+      artefactos: defaultArtefactos,
+      submissions: [],
+    }),
 }));

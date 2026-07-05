@@ -11,8 +11,8 @@ const slides = [
     image: "/auth/live-session.png"
   },
   {
-    title: "Curriculo conectado",
-    body: "Cada opcion muestra objetivo, evidencia y contenido reutilizable.",
+    title: "Currículo conectado",
+    body: "Cada opción muestra objetivo, evidencia y contenido reutilizable.",
     image: "/auth/curriculum.png"
   },
   {
@@ -34,6 +34,9 @@ export function LoginPage() {
   const [teacherEmail, setTeacherEmail] = useState("");
   const [teacherPassword, setTeacherPassword] = useState("");
   const [showTeacherPassword, setShowTeacherPassword] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [isTeacherLoginPending, setIsTeacherLoginPending] = useState(false);
   const [isStudentLoginPending, setIsStudentLoginPending] = useState(false);
   const [classCode, setClassCode] = useState("");
@@ -43,6 +46,7 @@ export function LoginPage() {
   const [fieldErrors, setFieldErrors] = useState<{
     email?: string;
     password?: string;
+    confirmPassword?: string;
     code?: string;
     name?: string;
   }>({});
@@ -55,18 +59,33 @@ export function LoginPage() {
     return () => window.clearInterval(intervalId);
   }, []);
 
+  useEffect(() => {
+    const savedEmail = typeof window !== "undefined" ? window.localStorage.getItem("kobi_remembered_email") : null;
+    if (savedEmail) {
+      setTeacherEmail(savedEmail);
+      setRememberMe(true);
+    }
+  }, []);
+
   const slide = slides[activeSlide];
 
   async function handleTeacherSubmit() {
-    const nextFieldErrors: { email?: string; password?: string } = {};
+    const nextFieldErrors: { email?: string; password?: string; confirmPassword?: string } = {};
     const normalizedEmail = teacherEmail.trim().toLowerCase();
     const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-    if (!normalizedEmail) nextFieldErrors.email = "Ingresa tu correo.";
-    else if (!emailPattern.test(normalizedEmail)) nextFieldErrors.email = "Escribe un correo valido.";
-    if (!teacherPassword.trim()) nextFieldErrors.password = "Ingresa tu contrasena.";
+    if (!normalizedEmail) nextFieldErrors.email = "Ingresa tu correo electrónico.";
+    else if (!emailPattern.test(normalizedEmail)) nextFieldErrors.email = "Escribe un correo electrónico válido.";
+    if (!teacherPassword.trim()) nextFieldErrors.password = "Ingresa tu contraseña.";
     else if (teacherAuthMode === "signup" && teacherPassword.length < 6) {
       nextFieldErrors.password = "Usa al menos 6 caracteres.";
+    }
+    if (teacherAuthMode === "signup") {
+      if (!confirmPassword.trim()) {
+        nextFieldErrors.confirmPassword = "Confirma tu contraseña.";
+      } else if (confirmPassword !== teacherPassword) {
+        nextFieldErrors.confirmPassword = "Las contraseñas no coinciden.";
+      }
     }
 
     if (Object.keys(nextFieldErrors).length > 0) {
@@ -90,6 +109,14 @@ export function LoginPage() {
       return;
     }
 
+    if (typeof window !== "undefined") {
+      if (rememberMe) {
+        window.localStorage.setItem("kobi_remembered_email", normalizedEmail);
+      } else {
+        window.localStorage.removeItem("kobi_remembered_email");
+      }
+    }
+
     setError("");
     setNotice("");
     setFieldErrors({});
@@ -101,8 +128,8 @@ export function LoginPage() {
     const normalizedCode = classCode.trim().toUpperCase();
     const normalizedName = studentName.trim();
 
-    if (!normalizedCode) nextFieldErrors.code = "Ingresa el codigo de clase.";
-    else if (normalizedCode.length < 4) nextFieldErrors.code = "El codigo parece incompleto.";
+    if (!normalizedCode) nextFieldErrors.code = "Ingresa el código de clase.";
+    else if (normalizedCode.length < 4) nextFieldErrors.code = "El código parece incompleto.";
     if (!normalizedName) nextFieldErrors.name = "Escribe tu nombre.";
 
     if (Object.keys(nextFieldErrors).length > 0) {
@@ -133,6 +160,8 @@ export function LoginPage() {
     setError("");
     setNotice("");
     setFieldErrors({});
+    setConfirmPassword("");
+    setShowConfirmPassword(false);
   }
 
   const teacherSubmitLabel =
@@ -147,12 +176,11 @@ export function LoginPage() {
   return (
     <main className="font-login flex min-h-screen items-center justify-center bg-[#eef5fb] px-4 py-8 text-foreground sm:px-6">
       <div className="grid min-h-[42rem] w-full max-w-6xl overflow-hidden rounded-[2rem] bg-white shadow-2xl shadow-slate-200/80 lg:grid-cols-[1fr_0.9fr]">
-        <section className="relative flex min-h-[34rem] overflow-hidden bg-[#2f8ef7] px-7 py-8 text-white sm:px-10 lg:min-h-full lg:px-12">
-          <div className="absolute inset-0 opacity-35">
-            <div className="absolute left-[12%] top-[24%] h-4 w-28 rounded-full bg-white/20" />
-            <div className="absolute left-[56%] top-[30%] h-5 w-36 rounded-full bg-white/15" />
-            <div className="absolute left-[22%] top-[43%] h-4 w-60 rounded-full bg-white/10" />
-            <div className="absolute bottom-[30%] left-[54%] h-5 w-24 rounded-full bg-white/15" />
+        <section className="relative flex min-h-[34rem] overflow-hidden bg-gradient-to-br from-[#0c51c7] via-[#1077e5] to-[#4fa1ff] px-7 py-8 text-white sm:px-10 lg:min-h-full lg:px-12">
+          <div className="absolute inset-0 overflow-hidden opacity-40">
+            <div className="absolute -left-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-xl" />
+            <div className="absolute right-10 top-1/4 h-64 w-64 rounded-full bg-white/5 blur-2xl" />
+            <div className="absolute -bottom-20 left-1/3 h-52 w-52 rounded-full bg-white/10 blur-xl" />
           </div>
 
           <div className="pointer-events-none absolute -right-28 top-1/2 z-20 h-[115%] w-60 -translate-y-1/2 rounded-l-[100%] bg-white" />
@@ -193,12 +221,18 @@ export function LoginPage() {
 
         <section className="flex items-center justify-center bg-white px-7 py-10 sm:px-10 lg:px-14">
           <div className="w-full max-w-md">
-            <div className="mb-10">
+            <div className="mb-8">
               <p className="text-sm font-medium text-primary">Bienvenido a Kobi</p>
-              <h2 className="mt-2 text-4xl font-medium tracking-normal text-[#1077e5]">Iniciar sesion</h2>
+              <h2 className="mt-2 text-4xl font-medium tracking-normal text-[#1077e5]">
+                {role === "student"
+                  ? "Entrar a la clase"
+                  : teacherAuthMode === "login"
+                    ? "Iniciar sesión"
+                    : "Crear cuenta"}
+              </h2>
               <p className="mt-4 text-sm leading-6 text-muted-foreground">
-                Entra con calma. Kobi se encarga de convertir los ultimos minutos de clase en una actividad clara,
-                rapida y lista para tus estudiantes.
+                Entra con calma. Kobi se encarga de convertir los últimos minutos de clase en una actividad clara,
+                rápida y lista para tus estudiantes.
               </p>
             </div>
 
@@ -229,8 +263,8 @@ export function LoginPage() {
               </button>
             </div>
 
-            {error ? <p className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p> : null}
-            {notice ? <p className="mb-5 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{notice}</p> : null}
+            {error ? <p className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600 animate-fade-in-up">{error}</p> : null}
+            {notice ? <p className="mb-5 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700 animate-fade-in-up">{notice}</p> : null}
 
             {role === "teacher" ? (
               <form
@@ -240,63 +274,33 @@ export function LoginPage() {
                   void handleTeacherSubmit();
                 }}
               >
-                <div className="grid grid-cols-2 gap-2 rounded-full bg-slate-50 p-1">
-                  <button
-                    className={`rounded-full px-3 py-2 text-sm font-medium transition ${
-                      teacherAuthMode === "login"
-                        ? "bg-white text-[#1077e5] shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                    onClick={() => {
-                      setTeacherAuthMode("login");
-                      clearLoginErrors();
-                    }}
-                    type="button"
-                  >
-                    Iniciar sesion
-                  </button>
-                  <button
-                    className={`rounded-full px-3 py-2 text-sm font-medium transition ${
-                      teacherAuthMode === "signup"
-                        ? "bg-white text-[#1077e5] shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                    onClick={() => {
-                      setTeacherAuthMode("signup");
-                      clearLoginErrors();
-                    }}
-                    type="button"
-                  >
-                    Crear cuenta
-                  </button>
-                </div>
-
                 <label className="group block">
-                  <span className="sr-only">Correo electronico</span>
-                  <div className="flex items-center rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                  <span className="sr-only">Correo electrónico</span>
+                  <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                    <Mail className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                     <input
                       className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
                       onChange={(event) => setTeacherEmail(event.target.value)}
-                      placeholder="Correo electronico"
+                      placeholder="Correo electrónico"
                       type="email"
                       value={teacherEmail}
                     />
-                    <Mail className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                   </div>
                   {fieldErrors.email ? <p className="mt-2 text-xs text-[#1077e5]">{fieldErrors.email}</p> : null}
                 </label>
                 <label className="group block">
-                  <span className="sr-only">Contrasena</span>
+                  <span className="sr-only">Contraseña</span>
                   <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                    <Lock className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                     <input
                       className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
                       onChange={(event) => setTeacherPassword(event.target.value)}
-                      placeholder="Contrasena"
+                      placeholder="Contraseña"
                       type={showTeacherPassword ? "text" : "password"}
                       value={teacherPassword}
                     />
                     <button
-                      aria-label={showTeacherPassword ? "Ocultar contrasena" : "Mostrar contrasena"}
+                      aria-label={showTeacherPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
                       className="shrink-0 text-slate-300 transition hover:text-sky-400 focus-visible:text-[#1077e5] focus-visible:outline-none"
                       onClick={() => setShowTeacherPassword((current) => !current)}
                       type="button"
@@ -307,32 +311,97 @@ export function LoginPage() {
                         <Eye className="h-5 w-5" />
                       )}
                     </button>
-                    <Lock className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                   </div>
                   {fieldErrors.password ? <p className="mt-2 text-xs text-[#1077e5]">{fieldErrors.password}</p> : null}
                 </label>
+
+                {teacherAuthMode === "signup" ? (
+                  <label className="group block">
+                    <span className="sr-only">Confirmar contraseña</span>
+                    <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                      <Lock className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
+                      <input
+                        className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
+                        onChange={(event) => setConfirmPassword(event.target.value)}
+                        placeholder="Confirmar contraseña"
+                        type={showConfirmPassword ? "text" : "password"}
+                        value={confirmPassword}
+                      />
+                      <button
+                        aria-label={showConfirmPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                        className="shrink-0 text-slate-300 transition hover:text-sky-400 focus-visible:text-[#1077e5] focus-visible:outline-none"
+                        onClick={() => setShowConfirmPassword((current) => !current)}
+                        type="button"
+                      >
+                        {showConfirmPassword ? (
+                          <EyeOff className="h-5 w-5" />
+                        ) : (
+                          <Eye className="h-5 w-5" />
+                        )}
+                      </button>
+                    </div>
+                    {fieldErrors.confirmPassword ? <p className="mt-2 text-xs text-[#1077e5]">{fieldErrors.confirmPassword}</p> : null}
+                  </label>
+                ) : null}
 
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <Button disabled={isTeacherLoginPending} onClick={handleTeacherSubmit} type="button">
                     {teacherSubmitLabel}
                   </Button>
                   {teacherAuthMode === "login" ? (
-                    <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <input className="h-4 w-4 accent-[#1077e5]" type="checkbox" />
+                    <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+                      <input
+                        className="h-4 w-4 accent-[#1077e5]"
+                        type="checkbox"
+                        checked={rememberMe}
+                        onChange={(event) => setRememberMe(event.target.checked)}
+                      />
                       Recordarme
                     </label>
                   ) : null}
                 </div>
 
-                {teacherAuthMode === "login" ? (
-                  <button className="block text-sm font-medium text-[#1077e5]" type="button">
-                    Olvidaste tu contrasena?
-                  </button>
-                ) : (
-                  <p className="text-sm leading-6 text-muted-foreground">
-                    Crea tu acceso docente para preparar clases y revisar actividad en vivo.
-                  </p>
-                )}
+                <div className="mt-6 flex flex-col gap-3">
+                  {teacherAuthMode === "login" ? (
+                    <>
+                      <button className="self-start text-sm font-medium text-[#1077e5] hover:text-[#005cb3] transition-colors" type="button">
+                        ¿Olvidaste tu contraseña?
+                      </button>
+                      <p className="text-sm text-slate-500">
+                        ¿No tienes una cuenta?{" "}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTeacherAuthMode("signup");
+                            clearLoginErrors();
+                          }}
+                          className="font-bold text-[#1077e5] hover:underline focus:outline-none"
+                        >
+                          Regístrate
+                        </button>
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm text-slate-500">
+                        ¿Ya tienes una cuenta?{" "}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTeacherAuthMode("login");
+                            clearLoginErrors();
+                          }}
+                          className="font-bold text-[#1077e5] hover:underline focus:outline-none"
+                        >
+                          Inicia sesión
+                        </button>
+                      </p>
+                      <p className="text-xs leading-6 text-muted-foreground">
+                        Crea tu acceso docente para preparar clases y revisar actividad en vivo.
+                      </p>
+                    </>
+                  )}
+                </div>
               </form>
             ) : (
               <form
@@ -343,22 +412,23 @@ export function LoginPage() {
                 }}
               >
                 <label className="group block">
-                  <span className="sr-only">Codigo de clase</span>
-                  <div className="flex items-center rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                  <span className="sr-only">Código de clase</span>
+                  <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                    <BookOpen className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                     <input
                       className="w-full bg-transparent text-base uppercase text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:normal-case placeholder:text-slate-300"
                       onChange={(event) => setClassCode(event.target.value)}
-                      placeholder="Codigo de clase"
+                      placeholder="Código de clase"
                       type="text"
                       value={classCode}
                     />
-                    <BookOpen className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                   </div>
                   {fieldErrors.code ? <p className="mt-2 text-xs text-[#1077e5]">{fieldErrors.code}</p> : null}
                 </label>
                 <label className="group block">
                   <span className="sr-only">Nombre</span>
-                  <div className="flex items-center rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                  <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                    <User className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                     <input
                       className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
                       onChange={(event) => setStudentName(event.target.value)}
@@ -366,7 +436,6 @@ export function LoginPage() {
                       type="text"
                       value={studentName}
                     />
-                    <User className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                   </div>
                   {fieldErrors.name ? <p className="mt-2 text-xs text-[#1077e5]">{fieldErrors.name}</p> : null}
                 </label>
