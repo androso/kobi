@@ -71,8 +71,8 @@ export function TeacherDashboard() {
 
               {/* Grid de Clases */}
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {classes.map((item) => (
-                  <ClassCard item={item} key={item.id} viewMode={viewMode} />
+                {classes.map((item, index) => (
+                  <ClassCard item={item} key={item.id} viewMode={viewMode} index={index} />
                 ))}
               </div>
             </section>

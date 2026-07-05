@@ -136,4 +136,74 @@ describe("App", () => {
     expect(screen.getByText("Nomadas")).toBeInTheDocument();
     expect(screen.getByText("Fuego")).toBeInTheDocument();
   });
+
+  it("navigates to the previous classes section and opens the summary modal", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    // Login as teacher
+    await user.type(screen.getByPlaceholderText("Correo electronico"), "maestra@kobi.demo");
+    await user.type(screen.getByPlaceholderText("Contrasena"), "kobi123");
+    await user.click(screen.getByRole("button", { name: "Entrar" }));
+
+    // Click on "Clases anteriores" in the sidebar
+    const sidebarLink = screen.getByRole("button", { name: /clases anteriores/i });
+    expect(sidebarLink).toBeInTheDocument();
+    await user.click(sidebarLink);
+
+    // Verify we are on the Historial de Clases page
+    expect(screen.getByText("Historial de Sesiones")).toBeInTheDocument();
+    expect(screen.getByText("Ciencias 4to Grado - Sección A")).toBeInTheDocument();
+
+    // Click on "Ver detalles" button of the first session
+    const detailsButtons = screen.getAllByRole("button", { name: /ver detalles/i });
+    await user.click(detailsButtons[0]);
+
+    // Verify unified details modal opens with its contents
+    expect(screen.getByText("Detalles de la Clase")).toBeInTheDocument();
+    expect(screen.getByText(/Se discutieron los niveles tróficos/i)).toBeInTheDocument();
+    expect(screen.getAllByText("Carlos M.:")[0]).toBeInTheDocument();
+
+    // Close modal
+    await user.click(screen.getByRole("button", { name: /entendido/i }));
+    expect(screen.queryByText("Detalles de la Clase")).not.toBeInTheDocument();
+  });
+
+  it("opens the teacher help center from the sidebar", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+    await user.type(screen.getByPlaceholderText(/correo electronico/i), "maestra@kobi.demo");
+    await user.type(screen.getByPlaceholderText(/contrasena/i), "kobi123");
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
+
+    await user.click(screen.getByRole("button", { name: /ayuda/i }));
+
+    expect(screen.getByRole("heading", { name: /^kobi$/i })).toBeInTheDocument();
+    expect(screen.getByText(/atajos para crear clases, revisar estado y preparar la siguiente sesión/i)).toBeInTheDocument();
+  });
+
+  it("filters help topics and opens the relevant teacher section", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+    await user.type(screen.getByPlaceholderText(/correo electronico/i), "maestra@kobi.demo");
+    await user.type(screen.getByPlaceholderText(/contrasena/i), "kobi123");
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
+    await user.click(screen.getByRole("button", { name: /ayuda/i }));
+
+    const search = screen.getByLabelText(/buscar ayuda/i);
+    await user.clear(search);
+    await user.type(search, "monitoreo");
+
+    expect(screen.getByRole("button", { name: /ver monitoreo en vivo/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /crear una clase/i })).not.toBeInTheDocument();
+
+    await user.click(screen.getAllByRole("button", { name: /ir al monitoreo/i })[0]);
+    expect(screen.getByRole("heading", { name: /monitoreo en vivo/i })).toBeInTheDocument();
+  });
 });

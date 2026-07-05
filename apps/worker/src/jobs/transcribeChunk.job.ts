@@ -25,14 +25,43 @@ export function registerTranscribeChunkJob(boss: PgBoss, supabase: SupabaseClien
 
       const { audioChunkId, audioUrl, mimeType, sessionId } = job.data;
 
-      await supabase.from("audio_chunks").update({ status: "transcribing" }).eq("id", audioChunkId);
+      const { error: statusError } = await supabase
+        .from("audio_chunks")
+        .update({ status: "transcribing" })
+        .eq("id", audioChunkId);
 
-      const { transcriptText } = await transcribeAudioChunk({ audioUrl, mimeType });
+      if (statusError) {
+        throw new Error(`transcribeChunk job: failed to mark chunk transcribing: ${statusError.message}`);
+      }
 
-      await supabase
+      let transcriptText: string;
+      try {
+        const result = await transcribeAudioChunk({ audioUrl, mimeType });
+        transcriptText = result.transcriptText;
+      } catch (error) {
+        const { error: failedStatusError } = await supabase
+          .from("audio_chunks")
+          .update({ status: "failed" })
+          .eq("id", audioChunkId);
+
+        if (failedStatusError) {
+          throw new Error(
+            `transcribeChunk job: transcription failed and failed status could not be saved: ${failedStatusError.message}`,
+            { cause: error },
+          );
+        }
+
+        throw error;
+      }
+
+      const { error: updateError } = await supabase
         .from("audio_chunks")
         .update({ status: "transcribed", transcript_text: transcriptText })
         .eq("id", audioChunkId);
+
+      if (updateError) {
+        throw new Error(`transcribeChunk job: failed to save transcript: ${updateError.message}`);
+      }
 
       await boss.send(JOB_BUILD_LESSON_STATE, { sessionId });
     },
