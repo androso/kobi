@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BookOpen, Eye, EyeOff, Lock, Mail, User, GraduationCap } from "lucide-react";
+import { BookOpen, Eye, EyeOff, Lock, Mail, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "../../components/ui/button";
 import { useAuthStore } from "../../lib/store";
@@ -170,24 +170,18 @@ export function LoginPage() {
                 <p className="mt-4 text-base leading-7 text-white/85">{slide.body}</p>
               </div>
 
-              <div className="mt-8 flex gap-2" aria-label="Cambiar panel informativo">
+              <div className="mt-8 flex gap-4" aria-label="Cambiar panel informativo">
                 {slides.map((item, index) => (
                   <button
                     aria-label={`Ver ${item.title}`}
                     aria-current={index === activeSlide}
-                    className="group relative flex h-11 w-11 items-center justify-center rounded-full transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                    className={`h-4 w-4 rounded-full border-2 border-white transition-all duration-300 ${
+                      index === activeSlide ? "scale-110 bg-white" : "bg-transparent hover:bg-white/40"
+                    }`}
                     key={item.title}
                     onClick={() => setActiveSlide(index)}
                     type="button"
-                  >
-                    <span
-                      className={`h-2.5 rounded-full transition-all duration-300 ${
-                        index === activeSlide
-                          ? "w-6 bg-white"
-                          : "w-2 bg-white/40 group-hover:bg-white/70"
-                      }`}
-                    />
-                  </button>
+                  />
                 ))}
               </div>
             </div>
@@ -213,7 +207,7 @@ export function LoginPage() {
 
             <div className="mb-5 grid grid-cols-2 gap-2 rounded-full bg-muted p-1.5">
               <button
-                className={`flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition ${
+                className={`rounded-full px-4 py-2.5 text-sm font-medium transition ${
                   role === "teacher" ? "bg-white text-[#1077e5] shadow-sm" : "text-muted-foreground hover:text-foreground"
                 }`}
                 onClick={() => {
@@ -222,11 +216,10 @@ export function LoginPage() {
                 }}
                 type="button"
               >
-                <GraduationCap className="h-4.5 w-4.5" />
                 Profesor
               </button>
               <button
-                className={`flex items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-medium transition ${
+                className={`rounded-full px-4 py-2.5 text-sm font-medium transition ${
                   role === "student" ? "bg-white text-[#1077e5] shadow-sm" : "text-muted-foreground hover:text-foreground"
                 }`}
                 onClick={() => {
@@ -235,7 +228,6 @@ export function LoginPage() {
                 }}
                 type="button"
               >
-                <BookOpen className="h-4.5 w-4.5" />
                 Estudiante
               </button>
             </div>
