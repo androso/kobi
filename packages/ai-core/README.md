@@ -15,4 +15,6 @@ Cost guardrail: with this routing + prompt caching, a 45-min session should cost
 
 Prompt text lives in `/prompts`, not here, so prompts can be tuned without redeploying this package.
 
-Status: placeholder — no model client code yet.
+Status: v0 model calls are implemented for chunked transcription, structured lesson-state
+building, and manual fallback. The package validates inputs/model output but still depends
+on deployed model credentials at runtime.
