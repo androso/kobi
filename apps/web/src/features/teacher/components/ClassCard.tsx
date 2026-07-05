@@ -93,10 +93,7 @@ export function ClassCard({ item, viewMode, index = 0 }: { item: ClassItem; view
           </div>
         )}
         
-        {/* Glassmorphic Icon Wrapper */}
-        <div className="absolute right-4 top-4 w-9 h-9 rounded-xl bg-white/10 border border-white/25 backdrop-blur-md flex items-center justify-center text-white/95">
-          <Icon className="h-4.5 w-4.5" />
-        </div>
+
         
         <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between gap-4">
           <div className="min-w-0">
