@@ -5,6 +5,7 @@
   "main": "src/index.ts",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "generate:openai-artifacts": "tsx src/dev/generateOpenAiArtifacts.ts",
     "generate:static-artifacts": "tsx src/dev/generateStaticArtifacts.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
