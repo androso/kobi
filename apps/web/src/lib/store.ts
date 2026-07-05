@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import type { ArtifactContent, ArtifactKind, QuizAnswer } from "./artifacts";
 
 interface UserProfile {
   role: "teacher" | "student" | null;
@@ -52,21 +53,23 @@ export interface Artefacto {
   title: string;
   section: string;
   objective: string;
-  family: string;
   band: ArtefactoBand;
-  prompt: string;
-  options: string[];
-  correctAnswer: string;
-  hints: string[];
-  source: string;
+  /** Drives the lesson-list icon and the renderer dispatch. */
+  kind: ArtifactKind;
+  /** The typed payload the client renders (see lib/artifacts.ts). */
+  content: ArtifactContent;
+  /** Lesson-list subtitle, e.g. "Quiz · 3 preguntas". */
+  estimateLabel?: string;
+  /** Renderer breadcrumb, e.g. ["Lengua", "La noticia", "Vocabulario"]. */
+  breadcrumb?: string[];
   status: "draft" | "assigned";
   due: string;
   createdAt: number;
 }
 
 /**
- * A student's answer to an artefacto. Flows back from the student dashboard so
- * the teacher analytics can report real progress. Keyed uniquely by
+ * A student's submission for an artefacto. Flows back from the student dashboard
+ * so the teacher analytics can report real progress. Keyed uniquely by
  * (artefactoId, studentName).
  */
 export interface ArtefactoSubmission {
@@ -74,11 +77,12 @@ export interface ArtefactoSubmission {
   artefactoId: string;
   classId: string;
   studentName: string;
-  selectedAnswer: string;
-  isCorrect: boolean;
+  answers: QuizAnswer[];
+  score: number;
+  total: number;
   attempts: number;
   hintsUsed: number;
-  status: "submitted" | "completed";
+  status: "in_progress" | "submitted" | "completed";
   submittedAt: number;
 }
 
@@ -123,7 +127,7 @@ interface ClassState {
   assignArtefacto: (
     artefacto: Omit<Artefacto, "id" | "status" | "createdAt"> & Partial<Pick<Artefacto, "status">>,
   ) => void;
-  /** Student submits an answer; upserts by (artefactoId, studentName). */
+  /** Student submits a quiz attempt; upserts by (artefactoId, studentName). */
   submitArtefacto: (
     submission: Omit<ArtefactoSubmission, "id" | "submittedAt" | "status">,
   ) => void;
@@ -178,18 +182,56 @@ const defaultArtefactos: Artefacto[] = [
     id: "artefacto-1",
     classId: "class-1",
     title: "Vocabulario en contexto: La noticia",
-    section: "Unidad 4 / La noticia",
+    section: "Unidad 4 · Lección 5",
     objective: "L7.4.2",
-    family: "guided_practice",
     band: "core",
-    prompt: "El periodista redacto la ___ antes del mediodia.",
-    options: ["noticia", "novela", "receta"],
-    correctAnswer: "noticia",
-    hints: [
-      "Piensa en la palabra que nombra lo que escribio el periodista.",
-      "La frase habla de un texto informativo, no de una historia o una comida.",
-    ],
-    source: "Reused from seeded repository",
+    kind: "quiz",
+    estimateLabel: "Quiz · 3 preguntas",
+    breadcrumb: ["Lengua", "La noticia", "Vocabulario"],
+    content: {
+      type: "quiz",
+      questions: [
+        {
+          id: "q1",
+          prompt: "El periodista redacto la ___ antes del mediodia.",
+          choices: [
+            { id: "a", label: "noticia" },
+            { id: "b", label: "novela" },
+            { id: "c", label: "receta" },
+          ],
+          correctChoiceId: "a",
+          hints: [
+            "Piensa en la palabra que nombra lo que escribio el periodista.",
+            "La frase habla de un texto informativo, no de una historia o una comida.",
+          ],
+          explanation: "Una noticia es un texto informativo sobre un hecho reciente.",
+        },
+        {
+          id: "q2",
+          prompt: "¿Qué parte de la noticia resume lo esencial al inicio?",
+          choices: [
+            { id: "a", label: "la entradilla" },
+            { id: "b", label: "el epílogo" },
+            { id: "c", label: "la moraleja" },
+          ],
+          correctChoiceId: "a",
+          hints: ["Va justo después del titular."],
+          explanation: "La entradilla resume el qué, quién, cuándo y dónde.",
+        },
+        {
+          id: "q3",
+          prompt: "Una noticia responde principalmente a la pregunta ___.",
+          choices: [
+            { id: "a", label: "qué pasó" },
+            { id: "b", label: "cómo cocinar" },
+            { id: "c", label: "quién ganó ayer" },
+          ],
+          correctChoiceId: "a",
+          hints: ["Busca la opción más general."],
+          explanation: "Toda noticia parte del hecho: qué pasó.",
+        },
+      ],
+    },
     status: "assigned",
     due: "Hoy",
     createdAt: 0,
@@ -198,15 +240,39 @@ const defaultArtefactos: Artefacto[] = [
     id: "artefacto-2",
     classId: "class-1",
     title: "Lectura rápida",
-    section: "Unidad 4 / La noticia",
+    section: "Unidad 4 · Lección 5",
     objective: "L7.4.1",
-    family: "guided_practice",
     band: "support",
-    prompt: "Una noticia responde principalmente a la pregunta ___.",
-    options: ["qué pasó", "cómo cocinar", "quién ganó ayer"],
-    correctAnswer: "qué pasó",
-    hints: ["Una noticia informa sobre un hecho.", "Busca la opción más general."],
-    source: "Reused from seeded repository",
+    kind: "quiz",
+    estimateLabel: "Quiz · 2 preguntas",
+    breadcrumb: ["Lengua", "La noticia", "Lectura"],
+    content: {
+      type: "quiz",
+      questions: [
+        {
+          id: "q1",
+          prompt: "El propósito principal de una noticia es ___.",
+          choices: [
+            { id: "a", label: "informar" },
+            { id: "b", label: "entretener con ficción" },
+            { id: "c", label: "dar una receta" },
+          ],
+          correctChoiceId: "a",
+          hints: ["Piensa en para qué sirve un periódico."],
+        },
+        {
+          id: "q2",
+          prompt: "El título breve que encabeza la noticia se llama ___.",
+          choices: [
+            { id: "a", label: "titular" },
+            { id: "b", label: "índice" },
+            { id: "c", label: "portada" },
+          ],
+          correctChoiceId: "a",
+          hints: ["Es lo primero que lees, en letra grande."],
+        },
+      ],
+    },
     status: "assigned",
     due: "Mañana",
     createdAt: 0,
@@ -215,15 +281,28 @@ const defaultArtefactos: Artefacto[] = [
     id: "artefacto-3",
     classId: "class-1",
     title: "Reto extra",
-    section: "Unidad 4 / La noticia",
+    section: "Unidad 4 · Lección 5",
     objective: "L7.4.3",
-    family: "challenge",
     band: "challenge",
-    prompt: "La parte de la noticia que resume lo esencial se llama ___.",
-    options: ["entradilla", "epílogo", "moraleja"],
-    correctAnswer: "entradilla",
-    hints: ["Va justo después del titular.", "Resume el qué, quién y cuándo."],
-    source: "Reused from seeded repository",
+    kind: "quiz",
+    estimateLabel: "Quiz · 1 pregunta",
+    breadcrumb: ["Lengua", "La noticia", "Reto"],
+    content: {
+      type: "quiz",
+      questions: [
+        {
+          id: "q1",
+          prompt: "La parte de la noticia que resume lo esencial se llama ___.",
+          choices: [
+            { id: "a", label: "entradilla" },
+            { id: "b", label: "epílogo" },
+            { id: "c", label: "moraleja" },
+          ],
+          correctChoiceId: "a",
+          hints: ["Va justo después del titular.", "Resume el qué, quién y cuándo."],
+        },
+      ],
+    },
     status: "assigned",
     due: "Opcional",
     createdAt: 0,
@@ -328,7 +407,8 @@ export const useClassStore = create<ClassState>((set) => ({
     })),
   submitArtefacto: (submission) =>
     set((state) => {
-      const status: ArtefactoSubmission["status"] = submission.isCorrect ? "completed" : "submitted";
+      const status: ArtefactoSubmission["status"] =
+        submission.score >= submission.total ? "completed" : "submitted";
       const existing = state.submissions.find(
         (item) =>
           item.artefactoId === submission.artefactoId && item.studentName === submission.studentName,
