@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@kobi/activities": "workspace:*",
     "@kobi/ai-core": "workspace:*",
     "@kobi/curriculum": "workspace:*",
     "@kobi/db": "workspace:*",
