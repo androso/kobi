@@ -86,16 +86,16 @@ export function TeacherDashboard() {
                 </div>
               </div>
 
-              {/* Bento Grid */}
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {/* Create New Class Card */}
-                <button className="group relative border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-[20px] flex items-center justify-center gap-3 cursor-pointer transition-all hover:bg-slate-100/50 hover:border-[#004ac6]/30 hover:shadow-sm md:col-span-2 lg:col-span-3 h-16 py-3" type="button">
-                  <div className="w-9 h-9 rounded-full bg-blue-50 text-[#004ac6] flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
-                    <Plus className="h-4 w-4 font-bold" />
-                  </div>
-                  <span className="text-sm font-bold text-slate-500 group-hover:text-[#004ac6] transition-colors">Crear nueva clase</span>
+              {/* Botón Crear nueva clase (Compacto, arriba de la cuadrícula) */}
+              <div className="mb-6">
+                <button className="group flex items-center gap-2 border-2 border-dashed border-slate-200 bg-slate-50/50 hover:bg-slate-100/50 hover:border-[#004ac6]/30 px-5 py-2.5 rounded-2xl cursor-pointer transition active:scale-95" type="button">
+                  <Plus className="h-4 w-4 text-[#004ac6]" />
+                  <span className="text-xs font-bold text-slate-500 group-hover:text-[#004ac6] transition-colors">Crear nueva clase</span>
                 </button>
+              </div>
 
+              {/* Grid de Clases */}
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {teacherClasses.map((item) => (
                   <ClassCard item={item} key={item.title} viewMode={viewMode} />
                 ))}
