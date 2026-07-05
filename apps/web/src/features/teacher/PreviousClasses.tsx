@@ -15,7 +15,6 @@ import {
   ChevronRight
 } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
-import { Header } from "./components/Header";
 import { CreateClassModal } from "./components/CreateClassModal";
 import { useClassStore, useAuthStore, type SavedSession } from "../../lib/store";
 
@@ -167,8 +166,6 @@ export function PreviousClasses() {
         {/* Main Content Area */}
         <div className="flex flex-col p-3 sm:p-4 lg:p-5 h-screen">
           <div className="flex-1 flex flex-col bg-[#f8f9ff] rounded-[30px] border border-slate-200/50 overflow-hidden shadow-sm min-h-0">
-            
-            <Header />
 
             {/* Dashboard Content split (Main list on left, stats sidebar on right) */}
             <div className="flex-grow flex min-h-0 overflow-hidden">

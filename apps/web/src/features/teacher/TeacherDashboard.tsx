@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Check, Copy, LayoutGrid, List, Plus, X, Zap } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
-import { Header } from "./components/Header";
 import { ClassCard } from "./components/ClassCard";
 import { CreateClassModal } from "./components/CreateClassModal";
 import { useAuthStore, useClassStore, type ClassItem } from "../../lib/store";
@@ -105,7 +104,6 @@ export function TeacherDashboard() {
         <Sidebar onOpenCreateClass={() => setIsCreateModalOpen(true)} />
         <div className="flex flex-col p-3 sm:p-4 lg:p-5 h-screen">
           <div className="flex-1 flex flex-col bg-[#f8f9ff] rounded-[30px] border border-slate-200/50 overflow-hidden shadow-sm">
-            <Header />
             <div className="flex-1 px-6 py-8 md:px-10 max-w-7xl w-full mx-auto overflow-y-auto">
             {/* Greeting Hero */}
             <section className="mb-10">
