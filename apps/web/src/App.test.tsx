@@ -183,7 +183,7 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: /ayuda/i }));
 
-    expect(screen.getByRole("heading", { name: /ayuda rápida para volver a clase sin fricción/i })).toBeInTheDocument();
-    expect(screen.getByText(/ayuda rápida para volver a clase sin fricción/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^kobi$/i })).toBeInTheDocument();
+    expect(screen.getByText(/ve la misma información de clase en distintas formas/i)).toBeInTheDocument();
   });
 });
