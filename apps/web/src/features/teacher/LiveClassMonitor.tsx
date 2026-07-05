@@ -6,11 +6,15 @@ import {
   AlertTriangle,
   Leaf,
   Circle,
+  CheckCircle2,
+  ArrowRight,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import type { DifficultyBand } from "@kobi/activities";
 import { Sidebar } from "./components/Sidebar";
 import { WaveformVisualizer } from "./components/WaveformVisualizer";
-import { useClassStore, type SavedSession, type ClassItem } from "../../lib/store";
+import { KobiMascot } from "./components/KobiMascot";
+import { useAuthStore, useClassStore, type SavedSession, type ClassItem } from "../../lib/store";
 import { supabase } from "../../lib/supabase";
 import {
   loadOrCreateReadyCandidates,
@@ -61,7 +65,7 @@ const SUBJECT_META: Record<
 };
 
 // Construye una sesión guardada a partir de la clase monitoreada y los datos en vivo
-function buildSession(cls: ClassItem, durationSeconds: number): SavedSession {
+function buildSession(cls: ClassItem, durationSeconds: number, teacherId?: string): SavedSession {
   const meta = SUBJECT_META[cls.icon] ?? SUBJECT_META.pen;
   const summaryPoints = [
     `Tema trabajado: ${MOCK_INSIGHTS.detectedTopic}.`,
@@ -72,6 +76,7 @@ function buildSession(cls: ClassItem, durationSeconds: number): SavedSession {
     ...MOCK_INSIGHTS.misconceptions.map((m) => `Reforzar: ${m.title.toLowerCase()}.`),
     `Asignar la actividad sugerida: ${MOCK_INSIGHTS.suggestedActivity}.`,
   ];
+
   return {
     id: `session-${Date.now()}`,
     classId: cls.id,
@@ -89,6 +94,7 @@ function buildSession(cls: ClassItem, durationSeconds: number): SavedSession {
     summaryPoints,
     nextSteps,
     transcript: [],
+    teacherId,
   };
 }
 
@@ -802,9 +808,11 @@ function normalizeLessonState(value: unknown): LessonStateSnapshot | null {
 // -- Página ------------------------------------------------------------------
 
 export function LiveClassMonitor() {
+  const navigate = useNavigate();
   const [elapsed, setElapsed] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [completedSessionClassId, setCompletedSessionClassId] = useState<string | null>(null);
+  const [finishedSession, setFinishedSession] = useState<SavedSession | null>(null);
   const [activitySessionId, setActivitySessionId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<DeliveryCandidate[]>([]);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
@@ -1116,9 +1124,14 @@ export function LiveClassMonitor() {
     setUploadStatus(apiSessionIdRef.current ? "Sesion enviada al worker" : uploadStatus);
 
     if (activeClass) {
-      const session = buildSession(activeClass, elapsed);
+      const teacherId = useAuthStore.getState().user?.id;
+      const session = buildSession(activeClass, elapsed, teacherId);
+      if (apiSessionIdRef.current) {
+        session.id = apiSessionIdRef.current;
+      }
       setCompletedSessionClassId(activeClass.id);
       endSession(session); // guarda en historial + limpia el monitor activo
+      setFinishedSession(session);
       void handleGenerateActivity();
     }
   }
@@ -1337,6 +1350,107 @@ export function LiveClassMonitor() {
         loading={activityLoading}
         onGenerate={handleGenerateActivity}
       />
+
+      {finishedSession && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" />
+          <div className="relative z-10 flex max-h-[88vh] w-full max-w-md flex-col overflow-hidden rounded-[32px] bg-gradient-to-br from-violet-100 via-rose-50 to-white shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="relative px-7 pb-6 pt-7">
+              <KobiMascot className="pointer-events-none absolute right-5 top-4 h-16 w-16 -rotate-6 select-none text-slate-900" />
+
+              <div className="mb-4 flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500">
+                  Sesión finalizada
+                </span>
+              </div>
+
+              <p className="max-w-[72%] text-sm leading-relaxed text-slate-500">
+                Tu sesión de{" "}
+                <span className="font-bold text-slate-700">{finishedSession.title}</span>{" "}
+                quedó guardada con su resumen y transcripción.
+              </p>
+
+              <div className="mt-6 flex items-end justify-between">
+                <div className="flex items-baseline">
+                  <span className="text-5xl font-bold tabular-nums text-slate-900">
+                    {finishedSession.duration.split(":")[0]}
+                  </span>
+                  <span className="text-5xl font-bold tabular-nums text-slate-400">
+                    :{finishedSession.duration.split(":")[1]}
+                  </span>
+                </div>
+                <button
+                  className="group flex items-center gap-3 text-sm font-medium text-slate-600"
+                  onClick={() => {
+                    setFinishedSession(null);
+                    navigate("/teacher/repositories");
+                  }}
+                  type="button"
+                >
+                  <span className="text-right leading-tight">
+                    Duración
+                    <br />
+                    de la sesión
+                  </span>
+                  <span className="h-px w-8 bg-slate-300 transition-all group-hover:w-10" />
+                  <ArrowRight className="h-4 w-4 shrink-0" />
+                </button>
+              </div>
+
+              <button
+                className="mt-6 w-full rounded-full bg-slate-900 py-3.5 text-sm font-bold text-white transition-all hover:bg-slate-800 active:scale-[0.98]"
+                onClick={() => {
+                  setFinishedSession(null);
+                  navigate("/teacher/repositories");
+                }}
+                type="button"
+              >
+                Ver en Clases anteriores
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-5 overflow-y-auto bg-white/70 px-7 py-6 backdrop-blur-sm">
+              <div>
+                <h4 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                  Resumen
+                </h4>
+                <ul className="space-y-2">
+                  {finishedSession.summaryPoints.map((point) => (
+                    <li className="flex gap-2.5 text-sm leading-relaxed text-slate-600" key={point}>
+                      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
+                      <span>{point}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <h4 className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                  Próximos pasos
+                </h4>
+                <ul className="space-y-2">
+                  {finishedSession.nextSteps.map((step) => (
+                    <li className="flex gap-2.5 text-sm leading-relaxed text-slate-600" key={step}>
+                      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-300" />
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button
+                className="self-start text-sm font-bold text-slate-500 transition hover:text-slate-800"
+                onClick={() => {
+                  setFinishedSession(null);
+                  navigate("/teacher");
+                }}
+                type="button"
+              >
+                Volver al panel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

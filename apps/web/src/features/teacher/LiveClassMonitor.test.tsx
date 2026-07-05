@@ -163,7 +163,7 @@ describe("LiveClassMonitor activity delivery", () => {
     expect(screen.getByRole("button", { name: /pausar/i })).toBeInTheDocument();
   });
 
-  it("loads the artifact flow directly after pausing without opening the session summary", async () => {
+  it("opens the session summary and loads the artifact flow after pausing", async () => {
     useClassStore.getState().resetClasses();
     useClassStore.getState().startMonitoring("class-1");
 
@@ -179,9 +179,12 @@ describe("LiveClassMonitor activity delivery", () => {
       await Promise.resolve();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /pausar/i }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /pausar/i }));
+      await Promise.resolve();
+    });
 
-    expect(screen.queryByText(/sesión finalizada/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/sesión finalizada/i)).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: /aprobar y entregar actividad/i })).toBeInTheDocument();
   });
 });

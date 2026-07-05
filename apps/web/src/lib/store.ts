@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import type { ArtifactContent, ArtifactKind, QuizAnswer } from "./artifacts";
@@ -291,6 +292,7 @@ export interface SavedSession {
   summaryPoints: string[];
   nextSteps: string[];
   transcript: SessionTranscriptLine[];
+  teacherId?: string;
 }
 
 interface ClassState {
@@ -601,138 +603,146 @@ export function selectSubmission(
   );
 }
 
-export const useClassStore = create<ClassState>((set) => ({
-  classes: defaultClasses,
-  loadingClasses: false,
-  classError: null,
-  monitoringClassId: null,
-  sessions: [],
-  artefactos: defaultArtefactos,
-  submissions: [],
-  loadTeacherClasses: async (teacherId) => {
-    if (!supabase) {
-      set({ classError: "Supabase no esta configurado." });
-      return;
-    }
-
-    set({ loadingClasses: true, classError: null });
-
-    const { data: classRows, error } = await supabase
-      .from("classes")
-      .select("id,name,join_code,subject,unit,grade")
-      .eq("teacher_id", teacherId)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      set({ loadingClasses: false, classError: error.message });
-      return;
-    }
-
-    const rows = (classRows ?? []) as ClassRow[];
-    const counts = new Map<string, number>();
-
-    if (rows.length > 0) {
-      const { data: studentRows, error: studentError } = await supabase
-        .from("students")
-        .select("class_id")
-        .in("class_id", rows.map((row) => row.id));
-
-      if (studentError) {
-        set({ loadingClasses: false, classError: studentError.message });
-        return;
-      }
-
-      for (const row of studentRows ?? []) {
-        counts.set(row.class_id, (counts.get(row.class_id) ?? 0) + 1);
-      }
-    }
-
-    set({
-      classes: rows.map((row) => classItemFromRow(row, counts.get(row.id) ?? 0)),
-      loadingClasses: false,
-      classError: null,
-    });
-  },
-  startMonitoring: (id) => set({ monitoringClassId: id }),
-  stopMonitoring: () => set({ monitoringClassId: null }),
-  // Ending a session saves it to history and clears the active monitor
-  endSession: (session) =>
-    set((state) => ({
-      sessions: [session, ...state.sessions],
-      monitoringClassId: null,
-    })),
-  addClass: async (newClass, teacherId) => {
-    if (!supabase) {
-      return { error: "Supabase no esta configurado." };
-    }
-
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const joinCode = generateJoinCode();
-      const { data, error } = await supabase
-        .from("classes")
-        .insert({
-          teacher_id: teacherId,
-          name: newClass.title,
-          join_code: joinCode,
-          grade: newClass.grade,
-          subject: newClass.subject,
-          unit: newClass.unit,
-        })
-        .select("id,name,join_code,subject,unit,grade")
-        .single();
-
-      if (error) {
-        if (error.code === "23505") continue;
-        return { error: error.message };
-      }
-
-      const createdClass = classItemFromRow(data as ClassRow, 0);
-      set((state) => ({ classes: [createdClass, ...state.classes] }));
-      return { classItem: createdClass };
-    }
-
-    return { error: "No se pudo generar un codigo unico para la clase." };
-  },
-  assignArtefacto: (artefacto) =>
-    set((state) => ({
-      artefactos: [
-        ...state.artefactos,
-        {
-          ...artefacto,
-          id: `artefacto-${Date.now()}`,
-          status: artefacto.status ?? "assigned",
-          createdAt: Date.now(),
-        },
-      ],
-    })),
-  submitArtefacto: (submission) =>
-    set((state) => {
-      const status: ArtefactoSubmission["status"] =
-        submission.score >= submission.total ? "completed" : "submitted";
-      const existing = state.submissions.find(
-        (item) =>
-          item.artefactoId === submission.artefactoId && item.studentName === submission.studentName,
-      );
-
-      const record: ArtefactoSubmission = {
-        ...submission,
-        id: existing?.id ?? `submission-${Date.now()}`,
-        status,
-        submittedAt: Date.now(),
-      };
-
-      return {
-        submissions: existing
-          ? state.submissions.map((item) => (item.id === existing.id ? record : item))
-          : [...state.submissions, record],
-      };
-    }),
-  resetClasses: () =>
-    set({
+export const useClassStore = create<ClassState>()(
+  persist(
+    (set) => ({
       classes: defaultClasses,
       loadingClasses: false,
       classError: null,
+      monitoringClassId: null,
+      sessions: [],
       artefactos: defaultArtefactos,
       submissions: [],
+      loadTeacherClasses: async (teacherId) => {
+        if (!supabase) {
+          set({ classError: "Supabase no esta configurado." });
+          return;
+        }
+
+        set({ loadingClasses: true, classError: null });
+
+        const { data: classRows, error } = await supabase
+          .from("classes")
+          .select("id,name,join_code,subject,unit,grade")
+          .eq("teacher_id", teacherId)
+          .order("created_at", { ascending: false });
+
+        if (error) {
+          set({ loadingClasses: false, classError: error.message });
+          return;
+        }
+
+        const rows = (classRows ?? []) as ClassRow[];
+        const counts = new Map<string, number>();
+
+        if (rows.length > 0) {
+          const { data: studentRows, error: studentError } = await supabase
+            .from("students")
+            .select("class_id")
+            .in("class_id", rows.map((row) => row.id));
+
+          if (studentError) {
+            set({ loadingClasses: false, classError: studentError.message });
+            return;
+          }
+
+          for (const row of studentRows ?? []) {
+            counts.set(row.class_id, (counts.get(row.class_id) ?? 0) + 1);
+          }
+        }
+
+        set({
+          classes: rows.map((row) => classItemFromRow(row, counts.get(row.id) ?? 0)),
+          loadingClasses: false,
+          classError: null,
+        });
+      },
+      startMonitoring: (id) => set({ monitoringClassId: id }),
+      stopMonitoring: () => set({ monitoringClassId: null }),
+      // Ending a session saves it to history and clears the active monitor
+      endSession: (session) =>
+        set((state) => ({
+          sessions: [session, ...state.sessions],
+          monitoringClassId: null,
+        })),
+      addClass: async (newClass, teacherId) => {
+        if (!supabase) {
+          return { error: "Supabase no esta configurado." };
+        }
+
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          const joinCode = generateJoinCode();
+          const { data, error } = await supabase
+            .from("classes")
+            .insert({
+              teacher_id: teacherId,
+              name: newClass.title,
+              join_code: joinCode,
+              grade: newClass.grade,
+              subject: newClass.subject,
+              unit: newClass.unit,
+            })
+            .select("id,name,join_code,subject,unit,grade")
+            .single();
+
+          if (error) {
+            if (error.code === "23505") continue;
+            return { error: error.message };
+          }
+
+          const createdClass = classItemFromRow(data as ClassRow, 0);
+          set((state) => ({ classes: [createdClass, ...state.classes] }));
+          return { classItem: createdClass };
+        }
+
+        return { error: "No se pudo generar un codigo unico para la clase." };
+      },
+      assignArtefacto: (artefacto) =>
+        set((state) => ({
+          artefactos: [
+            ...state.artefactos,
+            {
+              ...artefacto,
+              id: `artefacto-${Date.now()}`,
+              status: artefacto.status ?? "assigned",
+              createdAt: Date.now(),
+            },
+          ],
+        })),
+      submitArtefacto: (submission) =>
+        set((state) => {
+          const status: ArtefactoSubmission["status"] =
+            submission.score >= submission.total ? "completed" : "submitted";
+          const existing = state.submissions.find(
+            (item) =>
+              item.artefactoId === submission.artefactoId && item.studentName === submission.studentName,
+          );
+
+          const record: ArtefactoSubmission = {
+            ...submission,
+            id: existing?.id ?? `submission-${Date.now()}`,
+            status,
+            submittedAt: Date.now(),
+          };
+
+          return {
+            submissions: existing
+              ? state.submissions.map((item) => (item.id === existing.id ? record : item))
+              : [...state.submissions, record],
+          };
+        }),
+      resetClasses: () =>
+        set({
+          classes: defaultClasses,
+          loadingClasses: false,
+          classError: null,
+          artefactos: defaultArtefactos,
+          submissions: [],
+        }),
     }),
-}));
+    {
+      name: "kobi-class-store",
+      partialize: (state) => ({ sessions: state.sessions }),
+    }
+  )
+);

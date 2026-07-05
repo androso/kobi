@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   FolderOpen,
   Calendar,
@@ -17,6 +17,7 @@ import {
 import { Sidebar } from "./components/Sidebar";
 import { CreateClassModal } from "./components/CreateClassModal";
 import { useClassStore, useAuthStore, type SavedSession } from "../../lib/store";
+import { supabase } from "../../lib/supabase";
 
 // ---------------------------------------------------------------------------
 // Seed history (structured for the combined summary & transcript layout).
@@ -103,6 +104,22 @@ const PREVIOUS_SESSIONS: SavedSession[] = [
   }
 ];
 
+function formatTimeMs(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+const JUNK_TRANSCRIPTS = [
+  "subtítulos realizados por",
+  "amara.org",
+  "subtitles by",
+  "thank you for watching",
+  "subs by",
+  "subtitulado por",
+];
+
 export function PreviousClasses() {
   const user = useAuthStore((state) => state.user);
   const teacherName = user?.displayName || user?.email?.split("@")[0] || "Docente";
@@ -111,15 +128,23 @@ export function PreviousClasses() {
   const [selectedSession, setSelectedSession] = useState<SavedSession | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [playProgress, setPlayProgress] = useState(30);
+  const [playProgress, setPlayProgress] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [audioUrls, setAudioUrls] = useState<string[]>([]);
+  const [currentChunkIndex, setCurrentChunkIndex] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Sessions saved live from the monitor appear first, then the seed history (only for mock teacher)
   const storeSessions = useClassStore((state) => state.sessions);
+  const teacherId = user?.id;
+  const currentTeacherSessions = storeSessions.filter(
+    (s) => !s.teacherId || s.teacherId === teacherId
+  );
   const isMockTeacher = user?.email === "maestra@kobi.test";
   const allSessions = isMockTeacher
-    ? [...storeSessions, ...PREVIOUS_SESSIONS]
-    : storeSessions;
+    ? [...currentTeacherSessions, ...PREVIOUS_SESSIONS]
+    : currentTeacherSessions;
 
   // Calculate dynamic stats
   const totalSessionsCount = allSessions.length;
@@ -146,15 +171,198 @@ export function PreviousClasses() {
       session.subject.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  function handleOpenDetailsModal(session: SavedSession) {
+  async function handleOpenDetailsModal(session: SavedSession) {
     setSelectedSession(session);
     setIsPlaying(false);
-    setPlayProgress(15);
+    setPlayProgress(0);
+    setAudioUrls([]);
+    setCurrentChunkIndex(0);
+    setAudioDuration(0);
+
+    const isMock = session.id.startsWith("seed-");
+    if (!isMock && supabase) {
+      try {
+        const [{ data: chunks, error }, { data: segmentRow }] = await Promise.all([
+          supabase
+            .from("audio_chunks")
+            .select("transcript_text, start_ms, end_ms, chunk_index, storage_path")
+            .eq("session_id", session.id)
+            .order("chunk_index", { ascending: true }),
+          supabase
+            .from("segments")
+            .select("lesson_state")
+            .eq("session_id", session.id)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+        ]);
+
+        let summaryPoints = session.summaryPoints;
+        let nextSteps = session.nextSteps;
+
+        if (segmentRow && segmentRow.lesson_state) {
+          const ls = segmentRow.lesson_state as {
+            topic?: string;
+            objective_guess?: string | null;
+            key_terms?: string[];
+            transcript_summary?: string;
+            evidence?: { reason?: string };
+          };
+          const dynamicSummary = [
+            ls.topic ? `Tema detectado: ${ls.topic}.` : null,
+            ls.objective_guess ? `Objetivo estimado: ${ls.objective_guess}.` : null,
+            ls.key_terms && ls.key_terms.length > 0
+              ? `Términos clave abordados: ${ls.key_terms.join(", ")}.`
+              : null,
+            ls.transcript_summary ? `Resumen de la lección: ${ls.transcript_summary}.` : null,
+          ].filter(Boolean) as string[];
+
+          const dynamicSteps =
+            ls.evidence && ls.evidence.reason
+              ? [
+                  `Análisis de la lección: ${ls.evidence.reason}.`,
+                  "Revisar y asignar actividades complementarias.",
+                ]
+              : ["Revisar y asignar actividades complementarias."];
+
+          if (dynamicSummary.length > 0) summaryPoints = dynamicSummary;
+          if (dynamicSteps.length > 0) nextSteps = dynamicSteps;
+        }
+
+        if (!error && chunks && chunks.length > 0) {
+          const lines = chunks
+            .filter((c) => {
+              if (!c.transcript_text || c.transcript_text.trim().length === 0) return false;
+              const normalized = c.transcript_text.toLowerCase();
+              return !JUNK_TRANSCRIPTS.some((junk) => normalized.includes(junk));
+            })
+            .map((c) => ({
+              time: formatTimeMs(c.start_ms),
+              speaker: "Docente",
+              text: c.transcript_text,
+            }));
+
+          const storagePaths = chunks.map((c) => c.storage_path).filter(Boolean);
+          
+          const urls: string[] = [];
+          for (const path of storagePaths) {
+            const { data: signedUrl, error: urlError } = await supabase.storage
+              .from("audio-chunks")
+              .createSignedUrl(path, 60 * 60);
+            
+            if (urlError) {
+              console.error("Error creating signed URL for", path, urlError);
+            } else if (signedUrl && signedUrl.signedUrl) {
+              urls.push(signedUrl.signedUrl);
+            }
+          }
+
+          const totalDurationMs = chunks.reduce((sum, c) => sum + (c.end_ms - c.start_ms), 0);
+
+          setAudioUrls(urls);
+          setAudioDuration(totalDurationMs / 1000);
+
+          setSelectedSession((curr) =>
+            curr && curr.id === session.id
+              ? {
+                  ...curr,
+                  transcript: lines,
+                  summaryPoints,
+                  nextSteps,
+                }
+              : curr,
+          );
+        } else {
+          setSelectedSession((curr) =>
+            curr && curr.id === session.id
+              ? { ...curr, summaryPoints, nextSteps }
+              : curr,
+          );
+        }
+      } catch (err) {
+        console.error("Error loading transcript from Supabase:", err);
+      }
+    }
   }
 
   function handleCloseModal() {
     setSelectedSession(null);
+    setIsPlaying(false);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setAudioUrls([]);
+    setCurrentChunkIndex(0);
   }
+
+  useEffect(() => {
+    if (!selectedSession || audioUrls.length === 0) return;
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+
+    const audio = new Audio();
+    audio.crossOrigin = "anonymous";
+    audio.src = audioUrls[currentChunkIndex];
+    audio.playbackRate = playbackRate;
+    audio.muted = isMuted;
+    audioRef.current = audio;
+
+    audio.addEventListener("timeupdate", () => {
+      if (audioDuration > 0) {
+        const chunks = audioUrls.length;
+        const chunkDuration = audioDuration / chunks;
+        const currentTime = currentChunkIndex * chunkDuration + audio.currentTime;
+        setPlayProgress((currentTime / audioDuration) * 100);
+      }
+    });
+
+    audio.addEventListener("ended", () => {
+      if (currentChunkIndex < audioUrls.length - 1) {
+        setCurrentChunkIndex((prev) => prev + 1);
+      } else {
+        setIsPlaying(false);
+        setPlayProgress(100);
+      }
+    });
+
+    audio.addEventListener("error", (e) => {
+      console.error("Audio error:", e, audio.error);
+    });
+
+    return () => {
+      audio.pause();
+      audioRef.current = null;
+    };
+  }, [audioUrls, currentChunkIndex, selectedSession]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || audioUrls.length === 0) return;
+
+    if (isPlaying) {
+      const playPromise = audio.play();
+      if (playPromise) {
+        playPromise.catch((err) => {
+          console.error("Error playing audio:", err);
+          setIsPlaying(false);
+        });
+      }
+    } else {
+      audio.pause();
+    }
+  }, [isPlaying, audioUrls, currentChunkIndex]);
+
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.muted = isMuted;
+  }, [isMuted]);
+
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.playbackRate = playbackRate;
+  }, [playbackRate]);
 
   return (
     <main className="min-h-screen bg-[#eef3fb] overflow-hidden">
@@ -343,9 +551,17 @@ export function PreviousClasses() {
                     {/* Inline player row */}
                     <div className="flex items-center gap-3">
                       <button
-                        onClick={() => setIsPlaying(!isPlaying)}
-                        className="text-violet-600 hover:text-violet-700 transition active:scale-90 shrink-0"
+                        onClick={() => {
+                          if (audioUrls.length === 0) return;
+                          setIsPlaying(!isPlaying);
+                        }}
+                        className={`transition active:scale-90 shrink-0 ${
+                          audioUrls.length === 0
+                            ? "text-slate-300 cursor-not-allowed"
+                            : "text-violet-600 hover:text-violet-700"
+                        }`}
                         title={isPlaying ? "Pausar" : "Reproducir"}
+                        disabled={audioUrls.length === 0}
                       >
                         {isPlaying ? <Pause className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current" />}
                       </button>
@@ -355,26 +571,51 @@ export function PreviousClasses() {
                         min="0"
                         max="100"
                         value={playProgress}
-                        onChange={(e) => setPlayProgress(Number(e.target.value))}
+                        onChange={(e) => {
+                          const newProgress = Number(e.target.value);
+                          setPlayProgress(newProgress);
+                          if (audioRef.current && audioDuration > 0) {
+                            const chunks = audioUrls.length;
+                            const chunkDuration = audioDuration / chunks;
+                            const targetTime = (newProgress / 100) * audioDuration;
+                            const targetChunk = Math.min(
+                              Math.floor(targetTime / chunkDuration),
+                              chunks - 1
+                            );
+                            const timeInChunk = targetTime - targetChunk * chunkDuration;
+
+                            if (targetChunk !== currentChunkIndex) {
+                              setCurrentChunkIndex(targetChunk);
+                            } else if (audioRef.current) {
+                              audioRef.current.currentTime = timeInChunk;
+                            }
+                          }
+                        }}
                       />
                       <span className="text-xs font-bold text-slate-500 tabular-nums shrink-0">
-                        {selectedSession.duration}
+                        {audioDuration > 0 ? formatTimeMs(audioDuration * 1000) : selectedSession.duration}
                       </span>
                       <button
                         onClick={() => setIsMuted(!isMuted)}
                         className="text-slate-400 hover:text-slate-600 transition shrink-0"
                         title={isMuted ? "Activar sonido" : "Silenciar"}
                       >
-                        {isMuted ? <VolumeX className="w-4 h-4 text-red-500" /> : <Volume2 className="w-4 h-4" />}
+                        {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
                       </button>
                       <button
                         onClick={cyclePlaybackRate}
-                        className="text-xs font-bold text-slate-500 hover:text-slate-700 transition shrink-0 tabular-nums w-10 text-right"
-                        title="Cambiar velocidad"
+                        className="text-xs font-bold text-slate-500 hover:text-slate-700 transition shrink-0"
+                        title="Velocidad de reproducción"
                       >
                         {playbackRate}x
                       </button>
                     </div>
+
+                    {audioUrls.length === 0 && (
+                      <p className="text-xs text-slate-400 mt-2">
+                        Audio no disponible. Asegúrate de que el worker estaba activo durante la grabación.
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -388,26 +629,38 @@ export function PreviousClasses() {
                     </span>
                   </div>
 
-                  <ul className="space-y-3">
-                    {selectedSession.summaryPoints.map((point, idx) => (
-                      <li key={idx} className="flex gap-2.5 text-[13px] text-slate-600 leading-relaxed">
-                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-2 shrink-0" />
-                        <span>{point}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  {selectedSession.summaryPoints && selectedSession.summaryPoints.length > 0 ? (
+                    <>
+                      <ul className="space-y-3">
+                        {selectedSession.summaryPoints.map((point, idx) => (
+                          <li key={idx} className="flex gap-2.5 text-[13px] text-slate-600 leading-relaxed">
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-2 shrink-0" />
+                            <span>{point}</span>
+                          </li>
+                        ))}
+                      </ul>
 
-                  <div className="mt-1">
-                    <h5 className="font-bold text-slate-800 text-sm mb-3">Próximos pasos</h5>
-                    <ul className="space-y-2.5">
-                      {selectedSession.nextSteps.map((step, idx) => (
-                        <li key={idx} className="flex gap-2.5 text-[13px] text-slate-600 leading-relaxed">
-                          <span className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-2 shrink-0" />
-                          <span>{step}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
+                      <div className="mt-1">
+                        <h5 className="font-bold text-slate-800 text-sm mb-3">Próximos pasos</h5>
+                        <ul className="space-y-2.5">
+                          {selectedSession.nextSteps.map((step, idx) => (
+                            <li key={idx} className="flex gap-2.5 text-[13px] text-slate-600 leading-relaxed">
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-2 shrink-0" />
+                              <span>{step}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center py-8 px-4 text-slate-400">
+                      <Sparkles className="h-8 w-8 mx-auto mb-2 opacity-50 text-violet-400" />
+                      <p className="text-sm font-bold text-slate-600">Resumen en proceso</p>
+                      <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+                        Kobi está analizando la transcripción de la clase. El resumen estará disponible en unos momentos.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
               </div>
@@ -438,18 +691,28 @@ export function PreviousClasses() {
                 </div>
 
                 {/* Transcript dialogue listing */}
-                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-5">
-                  {selectedSession.transcript.map((line, idx) => (
-                    <div key={idx} className="flex gap-4 items-start">
-                      <span className="text-sm text-slate-400 tabular-nums shrink-0 mt-0.5 w-9">
-                        {line.time}
-                      </span>
-                      <p className="text-[15px] leading-relaxed">
-                        <span className="font-bold text-slate-900">{line.speaker}:</span>{" "}
-                        <span className="text-slate-600">{line.text}</span>
+                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-5 flex flex-col justify-start">
+                  {selectedSession.transcript && selectedSession.transcript.length > 0 ? (
+                    selectedSession.transcript.map((line, idx) => (
+                      <div key={idx} className="flex gap-4 items-start w-full">
+                        <span className="text-sm text-slate-400 tabular-nums shrink-0 mt-0.5 w-9">
+                          {line.time}
+                        </span>
+                        <p className="text-[15px] leading-relaxed">
+                          <span className="font-bold text-slate-900">{line.speaker}:</span>{" "}
+                          <span className="text-slate-600">{line.text}</span>
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-12 px-4 text-slate-400 my-auto">
+                      <Mic className="h-10 w-10 mx-auto mb-2 opacity-50 text-slate-400" />
+                      <p className="text-sm font-bold text-slate-600">No hay transcripción disponible</p>
+                      <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
+                        Las clases grabadas se transcriben automáticamente en segundo plano. Los audios antiguos o locales pueden no tener texto guardado.
                       </p>
                     </div>
-                  ))}
+                  )}
                 </div>
 
               </div>
