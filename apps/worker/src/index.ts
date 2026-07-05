@@ -6,6 +6,11 @@ import { getQueue, stopQueue } from "./queue.js";
 import { registerTranscribeChunkJob } from "./jobs/transcribeChunk.job.js";
 import { registerBuildLessonStateJob } from "./jobs/buildLessonState.job.js";
 import { registerGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
+import { registerEvaluateCheckpointJob } from "./jobs/evaluateCheckpoint.job.js";
+import {
+  registerCheckpointSchedulerJob,
+  scheduleCheckpointSchedulerJob,
+} from "./jobs/checkpointScheduler.job.js";
 import { startApiServer } from "./api.js";
 
 async function main() {
@@ -31,9 +36,14 @@ async function main() {
   await registerTranscribeChunkJob(boss, supabase);
   await registerBuildLessonStateJob(boss, supabase);
   await registerGenerateActivityArtifactsJob(boss, supabase);
+  await registerEvaluateCheckpointJob(boss, supabase);
+  await registerCheckpointSchedulerJob(boss, supabase);
+  await scheduleCheckpointSchedulerJob(boss);
   const server = startApiServer({ supabase, boss });
 
-  console.log("Kobi worker running: API, transcribe-chunk, build-lesson-state, generate-activity-artifacts");
+  console.log(
+    "Kobi worker running: API, transcribe-chunk, build-lesson-state, checkpoint-scheduler, evaluate-checkpoint, generate-activity-artifacts",
+  );
 
   let shuttingDown = false;
   async function shutdown(signal: string) {

@@ -6,6 +6,7 @@ export * from "./studentProfiles.js";
 export * from "./sessions.js";
 export * from "./audioChunks.js";
 export * from "./segments.js";
+export * from "./checkpoints.js";
 export * from "./curriculumChunks.js";
 export * from "./activityBundles.js";
 export * from "./activities.js";

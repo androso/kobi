@@ -3,6 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { useAuthStore, useClassStore } from "./lib/store";
 import { MemoryRouter } from "react-router-dom";
+import { vi } from "vitest";
+
+vi.mock("./lib/supabase", () => ({ supabase: null }));
 
 describe("App", () => {
   beforeEach(() => {
@@ -150,7 +153,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: /entrar a clase/i }));
 
     // Lesson list + first quiz question render for the seeded KOBI7 class.
-    expect(screen.getByRole("heading", { name: /vocabulario en contexto: la noticia/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /vocabulario en contexto: la noticia/i })).toBeInTheDocument();
     expect(screen.getByText(/pregunta 1 de 3/i)).toBeInTheDocument();
 
     // Answer all three questions correctly, advancing through the quiz.

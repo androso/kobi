@@ -63,6 +63,8 @@ describe("activity artifact contracts", () => {
       expect(result.ok).toBe(true);
       expect(result.artifact.status).toBe("verified");
       expect(result.artifact.evidence[0].objective_code).toBe("L7.4.2");
+      expect(candidate.bundle_html).not.toContain("preview-assignment");
+      expect(candidate.bundle_html).not.toContain("assignment_id:");
     }
   });
 
