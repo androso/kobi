@@ -17,7 +17,7 @@ function SidebarAction({ icon: Icon, label }: { icon: LucideIcon; label: string 
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ onOpenCreateClass }: { onOpenCreateClass?: () => void }) {
   const navigate = useNavigate();
   const logout = useAuthStore((state) => state.logout);
 
@@ -61,7 +61,11 @@ export function Sidebar() {
       </div>
 
       <div className="space-y-4 px-2">
-        <button className="mx-auto w-fit py-2.5 px-5 bg-[#004ac6] text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-blue-600/10 hover:bg-[#003ea8] transition active:scale-95" type="button">
+        <button 
+          className="mx-auto w-fit py-2.5 px-5 bg-[#004ac6] text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-blue-600/10 hover:bg-[#003ea8] transition active:scale-95" 
+          onClick={onOpenCreateClass}
+          type="button"
+        >
           <Plus className="h-4 w-4" />
           <span>Nueva clase</span>
         </button>

@@ -1,12 +1,13 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
-import { useAuthStore } from "./lib/store";
+import { useAuthStore, useClassStore } from "./lib/store";
 import { MemoryRouter } from "react-router-dom";
 
 describe("App", () => {
   beforeEach(() => {
     useAuthStore.setState({ user: null });
+    useClassStore.getState().resetClasses();
   });
 
   function renderApp(initialRoute = "/") {
@@ -97,5 +98,42 @@ describe("App", () => {
 
     expect(screen.getByText(/credencial demo: maestra@kobi\.demo/i)).toBeInTheDocument();
     expect(screen.getByText(/credencial demo: kobi123/i)).toBeInTheDocument();
+  });
+
+  it("creates a new class using the class creation modal", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+    
+    // Login
+    await user.type(screen.getByPlaceholderText(/correo electronico/i), "maestra@kobi.demo");
+    await user.type(screen.getByPlaceholderText(/contrasena/i), "kobi123");
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
+
+    // Verify initial classes
+    expect(screen.getByText("Ciencia 4to - Sección A")).toBeInTheDocument();
+
+    // Click on add class button
+    await user.click(screen.getByRole("button", { name: /^nueva clase$/i }));
+
+    // Verify modal is open
+    expect(screen.getByRole("heading", { name: /crear nueva clase/i })).toBeInTheDocument();
+
+    // Fill form
+    await user.type(screen.getByLabelText(/nombre de la clase/i), "Historia 6to");
+    await user.type(screen.getByLabelText(/enfoque o tema principal/i), "Prehistoria");
+    await user.type(screen.getByLabelText(/temas clave/i), "Nomadas, Fuego");
+    
+    // Submit
+    await user.click(screen.getByRole("button", { name: /crear clase/i }));
+
+    // Verify modal is closed
+    expect(screen.queryByRole("heading", { name: /crear nueva clase/i })).not.toBeInTheDocument();
+
+    // Verify new class card is rendered
+    expect(screen.getByText("Historia 6to")).toBeInTheDocument();
+    expect(screen.getAllByText("Prehistoria")[0]).toBeInTheDocument();
+    expect(screen.getByText("Nomadas")).toBeInTheDocument();
+    expect(screen.getByText("Fuego")).toBeInTheDocument();
   });
 });

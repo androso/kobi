@@ -1,6 +1,7 @@
-import { ChevronRight, Users, type LucideIcon } from "lucide-react";
+import { ChevronRight, Users, Leaf, Sigma, BookOpen, PenLine } from "lucide-react";
 
 interface ClassItem {
+  id?: string;
   title: string;
   focus: string;
   students: string;
@@ -8,12 +9,19 @@ interface ClassItem {
   accent: string;
   tone: string;
   badge?: string;
-  icon: LucideIcon;
+  icon: "leaf" | "sigma" | "book" | "pen";
   image?: string;
 }
 
+const iconMap = {
+  leaf: Leaf,
+  sigma: Sigma,
+  book: BookOpen,
+  pen: PenLine,
+};
+
 export function ClassCard({ item, viewMode }: { item: ClassItem; viewMode: "grid" | "list" }) {
-  const Icon = item.icon;
+  const Icon = iconMap[item.icon] || PenLine;
   const isList = viewMode === "list";
 
   return (

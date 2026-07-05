@@ -1,50 +1,20 @@
 import { useState } from "react";
-import { LayoutGrid, List, Plus, Leaf, Sigma, BookOpen, Zap } from "lucide-react";
+import { LayoutGrid, List, Plus, Zap } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { Header } from "./components/Header";
 import { ClassCard } from "./components/ClassCard";
-
-const teacherClasses = [
-  {
-    title: "Ciencia 4to - Sección A",
-    focus: "Ecosistemas y energía",
-    students: "24 estudiantes activos",
-    topics: ["Fotosintesis", "Cadenas alimentarias", "Niveles tróficos"],
-    accent: "text-emerald-700",
-    tone: "from-emerald-600 to-teal-500",
-    badge: "Lección activa",
-    icon: Leaf,
-    image: "https://lh3.googleusercontent.com/aida-public/AB6AXuBCAwPsVw47e0Nv2o8f8sBJM_d_mY5O81AtCriMIujynK1Z4qFVr-U_1_BOLZz-c9WnkGdFLcIxY-pCddOH7FNrl4Nz3RJSepvcldBk9Hn-unZmUUahnjRaxJUfGgcqzcrtMmlDFp3i945BScZwFB8FpFCiY7l7hpZt_9Ac6FLAoZZcrdpnH05aRWNP5a3NlMK0drZNLJ05ejf9BogvXk_G02ZR5Gq8nCFjvbqq7-deOlmo_kbRavVCO0AbBkNsIOBOJN1NGhVDmOM"
-  },
-  {
-    title: "Matemáticas 5to - Álgebra básica",
-    focus: "Matemáticas",
-    students: "22 estudiantes activos",
-    topics: ["Variables", "Ecuaciones", "Orden de operaciones"],
-    accent: "text-blue-700",
-    tone: "from-blue-600 to-indigo-500",
-    icon: Sigma,
-    image: "https://lh3.googleusercontent.com/aida-public/AB6AXuA932KhbIrFuy-YeSLoezsXY1m5ssXcWSCC6nKu52j9iVzwAW0nbMgsKdzmvGZ-x1ZGA4YLqNnsEUuf0YbOjW3QTAaVw7AeJSd_HlaLZEYO49CWgi58UglcAAkhr5-GeZxDYNYJqtLwLnL2xl8gvQpmNmluT-yrr4iOuyjeJSoGn0jgZG5Y4gQjl0kaq9cxGKhtuOToJYeEkDpLt8KG6AeUI7yRUTLfqyF6MB4w0o2AGtWFJOCeN6Wh_eTS3RPoN6ml2gq0Y37Tr9w"
-  },
-  {
-    title: "Lengua 8vo - Escritura creativa",
-    focus: "Lengua y artes",
-    students: "28 estudiantes activos",
-    topics: ["Metáforas", "Estructura narrativa", "Voz"],
-    accent: "text-violet-700",
-    tone: "from-violet-600 to-purple-500",
-    icon: BookOpen,
-    image: "https://lh3.googleusercontent.com/aida-public/AB6AXuCpycvw0OTR6LZbzoWOMk7z3c-p9wMvTQoYyHII1w-4g5rUbzvB_0p33ESghjGNCfseRdj5ouhEUbTrXj52sIfJ9RMFn5JMtRfNXZ-v-KXEWkKpr1lMH23hOqgtEYhMsBcX4JD-tKQdkAq1X93KbzOX4BGFAvHo8O9E9_8IYAluDRxNGs-niCbr2pMnBUC3cFbqF6wlnSubrpUUrKu2hTKD8mzsjSdQRgJilvuO9f_lM7l_NZR1J3YxBJAprOGHte9ecoWntu4mMVY"
-  }
-] as const;
+import { CreateClassModal } from "./components/CreateClassModal";
+import { useClassStore } from "../../lib/store";
 
 export function TeacherDashboard() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const classes = useClassStore((state) => state.classes);
 
   return (
     <main className="min-h-screen bg-[#eef3fb] text-foreground overflow-hidden">
       <div className="grid min-h-screen w-full lg:grid-cols-[240px_minmax(0,1fr)] bg-[#eef3fb]">
-        <Sidebar />
+        <Sidebar onOpenCreateClass={() => setIsCreateModalOpen(true)} />
         <div className="flex flex-col p-3 sm:p-4 lg:p-5 h-screen">
           <div className="flex-1 flex flex-col bg-[#f8f9ff] rounded-[30px] border border-slate-200/50 overflow-hidden shadow-sm">
             <Header />
@@ -89,7 +59,11 @@ export function TeacherDashboard() {
 
               {/* Botón Crear nueva clase (Compacto, arriba de la cuadrícula) */}
               <div className="mb-6">
-                <button className="group flex items-center gap-2 border-2 border-dashed border-slate-200 bg-slate-50/50 hover:bg-slate-100/50 hover:border-[#004ac6]/30 px-5 py-2.5 rounded-2xl cursor-pointer transition active:scale-95" type="button">
+                <button 
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="group flex items-center gap-2 border-2 border-dashed border-slate-200 bg-slate-50/50 hover:bg-slate-100/50 hover:border-[#004ac6]/30 px-5 py-2.5 rounded-2xl cursor-pointer transition active:scale-95" 
+                  type="button"
+                >
                   <Plus className="h-4 w-4 text-[#004ac6]" />
                   <span className="text-xs font-bold text-slate-500 group-hover:text-[#004ac6] transition-colors">Crear nueva clase</span>
                 </button>
@@ -97,8 +71,8 @@ export function TeacherDashboard() {
 
               {/* Grid de Clases */}
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {teacherClasses.map((item) => (
-                  <ClassCard item={item} key={item.title} viewMode={viewMode} />
+                {classes.map((item) => (
+                  <ClassCard item={item} key={item.id} viewMode={viewMode} />
                 ))}
               </div>
             </section>
@@ -137,9 +111,15 @@ export function TeacherDashboard() {
       </div>
     </div>
 
-      <button className="fixed bottom-6 right-6 flex h-14 w-14 items-center justify-center rounded-full bg-[#004ac6] text-white shadow-lg hover:rotate-90 transition-transform active:scale-95" type="button">
+      <button 
+        onClick={() => setIsCreateModalOpen(true)}
+        className="fixed bottom-6 right-6 flex h-14 w-14 items-center justify-center rounded-full bg-[#004ac6] text-white shadow-lg hover:rotate-90 transition-transform active:scale-95" 
+        type="button"
+      >
         <Plus className="h-6 w-6" />
       </button>
+
+      <CreateClassModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} />
     </main>
   );
 }
