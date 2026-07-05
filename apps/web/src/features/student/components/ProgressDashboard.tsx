@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Award, CheckCircle2, Flame, GraduationCap, HelpCircle, Target } from "lucide-react";
+import { Award, CheckCircle2, Flame, GraduationCap, HelpCircle, Star, Target } from "lucide-react";
 import type { Artefacto, ArtefactoBand, ArtefactoSubmission } from "../../../lib/store";
 
 interface ProgressDashboardProps {
@@ -154,7 +154,7 @@ export function ProgressDashboard({ artefactos, submissions, studentName }: Prog
             <div className="min-w-0">
               <p className="truncate text-xl font-bold text-[#2b2b2b]">{studentName}</p>
               <p className="mt-0.5 flex items-center gap-2 text-sm text-[#8a8f98]">
-                <Award className="h-4 w-4 text-[#2f9e8f]" />
+                <Star className="h-4 w-4 fill-[#2f9e8f] text-[#2f9e8f]" />
                 {level}
                 <span className="text-[#c2c6cd]">·</span>
                 {points.toLocaleString("es")} pts
