@@ -40,6 +40,18 @@ export interface EvaluateCheckpointJobResult {
   skippedReason: string | null;
 }
 
+export function buildGenerateActivityArtifactsJobData(input: {
+  sessionId: string;
+  lessonState: LessonState;
+  curriculumMatches: CurriculumMatch[];
+}) {
+  return {
+    sessionId: input.sessionId,
+    lessonState: input.lessonState,
+    curriculumMatches: input.curriculumMatches,
+  };
+}
+
 /**
  * The checkpoint gate: runs on its own schedule (see checkpointScheduler.job.ts),
  * independent from build-lesson-state's per-chunk cadence. Looks at everything
@@ -115,11 +127,11 @@ export async function runEvaluateCheckpointJob(
     unit,
   });
 
-  await boss.send(JOB_GENERATE_ACTIVITY_ARTIFACTS, {
+  await boss.send(JOB_GENERATE_ACTIVITY_ARTIFACTS, buildGenerateActivityArtifactsJobData({
     sessionId,
     lessonState: latestLessonState,
     curriculumMatches,
-  });
+  }));
 
   return { evaluated: true, ready: true, skippedReason: null };
 }
