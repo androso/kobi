@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { useAuthStore, useClassStore } from "./lib/store";
@@ -238,10 +238,12 @@ describe("App", () => {
 
     await user.click(screen.getAllByRole("button", { name: /compartir/i })[0]);
 
-    expect(screen.getByRole("heading", { name: /ciencia 4to - sección a/i })).toBeInTheDocument();
-    expect(screen.getByText(/codigo de clase/i)).toBeInTheDocument();
-    expect(screen.getByText("KOBI7")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /copiar invitacion/i })).toBeInTheDocument();
+    const dialog = screen.getByText(/compartir clase/i).closest("div");
+    expect(dialog).not.toBeNull();
+    expect(within(dialog as HTMLElement).getByRole("heading", { name: /ciencia 4to - sección a/i })).toBeInTheDocument();
+    expect(within(dialog as HTMLElement).getByText(/codigo de clase/i)).toBeInTheDocument();
+    expect(within(dialog as HTMLElement).getByText("KOBI7")).toBeInTheDocument();
+    expect(within(dialog as HTMLElement).getByRole("button", { name: /copiar invitacion/i })).toBeInTheDocument();
   });
 
   it("navigates to the previous classes section and opens the summary modal", async () => {
