@@ -57,8 +57,8 @@ describe("App", () => {
     await user.type(screen.getByPlaceholderText(/contrasena/i), "kobi123");
     await user.click(screen.getByRole("button", { name: /^entrar$/i }));
 
-    expect(screen.getByRole("heading", { name: /welcome back, mrs\. henderson/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /your classes/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /bienvenida de nuevo, sra\. henderson/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /tus clases/i })).toBeInTheDocument();
   });
 
   it("logs into the student dashboard with the demo class code", async () => {
@@ -81,7 +81,7 @@ describe("App", () => {
     await user.type(screen.getByPlaceholderText(/correo electronico/i), "maestra@kobi.demo");
     await user.type(screen.getByPlaceholderText(/contrasena/i), "kobi123");
     await user.click(screen.getByRole("button", { name: /^entrar$/i }));
-    await user.click(screen.getByRole("button", { name: /log out/i }));
+    await user.click(screen.getByRole("button", { name: /salir/i }));
 
     expect(screen.getByPlaceholderText(/correo electronico/i)).toHaveValue("");
     expect(screen.getByPlaceholderText(/contrasena/i)).toHaveValue("");

@@ -38,7 +38,7 @@ export function ClassCard({ item, viewMode }: { item: ClassItem; viewMode: "grid
         
         <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold text-white/80 uppercase tracking-wider">Teacher Portal</p>
+            <p className="text-[11px] font-semibold text-white/80 uppercase tracking-wider">Portal docente</p>
             <p className="mt-0.5 line-clamp-1 text-lg font-bold leading-tight text-white/95">{item.focus}</p>
           </div>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-sm hover:bg-white/25 transition">
@@ -58,7 +58,7 @@ export function ClassCard({ item, viewMode }: { item: ClassItem; viewMode: "grid
         </div>
 
         <div className="mt-6">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Topics</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Temas</p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {item.topics.map((topic) => (
               <span className="rounded-lg bg-slate-50 border border-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600" key={topic}>

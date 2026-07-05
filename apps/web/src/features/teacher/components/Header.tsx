@@ -19,7 +19,7 @@ export function Header() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 h-5 w-5" />
           <input
             className="w-full bg-slate-50 border border-slate-200 rounded-full py-2 pl-10 pr-4 focus:ring-2 focus:ring-[#004ac6]/20 focus:border-[#004ac6] outline-none text-sm transition-all"
-            placeholder="Search lessons, students, or resources..."
+            placeholder="Buscar clases, estudiantes o recursos..."
             type="text"
           />
         </div>
@@ -31,7 +31,7 @@ export function Header() {
         <div className="w-10 h-10 rounded-full bg-slate-100 border-2 border-violet-400 overflow-hidden ml-2 cursor-pointer transition-transform hover:scale-105">
           <img
             className="w-full h-full object-cover"
-            alt="Teacher Avatar"
+            alt="Avatar docente"
             src="https://lh3.googleusercontent.com/aida-public/AB6AXuDs478ot0CpNGzEtWurcO2ZF2eh8pmHnVpqMQ_Xs4901jkWVT_FEvUpFP6zSBHK6q4uYu2wEROfWipc9ZQYgejkJFJ5SM-9qPaua4CWlHsEnXOT5v-KfC9WsOaQsEUutF8GJmx9ZttjbwZnMuhQMYkzqg4sJ42OWyHyttQvuhE4ba_PvBPJrFnYr59lBGeGpxIuRD0gjpZpSuraalatHzVWJjbg9HOr-X36bBf59MDRmnJdjtnWU07jLcTx69pBS_1kfb1fE-c-HaU"
           />
         </div>

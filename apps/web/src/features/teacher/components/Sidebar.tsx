@@ -3,9 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../../lib/store";
 
 const teacherNavItems: Array<{ label: string; icon: LucideIcon; active?: boolean }> = [
-  { label: "Classes", icon: GraduationCap, active: true },
-  { label: "Repositories", icon: FolderOpen },
-  { label: "Analytics", icon: BarChart3 }
+  { label: "Clases", icon: GraduationCap, active: true },
+  { label: "Repositorios", icon: FolderOpen },
+  { label: "Analitica", icon: BarChart3 }
 ];
 
 function SidebarAction({ icon: Icon, label }: { icon: LucideIcon; label: string }) {
@@ -34,8 +34,8 @@ export function Sidebar() {
             <GraduationCap className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-xs font-semibold uppercase tracking-widest text-[#004ac6]">Teacher Portal</h1>
-            <p className="text-[11px] text-slate-500">Classroom Logistics</p>
+            <h1 className="text-xs font-semibold uppercase tracking-widest text-[#004ac6]">Portal docente</h1>
+            <p className="text-[11px] text-slate-500">Organización del aula</p>
           </div>
         </div>
 
@@ -63,15 +63,15 @@ export function Sidebar() {
       <div className="space-y-4">
         <button className="w-full py-3.5 px-4 bg-[#004ac6] text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-blue-600/10 hover:bg-[#003ea8] transition active:scale-95" type="button">
           <Plus className="h-4 w-4" />
-          <span>Add New Class</span>
+          <span>Nueva clase</span>
         </button>
         <div className="h-px bg-slate-200" />
         <div className="space-y-1">
-          <SidebarAction icon={CircleHelp} label="Help" />
-          <SidebarAction icon={BookOpen} label="Support" />
+          <SidebarAction icon={CircleHelp} label="Ayuda" />
+          <SidebarAction icon={BookOpen} label="Soporte" />
           <button className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-sm font-medium text-slate-500 transition hover:bg-white hover:text-slate-950" onClick={handleLogout} type="button">
             <LogOut className="h-5 w-5" />
-            <span>Log Out</span>
+            <span>Salir</span>
           </button>
         </div>
       </div>
