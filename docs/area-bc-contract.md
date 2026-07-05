@@ -36,7 +36,9 @@ Type is exported from `@kobi/curriculum` — import it directly rather than rede
 
 ## How retrieval gets triggered
 
-You don't need to call this yourself in the MVP flow — `apps/worker/src/jobs/buildLessonState.job.ts` calls it automatically every time a new `lesson_state` is built (rolling, ~2 min cadence) and confidence is >= 0.5. Low-confidence `lesson_state` skips retrieval entirely, so you won't get called with weak/noisy evidence.
+You don't need to call this yourself in the MVP flow. `apps/worker/src/jobs/buildLessonState.job.ts` only builds `lesson_state` and persists it to `segments` now — it no longer decides when to move to Propose.
+
+That decision is the **checkpoint gate**: `apps/worker/src/jobs/checkpointScheduler.job.ts` runs on its own timer (pg-boss cron, default every `CHECKPOINT_INTERVAL_MINUTES` = 10 min per active session, independent of the per-chunk `build-lesson-state` cadence) and enqueues `apps/worker/src/jobs/evaluateCheckpoint.job.ts`. That job asks an OpenAI-backed checkpoint agent (`apps/worker/src/checkpoint/evaluateCheckpoint.ts`) whether the `lesson_state` material accumulated since the last `ready` checkpoint is sufficient and valid — see `docs/contracts.md` §2 for the decision shape. Only when the agent says `ready: true` does the job call `retrieveCurriculumMatches()` and hand off to Area C's `generate-activity-artifacts`. A `false` decision just logs a `checkpoints` row and waits for the next tick with more accumulated segments.
 
 If you need retrieval on-demand (e.g. re-running for a specific unit at "Hora de actividad" time), call `retrieveCurriculumMatches(supabase, { queryText, grade, subject, unit })` directly — it's a plain async function, not queue-only.
 
