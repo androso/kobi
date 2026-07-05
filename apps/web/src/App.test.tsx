@@ -149,7 +149,7 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { name: /hola, ana/i })).toBeInTheDocument();
     expect(screen.getByText(/ciencia 4to - sección a/i)).toBeInTheDocument();
-    expect(screen.getByText(/actividad lista/i)).toBeInTheDocument();
+    expect(await screen.findByText(/buscando actividad|esperando actividad/i)).toBeInTheDocument();
   });
 
   it("shows an error when a student uses an invalid classroom code", async () => {
