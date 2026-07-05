@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildLessonState, type LessonState } from "@kobi/ai-core";
-import { retrieveCurriculumMatches } from "@kobi/curriculum";
+import { buildCurriculumQueryText, retrieveCurriculumMatches } from "@kobi/curriculum";
 import type PgBoss from "pg-boss";
 import { JOB_GENERATE_ACTIVITY_ARTIFACTS } from "../queue.js";
 
@@ -50,7 +50,7 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
 
       if (!transcriptText) return;
 
-      const { data: previousSegment } = await supabase
+      const { data: previousSegment, error: previousSegmentError } = await supabase
         .from("segments")
         .select("lesson_state")
         .eq("session_id", sessionId)
@@ -58,24 +58,32 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
         .limit(1)
         .maybeSingle();
 
+      if (previousSegmentError) {
+        throw new Error(
+          `buildLessonState job: failed to load previous segment: ${previousSegmentError.message}`,
+        );
+      }
+
       const lessonState: LessonState = await buildLessonState({
         transcriptText,
         previousLessonState: (previousSegment?.lesson_state as LessonState) ?? null,
       });
 
-      await supabase.from("segments").insert({
+      const { error: segmentError } = await supabase.from("segments").insert({
         session_id: sessionId,
         lesson_state: lessonState,
         confidence: lessonState.confidence,
         transcript_summary: lessonState.transcript_summary,
       });
 
+      if (segmentError) {
+        throw new Error(`buildLessonState job: failed to insert segment: ${segmentError.message}`);
+      }
+
       // Skip retrieval on low-confidence lesson_state (avoid feeding Area C noisy evidence).
       if (lessonState.confidence < 0.5) return;
 
-      const queryText = [lessonState.topic, lessonState.objective_guess, ...lessonState.key_terms]
-        .filter(Boolean)
-        .join(" ");
+      const queryText = buildCurriculumQueryText(lessonState);
 
       const curriculumMatches = await retrieveCurriculumMatches(supabase, {
         queryText,
