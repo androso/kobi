@@ -43,15 +43,6 @@ const SUBJECT_META: Record<
 // Construye una sesión guardada a partir de la clase monitoreada y los datos en vivo
 function buildSession(cls: ClassItem, durationSeconds: number, teacherId?: string): SavedSession {
   const meta = SUBJECT_META[cls.icon] ?? SUBJECT_META.pen;
-  const summaryPoints = [
-    `Tema trabajado: ${MOCK_INSIGHTS.detectedTopic}.`,
-    `Objetivo de la sesión: ${MOCK_INSIGHTS.currentObjective}`,
-    `Conceptos clave abordados: ${MOCK_INSIGHTS.keywords.join(", ")}.`,
-  ];
-  const nextSteps = [
-    ...MOCK_INSIGHTS.misconceptions.map((m) => `Reforzar: ${m.title.toLowerCase()}.`),
-    `Asignar la actividad sugerida: ${MOCK_INSIGHTS.suggestedActivity}.`,
-  ];
   return {
     id: `session-${Date.now()}`,
     classId: cls.id,
@@ -66,8 +57,8 @@ function buildSession(cls: ClassItem, durationSeconds: number, teacherId?: strin
       year: "numeric",
     }),
     duration: formatTime(durationSeconds),
-    summaryPoints,
-    nextSteps,
+    summaryPoints: [],
+    nextSteps: [],
     transcript: [],
     teacherId,
   };
