@@ -37,21 +37,24 @@ export async function transcribeAudioChunk(
 
   console.log(`[transcribeAudioChunk] provider=${provider} model=${model} audioUrl=${audioUrl.toString()}`);
 
-  const transcriptText = normalizeTranscriptText(
-    await transcriptionAdapters[provider]({
-      audioUrl,
-      mimeType,
-      model: input.model,
-    }),
-  );
+  const rawTranscript = await transcriptionAdapters[provider]({
+    audioUrl,
+    mimeType,
+    model: input.model,
+  });
+
+  const transcriptText = normalizeTranscriptText(rawTranscript);
 
   if (!transcriptText) {
-    throw new Error(`transcribeAudioChunk: ${provider} returned an empty transcript`);
+    console.warn(
+      `[transcribeAudioChunk] ${provider} returned an empty transcript for ${audioUrl.toString()}. ` +
+        `The audio chunk may contain silence, be too short, or the format may be unsupported.`,
+    );
+  } else {
+    console.log(
+      `[transcribeAudioChunk] transcript received (${transcriptText.length} chars): ${transcriptText.slice(0, 200)}${transcriptText.length > 200 ? "..." : ""}`,
+    );
   }
-
-  console.log(
-    `[transcribeAudioChunk] transcript received (${transcriptText.length} chars): ${transcriptText.slice(0, 200)}${transcriptText.length > 200 ? "..." : ""}`,
-  );
 
   return { transcriptText };
 }

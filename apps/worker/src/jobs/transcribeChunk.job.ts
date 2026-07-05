@@ -58,6 +58,13 @@ export function registerTranscribeChunkJob(boss: PgBoss, supabase: SupabaseClien
         throw error;
       }
 
+      if (!transcriptText) {
+        console.warn(
+          `[transcribeChunk] chunk ${audioChunkId} produced an empty transcript. ` +
+            `Saving as empty and continuing — build-lesson-state will skip if all recent chunks are silent.`,
+        );
+      }
+
       const { error: updateError } = await supabase
         .from("audio_chunks")
         .update({ status: "transcribed", transcript_text: transcriptText })
@@ -67,7 +74,7 @@ export function registerTranscribeChunkJob(boss: PgBoss, supabase: SupabaseClien
         throw new Error(`transcribeChunk job: failed to save transcript: ${updateError.message}`);
       }
 
-      console.log(`[transcribeChunk] chunk ${audioChunkId} transcribed, enqueuing build-lesson-state for session ${sessionId}`);
+      console.log(`[transcribeChunk] chunk ${audioChunkId} transcribed (${transcriptText.length} chars), enqueuing build-lesson-state for session ${sessionId}`);
 
       await boss.send(JOB_BUILD_LESSON_STATE, { sessionId });
     },
