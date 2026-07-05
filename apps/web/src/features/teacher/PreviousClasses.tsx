@@ -17,7 +17,7 @@ import {
 import { Sidebar } from "./components/Sidebar";
 import { Header } from "./components/Header";
 import { CreateClassModal } from "./components/CreateClassModal";
-import { useClassStore, type SavedSession } from "../../lib/store";
+import { useClassStore, useAuthStore, type SavedSession } from "../../lib/store";
 
 // ---------------------------------------------------------------------------
 // Seed history (structured for the combined summary & transcript layout).
@@ -105,6 +105,8 @@ const PREVIOUS_SESSIONS: SavedSession[] = [
 ];
 
 export function PreviousClasses() {
+  const user = useAuthStore((state) => state.user);
+  const teacherName = user?.displayName || user?.email?.split("@")[0] || "Docente";
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSession, setSelectedSession] = useState<SavedSession | null>(null);
@@ -320,7 +322,7 @@ export function PreviousClasses() {
                     <div>
                       <h4 className="font-bold text-slate-800 text-sm leading-tight">Clase finalizada</h4>
                       <p className="text-xs text-slate-500 mt-0.5 font-medium">
-                        Sra. Henderson · {selectedSession.duration}
+                        {teacherName} · {selectedSession.duration}
                       </p>
                     </div>
 
@@ -412,7 +414,7 @@ export function PreviousClasses() {
                     <div>
                       <h5 className="font-bold text-slate-900 text-sm leading-tight">{selectedSession.title}</h5>
                       <p className="text-xs text-slate-400 font-medium mt-0.5">
-                        Sra. Henderson · {selectedSession.duration}
+                        {teacherName} · {selectedSession.duration}
                       </p>
                     </div>
                   </div>
