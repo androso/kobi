@@ -152,16 +152,18 @@ export function ClassCard({ item, viewMode, index = 0, onShareCode }: ClassCardP
         </div>
 
         {/* Topics List */}
-        <div className="mt-5">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2.5">Temas clave</p>
-          <div className="flex flex-wrap gap-1.5">
-            {item.topics.map((topic) => (
-              <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors duration-300 ${theme.bg}`} key={topic}>
-                {topic}
-              </span>
-            ))}
+        {item.topics && item.topics.length > 0 ? (
+          <div className="mt-5">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2.5">Temas clave</p>
+            <div className="flex flex-wrap gap-1.5">
+              {item.topics.map((topic) => (
+                <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors duration-300 ${theme.bg}`} key={topic}>
+                  {topic}
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
+        ) : null}
 
         {/* Card Footer: Users & Avatar stack */}
         <div className="mt-6 pt-4.5 border-t border-slate-100 flex items-center justify-between">
@@ -171,12 +173,22 @@ export function ClassCard({ item, viewMode, index = 0, onShareCode }: ClassCardP
           </div>
           
           {/* Avatar stack overlay */}
-          <div className="flex -space-x-1.5 overflow-hidden">
-            <span className={`inline-block h-6 w-6 rounded-full border border-white flex items-center justify-center text-[9px] font-bold ${theme.avatarBg[0]}`}>S</span>
-            <span className={`inline-block h-6 w-6 rounded-full border border-white flex items-center justify-center text-[9px] font-bold ${theme.avatarBg[1]}`}>P</span>
-            <span className={`inline-block h-6 w-6 rounded-full border border-white flex items-center justify-center text-[9px] font-bold ${theme.avatarBg[2]}`}>M</span>
-            <span className="inline-block h-6 w-6 rounded-full border border-white bg-slate-100 flex items-center justify-center text-[8px] font-extrabold text-slate-500">+19</span>
-          </div>
+          {item.studentCount > 0 ? (
+            <div className="flex -space-x-1.5 overflow-hidden">
+              <span className={`inline-block h-6 w-6 rounded-full border border-white flex items-center justify-center text-[9px] font-bold ${theme.avatarBg[0]}`}>E</span>
+              {item.studentCount > 1 && (
+                <span className={`inline-block h-6 w-6 rounded-full border border-white flex items-center justify-center text-[9px] font-bold ${theme.avatarBg[1]}`}>E</span>
+              )}
+              {item.studentCount > 2 && (
+                <span className={`inline-block h-6 w-6 rounded-full border border-white flex items-center justify-center text-[9px] font-bold ${theme.avatarBg[2]}`}>E</span>
+              )}
+              {item.studentCount > 3 && (
+                <span className="inline-block h-6 w-6 rounded-full border border-white bg-slate-100 flex items-center justify-center text-[8px] font-extrabold text-slate-500">
+                  +{item.studentCount - 3}
+                </span>
+              )}
+            </div>
+          ) : null}
         </div>
 
       </div>
