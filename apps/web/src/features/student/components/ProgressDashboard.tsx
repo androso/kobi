@@ -1,6 +1,46 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Award, CheckCircle2, Flame, GraduationCap, HelpCircle, Star, Target } from "lucide-react";
 import type { Artefacto, ArtefactoBand, ArtefactoSubmission } from "../../../lib/store";
+
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    : false;
+}
+
+/** Flips to true one frame after mount, so mount-gated CSS transitions run. */
+function useMounted(): boolean {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  return mounted;
+}
+
+/** Eased count-up to `target`; jumps straight to the value under reduced motion. */
+function useCountUp(target: number, duration = 900): number {
+  const [value, setValue] = useState(0);
+  const rafRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (prefersReducedMotion()) {
+      setValue(target);
+      return;
+    }
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setValue(Math.round(target * eased));
+      if (t < 1) rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [target, duration]);
+
+  return value;
+}
 
 interface ProgressDashboardProps {
   artefactos: Artefacto[];
@@ -48,6 +88,11 @@ export function ProgressDashboard({ artefactos, submissions, studentName }: Prog
   const level = goal >= 100 ? "Experto" : goal >= 67 ? "Avanzado" : goal >= 34 ? "Intermedio" : "Principiante";
   const precisionTag = precision >= 80 ? "Excelente" : precision >= 50 ? "Bien" : "A mejorar";
 
+  const mounted = useMounted();
+  const goalDisplay = useCountUp(goal);
+  const precisionDisplay = useCountUp(precision);
+  const dominioDisplay = useCountUp(dominio);
+
   const bandStats = BANDS.map((band) => {
     const items = artefactos.filter((a) => a.band === band.key);
     const done = items.filter((a) => completedIds.has(a.id)).length;
@@ -72,7 +117,7 @@ export function ProgressDashboard({ artefactos, submissions, studentName }: Prog
   return (
     <div className="grid gap-5 xl:grid-cols-3">
       {/* Progress ring + per-band legend */}
-      <section className="rounded-3xl bg-white p-6 shadow-[0_8px_30px_rgba(43,43,43,0.05)]">
+      <section className="rounded-3xl bg-white p-6 shadow-[0_8px_30px_rgba(43,43,43,0.05)] duration-700 animate-in fade-in slide-in-from-bottom-3 fill-mode-both">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-bold text-[#2b2b2b]">Progreso</h2>
           <span className="rounded-full bg-[#f0ede7] px-3 py-1 text-xs font-semibold text-[#7c8189]">
@@ -81,9 +126,9 @@ export function ProgressDashboard({ artefactos, submissions, studentName }: Prog
         </div>
 
         <div className="mt-4 flex items-center gap-6">
-          <ProgressRings stats={bandStats} centerPct={goal} />
+          <ProgressRings stats={bandStats} centerPct={goal} mounted={mounted} />
           <div>
-            <p className="text-3xl font-bold text-[#2b2b2b]">{goal}%</p>
+            <p className="text-3xl font-bold text-[#2b2b2b]">{goalDisplay}%</p>
             <p className="text-sm text-[#8a8f98]">Meta completada</p>
           </div>
         </div>
@@ -108,13 +153,16 @@ export function ProgressDashboard({ artefactos, submissions, studentName }: Prog
 
       {/* Precision (highlight) + Dominio meter */}
       <div className="flex flex-col gap-5">
-        <section className="rounded-3xl bg-[#eaf3c9] p-6">
+        <section
+          className="rounded-3xl bg-[#eaf3c9] p-6 duration-700 animate-in fade-in slide-in-from-bottom-3 fill-mode-both"
+          style={{ animationDelay: "120ms" }}
+        >
           <div className="flex items-center gap-2 text-[#3f4a1e]">
             <Target className="h-5 w-5" />
             <h2 className="text-base font-bold">Precisión</h2>
           </div>
           <div className="mt-4 flex items-center gap-3">
-            <p className="text-4xl font-bold text-[#2b2b2b]">{precision}%</p>
+            <p className="text-4xl font-bold text-[#2b2b2b]">{precisionDisplay}%</p>
             <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-[#3f4a1e]">
               {precisionTag}
             </span>
@@ -124,27 +172,33 @@ export function ProgressDashboard({ artefactos, submissions, studentName }: Prog
               ? `${earnedScore} de ${answeredTotal} respuestas correctas.`
               : "Aún no has respondido actividades."}
           </p>
-          <Sparkline values={trend} />
+          <Sparkline values={trend} mounted={mounted} />
         </section>
 
-        <section className="rounded-3xl bg-[#dbe8fb] p-6">
+        <section
+          className="rounded-3xl bg-[#dbe8fb] p-6 duration-700 animate-in fade-in slide-in-from-bottom-3 fill-mode-both"
+          style={{ animationDelay: "220ms" }}
+        >
           <div className="flex items-center gap-2 text-[#243b5e]">
             <Award className="h-5 w-5" />
             <h2 className="text-base font-bold">Dominio</h2>
           </div>
           <div className="mt-4 flex items-center gap-3">
-            <p className="text-4xl font-bold text-[#2b2b2b]">{dominio}%</p>
+            <p className="text-4xl font-bold text-[#2b2b2b]">{dominioDisplay}%</p>
             <span className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-[#243b5e]">
               {dominio >= 67 ? "Muy bien" : "En camino"}
             </span>
           </div>
-          <SegmentedMeter pct={dominio} />
+          <SegmentedMeter pct={dominio} mounted={mounted} />
           <p className="mt-3 text-sm text-[#2f4468]">¡Sigue así, {studentName}!</p>
         </section>
       </div>
 
       {/* Profile + recent activity */}
-      <div className="flex flex-col gap-5">
+      <div
+        className="flex flex-col gap-5 duration-700 animate-in fade-in slide-in-from-bottom-3 fill-mode-both"
+        style={{ animationDelay: "320ms" }}
+      >
         <section className="rounded-3xl bg-white p-6 shadow-[0_8px_30px_rgba(43,43,43,0.05)]">
           <h2 className="text-lg font-bold text-[#2b2b2b]">Mi perfil</h2>
           <div className="mt-4 flex items-center gap-4">
@@ -202,9 +256,11 @@ export function ProgressDashboard({ artefactos, submissions, studentName }: Prog
 function ProgressRings({
   stats,
   centerPct,
+  mounted,
 }: {
   stats: { color: string; pct: number }[];
   centerPct: number;
+  mounted: boolean;
 }) {
   const size = 132;
   const center = size / 2;
@@ -216,7 +272,8 @@ function ProgressRings({
       {stats.map((band, index) => {
         const r = radii[index] ?? radii[radii.length - 1];
         const circumference = 2 * Math.PI * r;
-        const dash = (Math.min(100, Math.max(0, band.pct)) / 100) * circumference;
+        const target = (Math.min(100, Math.max(0, band.pct)) / 100) * circumference;
+        const dash = mounted ? target : 0;
 
         return (
           <g key={index} transform={`rotate(-90 ${center} ${center})`}>
@@ -230,6 +287,7 @@ function ProgressRings({
               strokeWidth={stroke}
               strokeLinecap="round"
               strokeDasharray={`${dash} ${circumference}`}
+              style={{ transition: "stroke-dasharray 1000ms cubic-bezier(0.22, 1, 0.36, 1)", transitionDelay: `${index * 120}ms` }}
             />
           </g>
         );
@@ -238,7 +296,7 @@ function ProgressRings({
   );
 }
 
-function Sparkline({ values }: { values: number[] }) {
+function Sparkline({ values, mounted }: { values: number[]; mounted: boolean }) {
   const width = 220;
   const height = 48;
   if (values.length < 2) {
@@ -257,24 +315,42 @@ function Sparkline({ values }: { values: number[] }) {
 
   return (
     <svg className="mt-4" width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-      <polyline points={points} fill="none" stroke="#3f4a1e" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      <polyline
+        points={points}
+        fill="none"
+        stroke="#3f4a1e"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        pathLength={1}
+        strokeDasharray={1}
+        strokeDashoffset={mounted ? 0 : 1}
+        style={{ transition: "stroke-dashoffset 1100ms ease-out" }}
+      />
     </svg>
   );
 }
 
-function SegmentedMeter({ pct }: { pct: number }) {
+function SegmentedMeter({ pct, mounted }: { pct: number; mounted: boolean }) {
   const segments = 5;
   const filled = Math.round((pct / 100) * segments);
 
   return (
     <div className="mt-4 flex gap-1.5">
-      {Array.from({ length: segments }).map((_, i) => (
-        <span
-          key={i}
-          className="h-2.5 flex-1 rounded-full"
-          style={{ backgroundColor: i < filled ? "#243b5e" : "#c2d3ee" }}
-        />
-      ))}
+      {Array.from({ length: segments }).map((_, i) => {
+        const isFilled = mounted && i < filled;
+        return (
+          <span
+            key={i}
+            className="h-2.5 flex-1 rounded-full"
+            style={{
+              backgroundColor: isFilled ? "#243b5e" : "#c2d3ee",
+              transition: "background-color 400ms ease",
+              transitionDelay: `${i * 90}ms`,
+            }}
+          />
+        );
+      })}
     </div>
   );
 }
