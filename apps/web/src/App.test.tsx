@@ -147,9 +147,24 @@ describe("App", () => {
     await user.type(screen.getByPlaceholderText(/nombre/i), "Ana");
     await user.click(screen.getByRole("button", { name: /entrar a clase/i }));
 
-    expect(screen.getByRole("heading", { name: /hola, ana/i })).toBeInTheDocument();
-    expect(screen.getByText(/ciencia 4to - sección a/i)).toBeInTheDocument();
-    expect(screen.getByText(/actividad lista/i)).toBeInTheDocument();
+    // Lesson list + first quiz question render for the seeded KOBI7 class.
+    expect(screen.getByRole("heading", { name: /vocabulario en contexto: la noticia/i })).toBeInTheDocument();
+    expect(screen.getByText(/pregunta 1 de 3/i)).toBeInTheDocument();
+
+    // Answer all three questions correctly, advancing through the quiz.
+    await user.click(screen.getByRole("button", { name: /^noticia$/i }));
+    await user.click(screen.getByRole("button", { name: /siguiente/i }));
+    await user.click(screen.getByRole("button", { name: /^la entradilla$/i }));
+    await user.click(screen.getByRole("button", { name: /siguiente/i }));
+    await user.click(screen.getByRole("button", { name: /^qué pasó$/i }));
+    await user.click(screen.getByRole("button", { name: /entregar/i }));
+
+    expect(screen.getByText(/respuesta correcta en todas/i)).toBeInTheDocument();
+    expect(screen.getByText(/obtuviste 3 de 3/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("link", { name: /progreso/i }));
+    expect(screen.getByRole("heading", { level: 1, name: /progreso/i })).toBeInTheDocument();
+    expect(screen.getByText(/meta completada/i)).toBeInTheDocument();
   });
 
   it("shows an error when a student uses an invalid classroom code", async () => {

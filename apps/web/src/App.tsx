@@ -89,6 +89,22 @@ export function App() {
         path="/student"
         element={
           <RequireRole role="student">
+            <Navigate to="/student/asignaciones" replace />
+          </RequireRole>
+        }
+      />
+      <Route
+        path="/student/asignaciones"
+        element={
+          <RequireRole role="student">
+            <StudentDashboard />
+          </RequireRole>
+        }
+      />
+      <Route
+        path="/student/progreso"
+        element={
+          <RequireRole role="student">
             <StudentDashboard />
           </RequireRole>
         }

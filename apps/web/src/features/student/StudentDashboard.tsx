@@ -1,69 +1,143 @@
-import { LogOut } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import { Button } from "../../components/ui/button";
-import { useAuthStore } from "../../lib/store";
+import { useEffect, useMemo, useState } from "react";
+import { PlayCircle, ShieldCheck } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { findClassByCode, selectClassArtefactos, useAuthStore, useClassStore } from "../../lib/store";
+import { StudentSidebar, type StudentSidebarNavItem } from "./components/StudentSidebar";
+import { LessonList } from "./components/LessonList";
+import { ArtifactRenderer } from "./components/ArtifactRenderer";
+import { ProgressDashboard } from "./components/ProgressDashboard";
+import { StudentHelpModal } from "./components/StudentHelpModal";
+
+const studentNavItems: readonly StudentSidebarNavItem[] = [
+  {
+    label: "Artefactos",
+    path: "/student/asignaciones",
+    icon: PlayCircle,
+  },
+  {
+    label: "Progreso",
+    path: "/student/progreso",
+    icon: ShieldCheck,
+  },
+] as const;
+
+type StudentRouteSection = "asignaciones" | "progreso";
+
+function getStudentRouteSection(pathname: string): StudentRouteSection {
+  return pathname.endsWith("/progreso") ? "progreso" : "asignaciones";
+}
 
 export function StudentDashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
+  const classes = useClassStore((state) => state.classes);
+  const allArtefactos = useClassStore((state) => state.artefactos);
+  const submissions = useClassStore((state) => state.submissions);
 
-  const studentName = user?.studentName || "Ana";
-  const className = user?.className ?? "Clase Kobi";
-  const joinCode = user?.joinCode;
+  const [selectedArtefactoId, setSelectedArtefactoId] = useState<string | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+
+  useEffect(() => {
+    if (!user || user.role !== "student") {
+      navigate("/", { replace: true });
+    }
+  }, [navigate, user]);
+
+  const studentName = user?.studentName?.trim() || "Estudiante";
+  const classCode = user?.joinCode?.trim() || "KOBI7";
+  const activeSection = getStudentRouteSection(location.pathname);
+
+  const studentClass = useMemo(() => findClassByCode(classes, classCode), [classes, classCode]);
+  const artefactos = useMemo(
+    () => (studentClass ? selectClassArtefactos({ artefactos: allArtefactos }, studentClass.id) : []),
+    [allArtefactos, studentClass],
+  );
+
+  const activeArtefacto = useMemo(
+    () => artefactos.find((item) => item.id === selectedArtefactoId) ?? artefactos[0],
+    [artefactos, selectedArtefactoId],
+  );
+
+  const completedCount = useMemo(
+    () =>
+      artefactos.filter((item) =>
+        submissions.some(
+          (sub) => sub.artefactoId === item.id && sub.studentName === studentName && sub.status === "completed",
+        ),
+      ).length,
+    [artefactos, submissions, studentName],
+  );
 
   function handleLogout() {
     logout();
     navigate("/");
   }
 
-  return (
-    <main className="min-h-screen bg-[#eef5fb] px-6 py-8 text-foreground">
-      <div className="mx-auto max-w-4xl">
-        <header className="mb-8 flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-primary">Panel estudiante</p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-normal text-[#0f4f9e]">Hola, {studentName}</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              {className}
-              {joinCode ? <span className="ml-2 font-semibold text-[#1077e5]">Codigo {joinCode}</span> : null}
-            </p>
-          </div>
-          <Button onClick={handleLogout} type="button" variant="secondary">
-            <LogOut className="mr-2 h-4 w-4" />
-            Salir
-          </Button>
-        </header>
+  const progressSummary =
+    completedCount === artefactos.length && artefactos.length > 0
+      ? "Todo completado"
+      : completedCount > 0
+        ? "En progreso"
+        : "Sin iniciar";
 
-        <section className="rounded-xl bg-white p-6 shadow-sm">
-          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-sky-50 text-[#1077e5]">
-            <svg
-              className="h-6 w-6"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-semibold text-[#0f4f9e]">Actividad lista</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Lee cada oracion y elige la palabra que completa mejor el sentido. Puedes pedir una pista si te quedas atascado.
-          </p>
-          <div className="mt-6 rounded-xl border border-slate-200 p-4">
-            <p className="text-sm font-medium text-slate-500">Pregunta 1</p>
-            <p className="mt-2 text-lg text-[#0f4f9e]">El periodista redacto la ___ antes del mediodia.</p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              {["noticia", "novela", "receta"].map((option) => (
-                <button className="rounded-xl border border-slate-200 px-4 py-3 text-sm hover:bg-sky-50" key={option}>
-                  {option}
-                </button>
-              ))}
+  return (
+    <main className="min-h-screen bg-[#faf8f4] text-[#2b2b2b]">
+      <div className="grid min-h-screen w-full lg:grid-cols-[6.5rem_minmax(0,1fr)]">
+        <div className="min-h-screen">
+          <StudentSidebar
+            className="sticky top-0"
+            classCode={classCode}
+            navItems={studentNavItems}
+            onHelp={() => setHelpOpen(true)}
+            onLogout={handleLogout}
+            progressLabel={progressSummary}
+            studentName={studentName}
+          />
+        </div>
+
+        {activeSection === "asignaciones" ? (
+          <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[20rem_minmax(0,1fr)]">
+            <div className="border-b border-[#ece8e1] bg-[#fdfcf9] px-6 py-8 lg:border-b-0 lg:border-r">
+              <LessonList
+                activeId={activeArtefacto?.id}
+                artefactos={artefactos}
+                onSelect={setSelectedArtefactoId}
+                section={studentClass?.focus ?? "Actividades"}
+                studentName={studentName}
+                submissions={submissions}
+                title={studentClass?.title ?? "Tu clase"}
+              />
+            </div>
+
+            <div className="px-6 py-10 sm:px-10">
+              {activeArtefacto ? (
+                <ArtifactRenderer
+                  key={activeArtefacto.id}
+                  artefacto={activeArtefacto}
+                  onHome={() => setSelectedArtefactoId(artefactos[0]?.id ?? null)}
+                  studentName={studentName}
+                />
+              ) : (
+                <div className="mx-auto max-w-2xl rounded-3xl border border-dashed border-[#e0ddd5] bg-white/60 p-10 text-center text-sm text-[#8a8f98]">
+                  No tienes actividades asignadas todavía. Tu profesor las publicará aquí.
+                </div>
+              )}
             </div>
           </div>
-        </section>
+        ) : (
+          <div className="grid content-start gap-6 px-5 py-8 sm:px-8">
+            <header>
+              <h1 className="text-4xl font-bold tracking-tight text-[#2b2b2b]">Progreso</h1>
+              <p className="mt-2 text-base text-[#8a8f98]">Revisa tu avance en las actividades de la clase.</p>
+            </header>
+            <ProgressDashboard artefactos={artefactos} studentName={studentName} submissions={submissions} />
+          </div>
+        )}
       </div>
+
+      <StudentHelpModal classCode={classCode} onClose={() => setHelpOpen(false)} open={helpOpen} />
     </main>
   );
 }
