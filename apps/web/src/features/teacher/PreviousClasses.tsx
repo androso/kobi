@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import {
   FolderOpen,
   Calendar,
@@ -18,13 +17,16 @@ import {
 import { Sidebar } from "./components/Sidebar";
 import { Header } from "./components/Header";
 import { CreateClassModal } from "./components/CreateClassModal";
+import { useClassStore, type SavedSession } from "../../lib/store";
 
 // ---------------------------------------------------------------------------
-// Mock previous classes data (structured for the combined summary & transcript layout)
+// Seed history (structured for the combined summary & transcript layout).
+// Live sessions saved from the monitor are prepended from the store.
 // ---------------------------------------------------------------------------
-const PREVIOUS_SESSIONS = [
+const PREVIOUS_SESSIONS: SavedSession[] = [
   {
-    id: 1,
+    id: "seed-1",
+    classId: "",
     subject: "CIENCIAS",
     subjectColor: "text-emerald-700 bg-emerald-50 border-emerald-100",
     dotColor: "bg-emerald-500",
@@ -52,7 +54,8 @@ const PREVIOUS_SESSIONS = [
     ]
   },
   {
-    id: 2,
+    id: "seed-2",
+    classId: "",
     subject: "MATEMÁTICAS",
     subjectColor: "text-blue-700 bg-blue-50 border-blue-100",
     dotColor: "bg-blue-500",
@@ -76,7 +79,8 @@ const PREVIOUS_SESSIONS = [
     ]
   },
   {
-    id: 3,
+    id: "seed-3",
+    classId: "",
     subject: "HISTORIA",
     subjectColor: "text-amber-700 bg-amber-50 border-amber-100",
     dotColor: "bg-amber-500",
@@ -101,14 +105,17 @@ const PREVIOUS_SESSIONS = [
 ];
 
 export function PreviousClasses() {
-  const navigate = useNavigate();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedSession, setSelectedSession] = useState<typeof PREVIOUS_SESSIONS[0] | null>(null);
+  const [selectedSession, setSelectedSession] = useState<SavedSession | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [playProgress, setPlayProgress] = useState(30);
   const [playbackRate, setPlaybackRate] = useState(1);
+
+  // Sessions saved live from the monitor appear first, then the seed history
+  const storeSessions = useClassStore((state) => state.sessions);
+  const allSessions = [...storeSessions, ...PREVIOUS_SESSIONS];
 
   const PLAYBACK_RATES = [1, 1.25, 1.5, 2, 0.5];
   function cyclePlaybackRate() {
@@ -118,14 +125,14 @@ export function PreviousClasses() {
     });
   }
 
-  const filteredSessions = PREVIOUS_SESSIONS.filter(
+  const filteredSessions = allSessions.filter(
     (session) =>
       session.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       session.focus.toLowerCase().includes(searchQuery.toLowerCase()) ||
       session.subject.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  function handleOpenDetailsModal(session: typeof PREVIOUS_SESSIONS[0]) {
+  function handleOpenDetailsModal(session: SavedSession) {
     setSelectedSession(session);
     setIsPlaying(false);
     setPlayProgress(15);
@@ -140,10 +147,7 @@ export function PreviousClasses() {
       <div className="grid min-h-screen w-full lg:grid-cols-[240px_minmax(0,1fr)] bg-[#eef3fb]">
         
         {/* Left Sidebar */}
-        <Sidebar
-          onOpenCreateClass={() => setIsCreateModalOpen(true)}
-          onOpenHelp={() => navigate("/teacher/ayuda")}
-        />
+        <Sidebar onOpenCreateClass={() => setIsCreateModalOpen(true)} />
         
         {/* Main Content Area */}
         <div className="flex flex-col p-3 sm:p-4 lg:p-5 h-screen">

@@ -21,9 +21,11 @@ const BG_ALPHA = 0.55;
  * around the center row. The envelope animates so peaks drift like real speech.
  * When the transcription backend lands, drive `amplitude` from real audio RMS.
  */
-export function WaveformVisualizer() {
+export function WaveformVisualizer({ active = true }: { active?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -53,14 +55,16 @@ export function WaveformVisualizer() {
       const cellH = h / ROWS;
       const radius = Math.min(cellW, cellH) * 0.3;
       const t = Date.now() / 1000;
+      const isActive = activeRef.current;
 
       for (let col = 0; col < COLS; col++) {
-        // Layered sines → organic, drifting speech-like envelope
+        // Layered sines → organic, drifting speech-like envelope.
+        // When idle, collapse to a flat baseline of quiet dots.
         const a =
           Math.sin(col * 0.5 + t * 3.0) * 0.5 +
           Math.sin(col * 0.23 - t * 1.7) * 0.3 +
           Math.sin(col * 0.11 + t * 0.9) * 0.2;
-        const amp = (Math.abs(a) * 0.9 + 0.08) * CENTER;
+        const amp = isActive ? (Math.abs(a) * 0.9 + 0.08) * CENTER : 0.05 * CENTER;
 
         for (let row = 0; row < ROWS; row++) {
           const dist = Math.abs(row - CENTER);

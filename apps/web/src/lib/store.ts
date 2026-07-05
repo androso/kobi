@@ -33,11 +33,34 @@ export interface ClassItem {
   image?: string;
 }
 
+export interface SessionTranscriptLine {
+  time: string;
+  speaker: string;
+  text: string;
+}
+
+export interface SavedSession {
+  id: string;
+  classId: string;
+  subject: string;
+  subjectColor: string;
+  dotColor: string;
+  title: string;
+  focus: string;
+  date: string;
+  duration: string;
+  summaryPoints: string[];
+  nextSteps: string[];
+  transcript: SessionTranscriptLine[];
+}
+
 interface ClassState {
   classes: ClassItem[];
   monitoringClassId: string | null;
+  sessions: SavedSession[];
   startMonitoring: (id: string) => void;
   stopMonitoring: () => void;
+  endSession: (session: SavedSession) => void;
   addClass: (newClass: {
     title: string;
     focus: string;
@@ -88,8 +111,15 @@ const defaultClasses: ClassItem[] = [
 export const useClassStore = create<ClassState>((set) => ({
   classes: defaultClasses,
   monitoringClassId: null,
+  sessions: [],
   startMonitoring: (id) => set({ monitoringClassId: id }),
   stopMonitoring: () => set({ monitoringClassId: null }),
+  // Ending a session saves it to history and clears the active monitor
+  endSession: (session) =>
+    set((state) => ({
+      sessions: [session, ...state.sessions],
+      monitoringClassId: null,
+    })),
   addClass: (newClass) => {
     let accent = "text-slate-700";
     let tone = "from-slate-600 to-zinc-500";
