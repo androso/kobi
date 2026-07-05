@@ -3,6 +3,7 @@ import type { LessonState } from "@kobi/ai-core";
 import type { CurriculumMatch } from "@kobi/curriculum";
 import {
   activitySdkMessageSchema,
+  authorizeActivityTelemetryMessage,
   buildActivitySessionContext,
   createActivityArtifactCandidates,
   resolveApprovedActivityForBand,
@@ -102,5 +103,122 @@ describe("activity artifact contracts", () => {
     expect(resolveApprovedActivityForBand(approvals, "support")?.candidate_id).toBe(
       "candidate-core",
     );
+    expect(resolveApprovedActivityForBand(approvals, "unknown")?.candidate_id).toBe(
+      "candidate-core",
+    );
+  });
+
+  it("authorizes telemetry from parent-owned assignment context", () => {
+    const result = authorizeActivityTelemetryMessage(
+      {
+        sdk: "activity-sdk/v1",
+        type: "event",
+        method: "reportAttempt",
+        payload: {
+          assignment_id: "assignment-1",
+          item_index: 0,
+          correct: true,
+        },
+      },
+      {
+        assignmentId: "assignment-1",
+        sourceMatches: true,
+        eventOrigin: "https://kobi.test",
+        allowedOrigin: "https://kobi.test",
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.event).toMatchObject({
+      assignment_id: "assignment-1",
+      type: "attempt",
+    });
+  });
+
+  it("stamps missing telemetry assignment ids from parent context", () => {
+    const result = authorizeActivityTelemetryMessage(
+      {
+        sdk: "activity-sdk/v1",
+        type: "event",
+        method: "reportHint",
+        payload: {
+          item_index: 0,
+          hint_index: 0,
+        },
+      },
+      {
+        assignmentId: "assignment-1",
+        sourceMatches: true,
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.event).toMatchObject({
+      assignment_id: "assignment-1",
+      type: "hint",
+      payload: {
+        assignment_id: "assignment-1",
+        item_index: 0,
+        hint_index: 0,
+      },
+    });
+  });
+
+  it("rejects telemetry with spoofed assignment ids or rate-limit violations", () => {
+    const spoofed = authorizeActivityTelemetryMessage(
+      {
+        sdk: "activity-sdk/v1",
+        type: "event",
+        method: "reportComplete",
+        payload: {
+          assignment_id: "other-assignment",
+          score: 1,
+          total: 1,
+        },
+      },
+      {
+        assignmentId: "assignment-1",
+        sourceMatches: true,
+      },
+    );
+
+    const rateLimited = authorizeActivityTelemetryMessage(
+      {
+        sdk: "activity-sdk/v1",
+        type: "event",
+        method: "reportHint",
+        payload: {
+          assignment_id: "assignment-1",
+          item_index: 0,
+          hint_index: 0,
+        },
+      },
+      {
+        assignmentId: "assignment-1",
+        sourceMatches: true,
+        eventsInRateWindow: 30,
+      },
+    );
+
+    expect(spoofed.ok).toBe(false);
+    expect(rateLimited.ok).toBe(false);
+  });
+
+  it("rejects artifacts that fail rubric thresholds", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+    });
+    candidate.manifest.content.items[0].hints = ["La respuesta es titular"];
+
+    const result = verifyActivityArtifact(candidate);
+
+    expect(result.ok).toBe(false);
+    expect(result.artifact.status).toBe("rejected");
+    expect(result.errors).toContain("rubric: hint_leakage 0.35 is below 0.80");
   });
 });

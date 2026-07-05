@@ -12,6 +12,7 @@ export const activityFamilySchema = z.enum([
 export const difficultyBandSchema = z.enum(["support", "core", "challenge"]);
 export const activitySourceSchema = z.enum(["seeded", "reused", "new"]);
 export const activityCapabilitySchema = z.enum(["dom", "css", "svg", "canvas"]);
+export const activityTelemetryEventTypeSchema = z.enum(["attempt", "hint", "complete"]);
 
 export const activityCurriculumSchema = z.object({
   grade: z.number().int().positive(),
@@ -34,6 +35,7 @@ export const activityManifestSchema = z.object({
   est_minutes: z.number().int().min(3).max(12),
   content: z.object({
     items: z.array(activityContentItemSchema).min(1).max(8),
+    telemetry_events: z.array(activityTelemetryEventTypeSchema).min(1).max(3).optional(),
   }),
   entry: z.literal("index.html"),
   sdk_version: z.literal(ACTIVITY_SDK_VERSION),
@@ -81,6 +83,7 @@ export type ActivityFamily = z.infer<typeof activityFamilySchema>;
 export type DifficultyBand = z.infer<typeof difficultyBandSchema>;
 export type ActivitySource = z.infer<typeof activitySourceSchema>;
 export type ActivityCapability = z.infer<typeof activityCapabilitySchema>;
+export type ActivityTelemetryEventType = z.infer<typeof activityTelemetryEventTypeSchema>;
 export type ActivityCurriculum = z.infer<typeof activityCurriculumSchema>;
 export type ActivityContentItem = z.infer<typeof activityContentItemSchema>;
 export type ActivityManifest = z.infer<typeof activityManifestSchema>;

@@ -35,6 +35,16 @@ const forbiddenPatterns: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /https?:\/\//i, reason: "absolute network URLs are forbidden" },
 ];
 
+const minimumRubricScores: ActivityRubricScores = {
+  curriculum_alignment: 0.8,
+  age_fit: 0.8,
+  duration_fit: 0.8,
+  answer_correctness: 0.8,
+  hint_leakage: 0.8,
+  duplicate_risk: 0.8,
+  spanish_suitability: 0.8,
+};
+
 export function verifyActivityArtifact(
   candidate: ActivityArtifactCandidate,
 ): VerifyActivityArtifactResult {
@@ -50,12 +60,15 @@ export function verifyActivityArtifact(
     ...checkSdkTelemetry(bundleHtml),
     ...checkManifestCodeConsistency(candidate),
   ];
-  const errors = [...schemaErrors, ...staticErrors];
-  const deterministic = errors.length === 0 ? "pass" : "fail";
+  const deterministicErrors = [...schemaErrors, ...staticErrors];
+  const deterministic = deterministicErrors.length === 0 ? "pass" : "fail";
+  const rubric = scoreRubric(candidate);
+  const rubricErrors = checkRubricThresholds(rubric);
+  const errors = [...deterministicErrors, ...rubricErrors];
 
   const verifier_scores: ActivityVerifierScores = {
     deterministic,
-    rubric: scoreRubric(candidate),
+    rubric,
     ...(errors.length > 0 ? { errors } : {}),
   };
 
@@ -66,11 +79,11 @@ export function verifyActivityArtifact(
     verifier_scores,
     evidence: candidate.evidence,
     parent_id: candidate.parent_id ?? null,
-    status: deterministic === "pass" ? "verified" : "rejected",
+    status: errors.length === 0 ? "verified" : "rejected",
   };
 
   return {
-    ok: deterministic === "pass",
+    ok: errors.length === 0,
     artifact,
     errors,
   };
@@ -150,6 +163,18 @@ function scoreRubric(candidate: ActivityArtifactCandidate): ActivityRubricScores
     duplicate_risk: 0.86,
     spanish_suitability: looksSpanish(candidate.bundle_html) ? 0.9 : 0.62,
   };
+}
+
+function checkRubricThresholds(scores: ActivityRubricScores): string[] {
+  return (Object.keys(minimumRubricScores) as Array<keyof ActivityRubricScores>).flatMap(
+    (scoreName) => {
+      const score = scores[scoreName];
+      const minimum = minimumRubricScores[scoreName];
+      return score >= minimum
+        ? []
+        : [`rubric: ${scoreName} ${score.toFixed(2)} is below ${minimum.toFixed(2)}`];
+    },
+  );
 }
 
 function hintsLeakAnswers(hints: string[], answers: string[]): boolean {

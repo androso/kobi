@@ -5,6 +5,7 @@ import {
   activityVerifierScoresSchema,
   buildActivitySessionContext,
   createActivityArtifactCandidates,
+  hasMaterialContextChange,
   pickReusableActivitiesByBand,
   rankActivityRepositoryRows,
   verifyActivityArtifact,
@@ -13,11 +14,18 @@ import {
   type ActivityRepositoryRow,
   type ActivitySource,
   type DifficultyBand,
+  type RankedActivityRepositoryRow,
   type SessionContext,
 } from "@kobi/activities";
 import { lessonStateSchema, type LessonState } from "@kobi/ai-core";
 import type { CurriculumMatch } from "@kobi/curriculum";
 import type PgBoss from "pg-boss";
+import {
+  createOpenAiActivityGeneratorFromEnv,
+  createUnguessableBundleRef,
+  type GenerateOpenAiActivityCandidatesInput,
+  type OpenAiActivityGenerationResult,
+} from "../activity-generation/openaiArtifactGenerator.js";
 
 export interface GenerateActivityArtifactsJobData {
   sessionId: string;
@@ -27,6 +35,22 @@ export interface GenerateActivityArtifactsJobData {
 
 const activityBands: DifficultyBand[] = ["support", "core", "challenge"];
 
+export type OpenAiActivityCandidateGenerator = (
+  input: GenerateOpenAiActivityCandidatesInput,
+) => Promise<OpenAiActivityGenerationResult>;
+
+export interface GenerateActivityArtifactsJobOptions {
+  openAiGenerator?: OpenAiActivityCandidateGenerator | null;
+  maxOpenAiGenerationsPerSession?: number;
+}
+
+export interface GenerateActivityArtifactsJobResult {
+  inserted: number;
+  reused: number;
+  generated: number;
+  skippedReason: string | null;
+}
+
 interface SessionCandidateToInsert {
   sessionId: string;
   activityId: string;
@@ -34,9 +58,26 @@ interface SessionCandidateToInsert {
   sessionContext: SessionContext;
   artifact: ActivityArtifact | ActivityRepositoryRow;
   source: ActivitySource;
+  origin: "openai" | "static" | "repository";
 }
 
-export function registerGenerateActivityArtifactsJob(boss: PgBoss, supabase: SupabaseClient) {
+interface PlannedSessionArtifact {
+  band: DifficultyBand;
+  reusable?: RankedActivityRepositoryRow;
+  candidate?: ActivityArtifactCandidate;
+  origin?: "openai" | "static";
+}
+
+export function registerGenerateActivityArtifactsJob(
+  boss: PgBoss,
+  supabase: SupabaseClient,
+  options: GenerateActivityArtifactsJobOptions = {},
+) {
+  const openAiGenerator =
+    options.openAiGenerator === undefined ? createOpenAiActivityGeneratorFromEnv() : options.openAiGenerator;
+  const maxOpenAiGenerationsPerSession =
+    options.maxOpenAiGenerationsPerSession ?? readPositiveIntegerEnv("OPENAI_ACTIVITY_MAX_GENERATIONS_PER_SESSION", 3);
+
   return boss.work<GenerateActivityArtifactsJobData>(
     "generate-activity-artifacts",
     { batchSize: 1 },
@@ -44,67 +85,152 @@ export function registerGenerateActivityArtifactsJob(boss: PgBoss, supabase: Sup
       const job = jobs[0];
       if (!job) return;
 
-      const { sessionId, lessonState, curriculumMatches } = job.data;
-      if (curriculumMatches.length === 0) return;
-
-      const lessonStates = await loadLessonStates(supabase, sessionId, lessonState);
-      const sessionContext = buildActivitySessionContext(lessonStates);
-
-      const repositoryRows = await loadRepositoryRows(supabase, curriculumMatches);
-      const rankedRows = rankActivityRepositoryRows(repositoryRows, curriculumMatches, sessionContext);
-      const reusableByBand = pickReusableActivitiesByBand(rankedRows);
-      const generatedCandidates = createActivityArtifactCandidates({
-        lessonState,
-        sessionContext,
-        curriculumMatches,
+      await runGenerateActivityArtifactsJob(supabase, job.data, {
+        openAiGenerator,
+        maxOpenAiGenerationsPerSession,
       });
-      const candidatesToInsert: SessionCandidateToInsert[] = [];
-
-      for (const band of activityBands) {
-        const reusable = reusableByBand[band];
-        if (reusable) {
-          candidatesToInsert.push({
-            sessionId,
-            activityId: reusable.id,
-            band,
-            sessionContext,
-            artifact: reusable,
-            source: reusable.source === "seeded" ? "seeded" : "reused",
-          });
-          continue;
-        }
-
-        const candidate = generatedCandidates.find(
-          (artifact) => artifact.manifest.difficulty_band === band,
-        );
-        if (!candidate) continue;
-
-        const nearestParent = rankedRows.find((row) => row.manifest.difficulty_band === band);
-        const candidateWithParent: ActivityArtifactCandidate = {
-          ...candidate,
-          parent_id: nearestParent && nearestParent.rank_score >= 0.45 ? nearestParent.id : null,
-        };
-        const persisted = await persistGeneratedArtifact(supabase, candidateWithParent);
-
-        candidatesToInsert.push({
-          sessionId,
-          activityId: persisted.id,
-          band,
-          sessionContext,
-          artifact: persisted.artifact,
-          source: persisted.source,
-        });
-      }
-
-      if (candidatesToInsert.length === 0) return;
-
-      await markSessionCandidatesSuperseded(supabase, sessionId);
-
-      for (const candidate of candidatesToInsert) {
-        await insertSessionCandidate(supabase, candidate);
-      }
     },
   );
+}
+
+export async function runGenerateActivityArtifactsJob(
+  supabase: SupabaseClient,
+  data: GenerateActivityArtifactsJobData,
+  options: GenerateActivityArtifactsJobOptions = {},
+): Promise<GenerateActivityArtifactsJobResult> {
+  const { sessionId, lessonState, curriculumMatches } = data;
+  if (curriculumMatches.length === 0) {
+    return { inserted: 0, reused: 0, generated: 0, skippedReason: "no curriculum matches" };
+  }
+
+  const lessonStates = await loadLessonStates(supabase, sessionId, lessonState);
+  const sessionContext = buildActivitySessionContext(lessonStates);
+
+  if (await hasCurrentReadyCandidates(supabase, sessionId, sessionContext)) {
+    return { inserted: 0, reused: 0, generated: 0, skippedReason: "ready candidates are current" };
+  }
+
+  const repositoryRows = await loadRepositoryRows(supabase, curriculumMatches);
+  const rankedRows = rankActivityRepositoryRows(repositoryRows, curriculumMatches, sessionContext);
+  const reusableByBand = pickReusableActivitiesByBand(rankedRows);
+  const parentIdByBand = parentIdsByBand(rankedRows);
+  const missingBands = activityBands.filter((band) => !reusableByBand[band]);
+  const staticCandidates = createActivityArtifactCandidates({
+    lessonState,
+    sessionContext,
+    curriculumMatches,
+  }).map((candidate) => withServerDerivedCandidateFields(candidate, parentIdByBand));
+
+  let openAiCandidates: ActivityArtifactCandidate[] = [];
+  if (missingBands.length > 0 && options.openAiGenerator) {
+    const generatedCount = await countGeneratedSessionCandidates(supabase, sessionId);
+    const maxOpenAiGenerationsPerSession = options.maxOpenAiGenerationsPerSession ?? 3;
+
+    if (generatedCount < maxOpenAiGenerationsPerSession) {
+      try {
+        const result = await options.openAiGenerator({
+          lessonState,
+          sessionContext,
+          curriculumMatches,
+          bands: missingBands,
+          parentIdByBand,
+        });
+        openAiCandidates = result.candidates;
+      } catch {
+        openAiCandidates = [];
+      }
+    }
+  }
+
+  const planned = planSessionArtifacts({
+    reusableByBand,
+    openAiCandidates,
+    staticCandidates,
+  });
+
+  if (planned.length === 0) {
+    return { inserted: 0, reused: 0, generated: 0, skippedReason: "no candidates" };
+  }
+
+  const candidatesToInsert: SessionCandidateToInsert[] = [];
+  for (const artifact of planned) {
+    if (artifact.reusable) {
+      candidatesToInsert.push({
+        sessionId,
+        activityId: artifact.reusable.id,
+        band: artifact.band,
+        sessionContext,
+        artifact: artifact.reusable,
+        source: artifact.reusable.source === "seeded" ? "seeded" : "reused",
+        origin: "repository",
+      });
+      continue;
+    }
+
+    if (!artifact.candidate) continue;
+    const persisted = await persistGeneratedArtifact(supabase, artifact.candidate);
+
+    candidatesToInsert.push({
+      sessionId,
+      activityId: persisted.id,
+      band: artifact.band,
+      sessionContext,
+      artifact: persisted.artifact,
+      source: persisted.source,
+      origin: artifact.origin ?? "static",
+    });
+  }
+
+  if (candidatesToInsert.length === 0) {
+    return { inserted: 0, reused: 0, generated: 0, skippedReason: "no persisted candidates" };
+  }
+
+  await markSessionCandidatesSuperseded(supabase, sessionId);
+
+  for (const candidate of candidatesToInsert) {
+    await insertSessionCandidate(supabase, candidate);
+  }
+
+  return {
+    inserted: candidatesToInsert.length,
+    reused: candidatesToInsert.filter((candidate) => candidate.source !== "new").length,
+    generated: candidatesToInsert.filter((candidate) => candidate.origin === "openai").length,
+    skippedReason: null,
+  };
+}
+
+export function planSessionArtifacts(input: {
+  reusableByBand: Partial<Record<DifficultyBand, RankedActivityRepositoryRow>>;
+  openAiCandidates: ActivityArtifactCandidate[];
+  staticCandidates: ActivityArtifactCandidate[];
+}): PlannedSessionArtifact[] {
+  const planned: PlannedSessionArtifact[] = [];
+
+  for (const band of activityBands) {
+    const reusable = input.reusableByBand[band];
+    if (reusable) {
+      planned.push({ band, reusable });
+      continue;
+    }
+
+    const openAiCandidate = input.openAiCandidates.find(
+      (artifact) => artifact.manifest.difficulty_band === band,
+    );
+    if (openAiCandidate) {
+      planned.push({ band, candidate: openAiCandidate, origin: "openai" });
+      continue;
+    }
+
+    const candidate = input.staticCandidates.find(
+      (artifact) => artifact.manifest.difficulty_band === band,
+    );
+
+    if (candidate) {
+      planned.push({ band, candidate, origin: "static" });
+    }
+  }
+
+  return planned;
 }
 
 async function loadLessonStates(
@@ -158,6 +284,105 @@ async function loadRepositoryRows(
     const parsed = parseRepositoryRow(row);
     return parsed ? [parsed] : [];
   });
+}
+
+async function hasCurrentReadyCandidates(
+  supabase: SupabaseClient,
+  sessionId: string,
+  nextContext: SessionContext,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("session_activity_candidates")
+    .select("difficulty_band, context_snapshot")
+    .eq("session_id", sessionId)
+    .eq("status", "ready")
+    .order("created_at", { ascending: false })
+    .limit(3);
+
+  if (error) {
+    throw new Error(`generateActivityArtifacts job: failed to load current candidates: ${error.message}`);
+  }
+
+  const rows = data ?? [];
+  const readyBands = new Set(rows.map((row) => row.difficulty_band));
+  if (!activityBands.every((band) => readyBands.has(band))) return false;
+
+  const previousContext = parseSessionContext(rows[0]?.context_snapshot);
+  return previousContext ? !hasMaterialContextChange(previousContext, nextContext) : false;
+}
+
+async function countGeneratedSessionCandidates(
+  supabase: SupabaseClient,
+  sessionId: string,
+): Promise<number> {
+  const { data, error } = await supabase
+    .from("session_activity_candidates")
+    .select("id, activities!inner(bundle_ref)")
+    .eq("session_id", sessionId)
+    .eq("source", "new")
+    .like("activities.bundle_ref", "artifact-bundles/openai/%");
+
+  if (error) {
+    throw new Error(`generateActivityArtifacts job: failed to count generated candidates: ${error.message}`);
+  }
+
+  return data?.length ?? 0;
+}
+
+function parseSessionContext(value: unknown): SessionContext | null {
+  if (!value || typeof value !== "object") return null;
+  const context = value as Partial<SessionContext>;
+
+  if (
+    typeof context.latest_topic !== "string" ||
+    !Array.isArray(context.vocabulary) ||
+    typeof context.confidence !== "number" ||
+    typeof context.segment_count !== "number"
+  ) {
+    return null;
+  }
+
+  return {
+    latest_topic: context.latest_topic,
+    latest_objective:
+      typeof context.latest_objective === "string" ? context.latest_objective : null,
+    vocabulary: context.vocabulary.filter((term): term is string => typeof term === "string"),
+    examples_used: Array.isArray(context.examples_used)
+      ? context.examples_used.filter((example): example is string => typeof example === "string")
+      : [],
+    misconceptions: Array.isArray(context.misconceptions)
+      ? context.misconceptions.filter((item): item is string => typeof item === "string")
+      : [],
+    time_remaining_minutes:
+      typeof context.time_remaining_minutes === "number" ? context.time_remaining_minutes : null,
+    confidence: context.confidence,
+    segment_count: context.segment_count,
+  };
+}
+
+function parentIdsByBand(
+  rankedRows: RankedActivityRepositoryRow[],
+): Partial<Record<DifficultyBand, string | null>> {
+  const parents: Partial<Record<DifficultyBand, string | null>> = {};
+
+  for (const band of activityBands) {
+    const nearestParent = rankedRows.find((row) => row.manifest.difficulty_band === band);
+    parents[band] = nearestParent && nearestParent.rank_score >= 0.45 ? nearestParent.id : null;
+  }
+
+  return parents;
+}
+
+function withServerDerivedCandidateFields(
+  candidate: ActivityArtifactCandidate,
+  parentIdByBand: Partial<Record<DifficultyBand, string | null>>,
+): ActivityArtifactCandidate {
+  return {
+    ...candidate,
+    bundle_ref: createUnguessableBundleRef("static"),
+    parent_id: parentIdByBand[candidate.manifest.difficulty_band] ?? null,
+    status: "candidate",
+  };
 }
 
 async function markSessionCandidatesSuperseded(supabase: SupabaseClient, sessionId: string) {
@@ -287,4 +512,12 @@ function checksum(value: string): string {
   }
 
   return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function readPositiveIntegerEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }

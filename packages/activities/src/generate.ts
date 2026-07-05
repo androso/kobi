@@ -61,11 +61,11 @@ export function createActivityArtifactCandidates(
       est_minutes: spec.estMinutes,
       content: {
         items: buildItemsForBand(band, input.sessionContext, primaryMatch),
+        telemetry_events: ["attempt", "hint", "complete"],
       },
       entry: "index.html",
       sdk_version: ACTIVITY_SDK_VERSION,
-      allowed_capabilities:
-        band === "challenge" ? ["dom", "css", "svg"] : ["dom", "css"],
+      allowed_capabilities: band === "challenge" ? ["dom", "css", "svg"] : ["dom", "css"],
     };
 
     const bundleHtml = renderActivityHtml(manifest);
@@ -103,8 +103,7 @@ function buildItemsForBand(
   match: CurriculumMatch,
 ) {
   const terms = context.vocabulary.length > 0 ? context.vocabulary : extractTerms(match.text);
-  const boundedTerms =
-    terms.length > 0 ? terms.slice(0, 4) : ["idea principal", "vocabulario", "evidencia"];
+  const boundedTerms = terms.length > 0 ? terms.slice(0, 4) : ["idea principal", "vocabulario", "evidencia"];
 
   if (band === "support") {
     return [
@@ -138,9 +137,7 @@ function buildItemsForBand(
 
   return [
     {
-      prompt: `Responde usando el objetivo ${match.objective_code}: ${
-        context.latest_objective ?? context.latest_topic
-      }.`,
+      prompt: `Responde usando el objetivo ${match.objective_code}: ${context.latest_objective ?? context.latest_topic}.`,
       answer_key: boundedTerms.slice(0, 3),
       hints: [
         "Vuelve al vocabulario clave antes de responder.",
@@ -156,9 +153,7 @@ function renderActivityHtml(manifest: ActivityManifest): string {
   const buttons = answers
     .map(
       (answer, index) =>
-        `<button class="option" data-answer="${escapeHtml(answer)}">${index + 1}. ${escapeHtml(
-          answer,
-        )}</button>`,
+        `<button class="option" data-answer="${escapeHtml(answer)}">${index + 1}. ${escapeHtml(answer)}</button>`,
     )
     .join("\n");
   const manifestJson = JSON.stringify(manifest).replace(/</g, "\\u003c");
@@ -186,9 +181,7 @@ function renderActivityHtml(manifest: ActivityManifest): string {
 <body>
   <main>
     <section class="card" aria-labelledby="activity-title">
-      <p>Actividad ${escapeHtml(manifest.difficulty_band)} - ${escapeHtml(
-        manifest.curriculum.objective,
-      )}</p>
+      <p>Actividad ${escapeHtml(manifest.difficulty_band)} - ${escapeHtml(manifest.curriculum.objective)}</p>
       <h1 id="activity-title">${escapeHtml(manifest.title)}</h1>
       <p class="prompt">${escapeHtml(item.prompt)}</p>
       <div id="options">${buttons}</div>
