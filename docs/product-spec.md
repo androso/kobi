@@ -17,7 +17,7 @@ Kobi v0 turns the last 10 minutes of any class into a personalized, curriculum-g
 | # | Decision | Rationale |
 |---|---|---|
 | D1 | Subject: 7th-grade Lenguaje (reading comprehension + vocabulary) | Team owns the Ministry textbooks; avoids math's complex interaction mechanics |
-| D2 | REVISED (Jul 4): Activities are generated-code artifacts + a structured manifest | Supersedes the original "data, not code". Every activity is a model-generated mini-app (`bundle_ref`), run in a sandboxed iframe via a small activity SDK, paired with a schema-validated JSON manifest (curriculum tags, answer key, hints, est_minutes, variants). The manifest keeps activities storable, verifiable, reusable, and diffable — the code artifact removes the hardcoded-template ceiling |
+| D2 | REVISED (Jul 4): Activities are verified HTML artifacts + a structured manifest | Supersedes the original "data, not code". Every activity belongs to one of the three v0 artifact families, is delivered as a verified self-contained HTML bundle (`bundle_ref`) in a sandboxed iframe via a small activity SDK, and is paired with a schema-validated JSON manifest (curriculum tags, answer key, hints, est_minutes, variants). The manifest keeps activities storable, verifiable, reusable, and diffable without expanding beyond the three MVP families. |
 | D2 | Activity artifacts are verified HTML mini-apps plus manifests | Gate 0 decision on 2026-07-04: v0 uses self-contained HTML/CSS/JS artifacts in a sandboxed iframe, described by a structured manifest and verified before teacher display. This replaces the earlier JSON-player direction. |
 | D3 | TypeScript stack: Vite + React frontend, Node API/worker backend | 3 devs, 24 hours, TS-native team. Supabase (Postgres, pgvector, Realtime) gives the same layering as a Python split without adding another language |
 | D4 | Personalization v0 = difficulty banding, not learner modeling | 3 variants (support/core/challenge); don't ship personalization you can't measure |
@@ -83,8 +83,7 @@ Put one name on each area (one person can own two small ones). Agree the shared 
 
 ## Activity Artifact Decision
 
-- **Generative HTML/JS "artifact" activities** — a 4th activity family alongside quiz/cloze/match: the model emits a self-contained HTML/CSS/JS mini-app (Claude-Artifact-style) instead of a fixed JSON shape. Rendered in a sandboxed iframe (CSP-restricted, no external network calls) inside the student player; reports completion/score back to the app via `postMessage`, feeding the same telemetry contract as everything else (see `docs/contracts.md`). Originally deferred past MVP for verifier-complexity reasons — **superseded by the D2 revision above**, which folds the code-artifact-plus-manifest approach into the MVP itself rather than treating it as post-MVP. Quiz/cloze/match remain as prompt exemplars and quality anchors, not a renderer whitelist.
-HTML activity artifacts are v0, not post-MVP. Each candidate activity is a single self-contained `index.html` bundle plus a structured manifest. The bundle runs only inside the sandboxed student iframe, uses no external imports/assets/network, and reports attempts, hints, and completion through the parent-owned SDK over `postMessage`.
+HTML activity artifacts are v0, not post-MVP, but they are limited to the three ratified v0 families below. Each candidate activity is a single self-contained `index.html` bundle plus a structured manifest. The bundle runs only inside the sandboxed student iframe, uses no external imports/assets/network, and reports attempts, hints, and completion through the parent-owned SDK over `postMessage`.
 
 The three v0 families are:
 

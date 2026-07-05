@@ -24,18 +24,7 @@ The manual-fallback path (D6) produces the same `lesson_state` shape via `lesson
 
 ## 2. `ActivityArtifact`
 
-Produced by the planner/generator, checked by the verifier, stored in `activities` (the repository). Per the revised D2, an activity is **a generated code artifact + a manifest**, not a plain JSON shape: `activities.bundle_ref` points at the code artifact (the mini-app students actually play, in a sandboxed iframe), and `activities.manifest` (jsonb) is the schema-validated contract — curriculum tags, answer key, hints, `est_minutes`, variants. **Owned by Androso (Area C)** — the manifest's internal shape, the validator, and the sandbox/SDK are his design call, not prescribed here. The example below (now read as one possible `manifest` shape, paired with whatever `bundle_ref` it validates) is the reference shape from the original product spec, kept as a starting point only.
-
-```json
-{
-  "title": "Vocabulario en contexto: La noticia",
-  "curriculum": { "grade": 7, "subject": "lenguaje", "unit": "U4", "objective": "L7.4.2" },
-  "est_minutes": 6,
-  "variants": ["support", "core", "challenge"],
-  "items": [
-Gate 0 decision on 2026-07-04: v0 activities are verified HTML artifacts, not JSON-rendered activities. There are no legacy JSON activities or consumers, so no migration or compatibility adapter is required.
-
-Produced by the planner/generator, checked by the verifier, stored in `activities` (the repository), and delivered through the sandbox host. Schema and SDK contracts are owned by `packages/activities`.
+Produced by the planner/generator, checked by the verifier, stored in `activities` (the repository), and delivered through the sandbox host. Per the revised D2, an activity is one of the three verified HTML artifact families plus a manifest: `activities.bundle_ref` points at the self-contained HTML bundle, and `activities.manifest` (jsonb) is the schema-validated contract for curriculum tags, answer key, hints, `est_minutes`, variants, and family. Gate 0 decision on 2026-07-04: v0 activities are verified HTML artifacts within the three MVP families, not JSON-rendered activities. There are no legacy JSON activities or consumers, so no migration or compatibility adapter is required. Schema and SDK contracts are owned by `packages/activities`.
 
 ```json
 {
