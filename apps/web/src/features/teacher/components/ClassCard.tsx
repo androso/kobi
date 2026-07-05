@@ -1,21 +1,7 @@
 import { useState, type MouseEvent } from "react";
 import { Check, ChevronRight, Copy, Users, Leaf, Sigma, BookOpen, PenLine } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useClassStore } from "../../../lib/store";
-
-interface ClassItem {
-  id?: string;
-  title: string;
-  joinCode: string;
-  focus: string;
-  students: string;
-  topics: readonly string[];
-  accent: string;
-  tone: string;
-  badge?: string;
-  icon: "leaf" | "sigma" | "book" | "pen";
-  image?: string;
-}
+import { useClassStore, type ClassItem } from "../../../lib/store";
 
 interface ClassCardProps {
   item: ClassItem;
