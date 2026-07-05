@@ -32,8 +32,8 @@ students                        sessions
       ▼                              ▼               ▼
 student_profiles                audio_chunks     segments
   student_id (PK, FK)             id (PK)          id (PK)
-  band (support|core|challenge)   session_id (FK)  session_id (FK)
-  modality_pref, notes            chunk_index      lesson_state (jsonb)
+  modality_pref, notes            session_id (FK)  session_id (FK)
+  updated_at                      chunk_index      lesson_state (jsonb)
                                    storage_path     confidence
                                    start_ms/end_ms  transcript_summary
                                    status           created_at
@@ -44,28 +44,51 @@ curriculum_chunks (standalone, Area B)
   id, grade, subject, unit, objective_code, text, embedding vector(768), created_at
   + ivfflat index, match_curriculum_chunks() RPC
 
+activity_bundles
+  ref (text, PK)
+  index_html, checksum, created_at
+
 activities (the repository — Area C, revised per D2)
   id (uuid, PK)
-  bundle_ref (text)              -- pointer to the code artifact (storage path/URL)
+  contract_version (text, default activity-artifact/v1)
+  bundle_ref (FK -> activity_bundles.ref, unique)
   manifest (jsonb)                -- curriculum tags, answer key, hints, est_minutes, variants
+  evidence (jsonb)                -- generation-time visible curriculum evidence
+  status (candidate|verified|rejected|superseded)
   embedding (vector(768), nullable) -- for repository semantic reuse search
-  source (reused|new)
+  curriculum_tags (text[])
+  source (seeded|reused|new)
   verifier_scores (jsonb)
   times_used (int, default 0)
   avg_score (real, nullable)
-  parent_id (FK -> activities.id, nullable) -- fork lineage
-  created_at
+  parent_id (FK -> activities.id, nullable)
+  created_at, updated_at
+      │
+      │ 1—N
+      ▼
+session_activity_candidates
+  id (uuid, PK)
+  session_id (FK -> sessions.id)
+  activity_id (FK -> activities.id)
+  difficulty_band (support|core|challenge)
+  status (ready|approved|rejected|superseded)
+  source (seeded|reused|new)
+  context_snapshot, evidence, verifier_scores (jsonb)
+  created_at, approved_at
       │
       │ 1—N
       ▼
 assignments
   id (uuid, PK)
+  session_id (FK -> sessions.id)
+  candidate_id (FK -> session_activity_candidates.id, nullable)
   activity_id (FK -> activities.id)
   student_id (FK -> students.id)
-  variant (support|core|challenge)
+  variant (support|core|challenge, default core)
   status (assigned|in_progress|completed)
   score (real, nullable)
   created_at, completed_at (nullable)
+  unique(session_id, student_id)
       │
       │ 1—N
       ▼
@@ -84,20 +107,22 @@ events
 | `teacher_profiles` | F (Platform) | Mirrors `auth.users.id` (Supabase Auth magic link); no cross-schema FK, just a matching UUID convention. |
 | `classes` | F (Platform) / D (Teacher) | v0: one class = one grade/subject/unit. `join_code` is what students use to enter. |
 | `students` | F (Platform) | No Supabase Auth row at all — join code + display name only (auth-lite: no student accounts). |
-| `student_profiles` | D (Teacher) / E (Student) | Teacher-editable band (D4: banding, not deep learner modeling). |
+| `student_profiles` | D (Teacher) / E (Student) | Teacher-editable notes/preferences only. Difficulty is assigned per session, not stored as a lasting student label. |
 | `sessions` | A (Listening) | One row per class period; drives `audio_chunks`/`segments`. |
 | `audio_chunks` | A (Listening) | Implemented — see `packages/ai-core`, `apps/worker`. |
 | `segments` | A (Listening) | Implemented — rolling `lesson_state` snapshots (see `docs/contracts.md`). |
 | `curriculum_chunks` | B (Curriculum) | Implemented — see `packages/curriculum`, `docs/area-bc-contract.md`. |
-| `activities` | C (Activity Generation) | Not yet implemented. `manifest`'s internal shape is Androso's call, not prescribed here (see `packages/activities/README.md`). |
-| `assignments` | E (Student Experience) | activity x student x variant. |
+| `activity_bundles` | C (Activity Generation) | Stores verified self-contained `index.html` bundles by `bundle_ref`. |
+| `activities` | C (Activity Generation) | Verified artifact repository. `manifest` internals are owned by `packages/activities`; evidence/status/source are queryable for shortlist and reuse. |
+| `session_activity_candidates` | C/D (Generation + Teacher) | The durable shortlist/approval record for support, core, and challenge candidates in one session. |
+| `assignments` | E (Student Experience) | One delivered activity per student per session. Teacher-selected support/challenge overrides are recorded here; unselected students default to core. |
 | `events` | E (Student Experience) | Telemetry — see `docs/contracts.md` §3. |
 
 ## Relation to the four memory tiers (product spec §21)
 
 - Active lesson → `segments`
-- Teacher/class → `classes` + approval history (future `activities`/`assignments` rows)
-- Student pedagogical → `student_profiles`
+- Teacher/class → `classes` + `session_activity_candidates` approval history
+- Student pedagogical → `assignments.variant` per session + `student_profiles` notes/preferences
 - Repository → `activities`
 
 ## Why `curriculum_chunks` has no FK to `activities`
