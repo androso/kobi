@@ -25,6 +25,8 @@ export function registerTranscribeChunkJob(boss: PgBoss, supabase: SupabaseClien
 
       const { audioChunkId, audioUrl, mimeType, sessionId } = job.data;
 
+      console.log(`[transcribeChunk] picked up chunk ${audioChunkId} for session ${sessionId}`);
+
       const { error: statusError } = await supabase
         .from("audio_chunks")
         .update({ status: "transcribing" })
@@ -39,6 +41,8 @@ export function registerTranscribeChunkJob(boss: PgBoss, supabase: SupabaseClien
         const result = await transcribeAudioChunk({ audioUrl, mimeType });
         transcriptText = result.transcriptText;
       } catch (error) {
+        console.error(`[transcribeChunk] transcription failed for chunk ${audioChunkId}:`, error);
+
         const { error: failedStatusError } = await supabase
           .from("audio_chunks")
           .update({ status: "failed" })
@@ -62,6 +66,8 @@ export function registerTranscribeChunkJob(boss: PgBoss, supabase: SupabaseClien
       if (updateError) {
         throw new Error(`transcribeChunk job: failed to save transcript: ${updateError.message}`);
       }
+
+      console.log(`[transcribeChunk] chunk ${audioChunkId} transcribed, enqueuing build-lesson-state for session ${sessionId}`);
 
       await boss.send(JOB_BUILD_LESSON_STATE, { sessionId });
     },
