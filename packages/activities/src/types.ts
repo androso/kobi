@@ -7,11 +7,14 @@ export const activityFamilySchema = z.enum([
   "match_classify",
   "sequence_order",
   "guided_practice",
+  "custom_interactive",
+  "exploratory_tool",
 ]);
 
 export const difficultyBandSchema = z.enum(["support", "core", "challenge"]);
 
 export const activityCapabilitySchema = z.enum(["dom", "css", "svg", "canvas"]);
+export const activityTelemetryEventTypeSchema = z.enum(["attempt", "hint", "complete"]);
 
 export const activityCurriculumSchema = z.object({
   grade: z.number().int().positive(),
@@ -22,9 +25,27 @@ export const activityCurriculumSchema = z.object({
 
 export const activityContentItemSchema = z.object({
   prompt: z.string().min(1),
-  answer_key: z.array(z.string().min(1)).min(1),
-  hints: z.array(z.string().min(1)).default([]),
+  answer_key: z.array(z.string().min(1)).optional(),
+  hints: z.array(z.string().min(1)).optional(),
 });
+
+export const activityManifestContentSchema = z
+  .object({
+    description: z.string().min(1).max(1200).optional(),
+    learning_goal: z.string().min(1).max(500).optional(),
+    success_criteria: z.array(z.string().min(1).max(240)).max(8).optional(),
+    telemetry_events: z.array(activityTelemetryEventTypeSchema).min(1).max(3).optional(),
+    items: z.array(activityContentItemSchema).max(8).optional(),
+  })
+  .refine(
+    (content) =>
+      Boolean(content.description) ||
+      Boolean(content.learning_goal) ||
+      (content.items?.length ?? 0) > 0,
+    {
+      message: "content must include description, learning_goal, or at least one item",
+    },
+  );
 
 export const activityManifestSchema = z.object({
   family: activityFamilySchema,
@@ -32,9 +53,7 @@ export const activityManifestSchema = z.object({
   difficulty_band: difficultyBandSchema,
   curriculum: activityCurriculumSchema,
   est_minutes: z.number().int().min(3).max(12),
-  content: z.object({
-    items: z.array(activityContentItemSchema).min(1).max(8),
-  }),
+  content: activityManifestContentSchema,
   entry: z.literal("index.html"),
   sdk_version: z.literal(ACTIVITY_SDK_VERSION),
   allowed_capabilities: z.array(activityCapabilitySchema).min(1),
@@ -80,8 +99,10 @@ export const activityArtifactCandidateSchema = activityArtifactSchema.extend({
 export type ActivityFamily = z.infer<typeof activityFamilySchema>;
 export type DifficultyBand = z.infer<typeof difficultyBandSchema>;
 export type ActivityCapability = z.infer<typeof activityCapabilitySchema>;
+export type ActivityTelemetryEventType = z.infer<typeof activityTelemetryEventTypeSchema>;
 export type ActivityCurriculum = z.infer<typeof activityCurriculumSchema>;
 export type ActivityContentItem = z.infer<typeof activityContentItemSchema>;
+export type ActivityManifestContent = z.infer<typeof activityManifestContentSchema>;
 export type ActivityManifest = z.infer<typeof activityManifestSchema>;
 export type ActivityEvidence = z.infer<typeof activityEvidenceSchema>;
 export type ActivityRubricScores = z.infer<typeof activityRubricScoresSchema>;

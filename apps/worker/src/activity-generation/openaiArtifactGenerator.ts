@@ -22,8 +22,15 @@ import {
 } from "@kobi/activities";
 
 const difficultyBandSchema = z.enum(["support", "core", "challenge"]);
-const activityFamilySchema = z.enum(["match_classify", "sequence_order", "guided_practice"]);
+const activityFamilySchema = z.enum([
+  "match_classify",
+  "sequence_order",
+  "guided_practice",
+  "custom_interactive",
+  "exploratory_tool",
+]);
 const activityCapabilitySchema = z.enum(["dom", "css", "svg", "canvas"]);
+const activityTelemetryEventTypeSchema = z.enum(["attempt", "hint", "complete"]);
 
 const rawManifestDraftSchema = z
   .object({
@@ -31,20 +38,26 @@ const rawManifestDraftSchema = z
     title: z.string().min(3).max(90),
     est_minutes: z.number().int().min(3).max(12),
     allowed_capabilities: z.array(activityCapabilitySchema).min(1).max(4),
-    content: z.object({
-      items: z
-        .array(
-          z
-            .object({
-              prompt: z.string().min(1).max(600),
-              answer_key: z.array(z.string().min(1).max(160)).min(1).max(12),
-              hints: z.array(z.string().min(1).max(220)).max(4).default([]),
-            })
-            .strict(),
-        )
-        .min(1)
-        .max(8),
-    }),
+    content: z
+      .object({
+        items: z
+          .array(
+            z
+              .object({
+                prompt: z.string().min(1).max(600),
+                answer_key: z.array(z.string().min(1).max(160)).max(12).optional(),
+                hints: z.array(z.string().min(1).max(220)).max(4).optional(),
+              })
+              .strict(),
+          )
+          .max(8)
+          .optional(),
+        description: z.string().min(1).max(1200).optional(),
+        learning_goal: z.string().min(1).max(500).optional(),
+        success_criteria: z.array(z.string().min(1).max(240)).max(8).optional(),
+        telemetry_events: z.array(activityTelemetryEventTypeSchema).min(1).max(3).optional(),
+      })
+      .strict(),
   })
   .strict();
 
@@ -411,6 +424,19 @@ export function buildActivityGenerationPrompt(input: BuildPromptInput): string {
     {
       task: "Generate one activity artifact draft for each requested band.",
       requested_bands: input.bands,
+      artifact_contract: {
+        allowed_families: [
+          "match_classify",
+          "sequence_order",
+          "guided_practice",
+          "custom_interactive",
+          "exploratory_tool",
+        ],
+        content_modes: [
+          "exercise items with prompts, optional answer keys, and hints",
+          "broader interactive content with description, learning_goal, success_criteria, and telemetry_events",
+        ],
+      },
       sdk: {
         version: ACTIVITY_SDK_VERSION,
         required_methods: [

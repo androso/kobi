@@ -77,6 +77,27 @@ describe("OpenAI activity artifact generator", () => {
     });
   });
 
+  it("normalizes broader interactive manifest content without exercise items", () => {
+    const result = normalizeOpenAiActivityDrafts(
+      { artifacts: [rawCustomArtifact("challenge")] },
+      { lessonState, sessionContext, curriculumMatches, bands: ["challenge"] },
+      () => "artifact-bundles/custom/index.html",
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0].manifest).toMatchObject({
+      family: "exploratory_tool",
+      difficulty_band: "challenge",
+      content: {
+        learning_goal: "Explorar como se ordenan las partes de una noticia.",
+        success_criteria: ["Organiza una noticia clara.", "Explica por que el orden ayuda al lector."],
+        telemetry_events: ["attempt", "hint", "complete"],
+      },
+    });
+    expect(result.candidates[0].manifest.content.items).toBeUndefined();
+  });
+
   it("rejects model-supplied trusted fields", () => {
     const result = normalizeOpenAiActivityDrafts(
       {
@@ -170,6 +191,30 @@ function rawArtifact(band: DifficultyBand) {
       },
     },
     index_html: validHtml(title, prompt),
+  };
+}
+
+function rawCustomArtifact(band: DifficultyBand) {
+  const title = `Explorador ${band}`;
+  const learningGoal = "Explorar como se ordenan las partes de una noticia.";
+  return {
+    difficulty_band: band,
+    manifest_draft: {
+      family: "exploratory_tool",
+      title,
+      est_minutes: 7,
+      allowed_capabilities: ["dom", "css", "svg"],
+      content: {
+        description: "Mueve partes de una noticia y observa como cambia la claridad del texto.",
+        learning_goal: learningGoal,
+        success_criteria: [
+          "Organiza una noticia clara.",
+          "Explica por que el orden ayuda al lector.",
+        ],
+        telemetry_events: ["attempt", "hint", "complete"],
+      },
+    },
+    index_html: validHtml(title, learningGoal),
   };
 }
 
