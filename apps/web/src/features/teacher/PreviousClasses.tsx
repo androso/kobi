@@ -111,6 +111,15 @@ function formatTimeMs(ms: number): string {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+const JUNK_TRANSCRIPTS = [
+  "subtítulos realizados por",
+  "amara.org",
+  "subtitles by",
+  "thank you for watching",
+  "subs by",
+  "subtitulado por",
+];
+
 export function PreviousClasses() {
   const user = useAuthStore((state) => state.user);
   const teacherName = user?.displayName || user?.email?.split("@")[0] || "Docente";
@@ -174,7 +183,11 @@ export function PreviousClasses() {
 
         if (!error && chunks) {
           const lines = chunks
-            .filter((c) => c.transcript_text && c.transcript_text.trim().length > 0)
+            .filter((c) => {
+              if (!c.transcript_text || c.transcript_text.trim().length === 0) return false;
+              const normalized = c.transcript_text.toLowerCase();
+              return !JUNK_TRANSCRIPTS.some((junk) => normalized.includes(junk));
+            })
             .map((c) => ({
               time: formatTimeMs(c.start_ms),
               speaker: "Docente",
