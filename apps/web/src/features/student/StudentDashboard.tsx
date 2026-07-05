@@ -1,17 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Clock, HelpCircle, PlayCircle, ShieldCheck, Target } from "lucide-react";
+import { PlayCircle, ShieldCheck } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
-import {
-  findClassByCode,
-  selectClassArtefactos,
-  useAuthStore,
-  useClassStore,
-  type Artefacto,
-  type ArtefactoSubmission,
-} from "../../lib/store";
+import { findClassByCode, selectClassArtefactos, useAuthStore, useClassStore } from "../../lib/store";
 import { StudentSidebar, type StudentSidebarNavItem } from "./components/StudentSidebar";
 import { LessonList } from "./components/LessonList";
 import { ArtifactRenderer } from "./components/ArtifactRenderer";
+import { ProgressDashboard } from "./components/ProgressDashboard";
 
 const studentNavItems: readonly StudentSidebarNavItem[] = [
   {
@@ -135,96 +129,10 @@ export function StudentDashboard() {
               <h1 className="text-4xl font-bold tracking-tight text-[#2b2b2b]">Progreso</h1>
               <p className="mt-2 text-base text-[#8a8f98]">Revisa tu avance en las actividades de la clase.</p>
             </header>
-            <ProgressPanel
-              artefactos={artefactos}
-              completedCount={completedCount}
-              studentName={studentName}
-              submissions={submissions}
-            />
+            <ProgressDashboard artefactos={artefactos} studentName={studentName} submissions={submissions} />
           </div>
         )}
       </div>
     </main>
-  );
-}
-
-interface ProgressPanelProps {
-  artefactos: Artefacto[];
-  submissions: ArtefactoSubmission[];
-  studentName: string;
-  completedCount: number;
-}
-
-function ProgressPanel({ artefactos, submissions, studentName, completedCount }: ProgressPanelProps) {
-  const mySubmissions = submissions.filter((sub) => sub.studentName === studentName);
-  const totalAttempts = mySubmissions.reduce((sum, sub) => sum + sub.attempts, 0);
-  const totalHints = mySubmissions.reduce((sum, sub) => sum + sub.hintsUsed, 0);
-
-  const stats = [
-    { label: "Completadas", value: `${completedCount}/${artefactos.length}`, icon: CheckCircle2 },
-    { label: "Intentos", value: `${totalAttempts}`, icon: Target },
-    { label: "Pistas", value: `${totalHints}`, icon: HelpCircle },
-    {
-      label: "Estado",
-      value: completedCount === artefactos.length && artefactos.length > 0 ? "Al día" : "En curso",
-      icon: Clock,
-    },
-  ];
-
-  return (
-    <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {stats.map((item) => {
-          const Icon = item.icon;
-          return (
-            <div key={item.label} className="rounded-3xl bg-white p-5 shadow-[0_8px_30px_rgba(43,43,43,0.05)]">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3f3ee] text-[#2f9e8f]">
-                <Icon className="h-5 w-5" />
-              </div>
-              <p className="mt-3 text-sm font-medium text-[#8a8f98]">{item.label}</p>
-              <p className="mt-1 text-lg font-bold text-[#2b2b2b]">{item.value}</p>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="rounded-3xl bg-white p-6 shadow-[0_8px_30px_rgba(43,43,43,0.05)]">
-        <h2 className="text-lg font-bold text-[#2b2b2b]">Tus actividades</h2>
-        <ul className="mt-4 divide-y divide-[#f0ede7]">
-          {artefactos.map((artefacto) => {
-            const submission = mySubmissions.find((sub) => sub.artefactoId === artefacto.id);
-            const state =
-              submission?.status === "completed"
-                ? "Listo"
-                : submission?.status === "submitted"
-                  ? "En curso"
-                  : "Pendiente";
-
-            return (
-              <li className="flex items-center justify-between gap-4 py-3" key={artefacto.id}>
-                <div>
-                  <p className="text-sm font-semibold text-[#2b2b2b]">{artefacto.title}</p>
-                  <p className="text-xs text-[#8a8f98]">
-                    Objetivo {artefacto.objective}
-                    {submission ? ` · ${submission.score}/${submission.total}` : ""}
-                  </p>
-                </div>
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                    state === "Listo"
-                      ? "bg-emerald-50 text-emerald-700"
-                      : state === "En curso"
-                        ? "bg-[#e3f3ee] text-[#2f9e8f]"
-                        : "bg-[#f0ede7] text-[#7c8189]"
-                  }`}
-                >
-                  {state}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </div>
   );
 }

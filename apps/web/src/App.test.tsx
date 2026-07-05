@@ -87,7 +87,8 @@ describe("App", () => {
     expect(screen.getByText(/obtuviste 3 de 3/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: /progreso/i }));
-    expect(screen.getByRole("heading", { name: /progreso/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: /progreso/i })).toBeInTheDocument();
+    expect(screen.getByText(/meta completada/i)).toBeInTheDocument();
   });
 
   it("clears login fields after logout", async () => {
