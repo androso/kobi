@@ -83,7 +83,8 @@ export function TeacherDashboard() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [shareClass, setShareClass] = useState<ClassItem | null>(null);
-  const teacherId = useAuthStore((state) => state.user?.id);
+  const user = useAuthStore((state) => state.user);
+  const teacherId = user?.id;
   const classes = useClassStore((state) => state.classes);
   const loadingClasses = useClassStore((state) => state.loadingClasses);
   const classError = useClassStore((state) => state.classError);
@@ -93,9 +94,13 @@ export function TeacherDashboard() {
     if (teacherId) void loadTeacherClasses(teacherId);
   }, [loadTeacherClasses, teacherId]);
 
+  const teacherName = user?.displayName || user?.email?.split("@")[0] || "Docente";
+  const classesCount = classes.length;
+  const totalStudents = classes.reduce((sum, c) => sum + (c.studentCount || 0), 0);
+
   return (
-    <main className="min-h-screen bg-[#eef3fb] text-foreground overflow-hidden">
-      <div className="grid min-h-screen w-full lg:grid-cols-[240px_minmax(0,1fr)] bg-[#eef3fb]">
+    <main className="min-h-screen bg-[#eef5fb] text-foreground overflow-hidden">
+      <div className="grid min-h-screen w-full lg:grid-cols-[240px_minmax(0,1fr)] bg-[#eef5fb]">
         <Sidebar onOpenCreateClass={() => setIsCreateModalOpen(true)} />
         <div className="flex flex-col p-3 sm:p-4 lg:p-5 h-screen">
           <div className="flex-1 flex flex-col bg-[#f8f9ff] rounded-[30px] border border-slate-200/50 overflow-hidden shadow-sm">
@@ -104,10 +109,12 @@ export function TeacherDashboard() {
             {/* Greeting Hero */}
             <section className="mb-10">
               <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl lg:text-[40px] leading-tight">
-                Bienvenida de nuevo, Sra. Henderson
+                Bienvenido(a) de nuevo, {teacherName}
               </h2>
               <p className="mt-2 text-slate-500 text-base sm:text-lg">
-                Tienes 2 clases próximas hoy y 46 estudiantes activos para acompañar.
+                {classesCount === 0
+                  ? "Crea una clase para comenzar a trabajar con tus estudiantes."
+                  : `Tienes ${classesCount} ${classesCount === 1 ? "clase próxima" : "clases próximas"} hoy y ${totalStudents} ${totalStudents === 1 ? "estudiante activo" : "estudiantes activos"} para acompañar.`}
               </p>
             </section>
 

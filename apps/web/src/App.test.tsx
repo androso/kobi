@@ -10,11 +10,11 @@ describe("App", () => {
       status: "unauthenticated",
       user: null,
       loginTeacher: async (email) => {
-        useAuthStore.setState({ status: "authenticated", user: { role: "teacher", email, id: "teacher-1" } });
+        useAuthStore.setState({ status: "authenticated", user: { role: "teacher", email, id: "teacher-1", displayName: "Sra. Henderson" } });
         return {};
       },
       signupTeacher: async (email) => {
-        useAuthStore.setState({ status: "authenticated", user: { role: "teacher", email, id: "teacher-1" } });
+        useAuthStore.setState({ status: "authenticated", user: { role: "teacher", email, id: "teacher-1", displayName: "Sra. Henderson" } });
         return {};
       },
       loginStudent: async (code, studentName) => {
@@ -107,7 +107,7 @@ describe("App", () => {
     await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "securepass");
     await user.click(screen.getByRole("button", { name: /^entrar$/i }));
 
-    expect(screen.getByRole("heading", { name: /bienvenida de nuevo, sra\. henderson/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /bienvenido\(a\) de nuevo, sra\. henderson/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /tus clases/i })).toBeInTheDocument();
   });
 
@@ -121,7 +121,7 @@ describe("App", () => {
     await user.type(screen.getByPlaceholderText(/confirmar contrase[nñ]a/i), "securepass");
     await user.click(screen.getByRole("button", { name: /^crear cuenta$/i }));
 
-    expect(screen.getByRole("heading", { name: /bienvenida de nuevo, sra\. henderson/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /bienvenido\(a\) de nuevo, sra\. henderson/i })).toBeInTheDocument();
   });
 
   it("shows the Supabase confirmation error when teacher signup does not return a session", async () => {

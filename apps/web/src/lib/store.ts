@@ -12,6 +12,7 @@ interface UserProfile {
   className?: string;
   joinCode?: string;
   id?: string;
+  displayName?: string;
 }
 
 interface TeacherAuthResult {
@@ -47,6 +48,7 @@ function teacherProfileFromSupabaseUser(user: User): UserProfile {
     role: "teacher",
     email: user.email ?? undefined,
     id: user.id,
+    displayName: user.user_metadata?.display_name ?? user.email?.split("@")[0] ?? "Docente",
   };
 }
 
