@@ -42,10 +42,10 @@ export function TeacherDashboard() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
   return (
-    <main className="min-h-screen bg-[#eef3fb] text-foreground">
-      <div className="grid min-h-screen w-full lg:grid-cols-[240px_minmax(0,1fr)] bg-[#eef3fb]">
+    <main className="min-h-screen bg-[#eef3fb] p-3 text-foreground sm:p-4 lg:p-5">
+      <div className="mx-auto grid min-h-[calc(100vh-2.5rem)] max-w-[1520px] overflow-hidden rounded-[30px] border border-slate-200/60 bg-[#f7f9fe] shadow-[0_30px_90px_-40px_rgba(15,23,42,0.15)] lg:grid-cols-[240px_minmax(0,1fr)]">
         <Sidebar />
-        <div className="flex min-w-0 flex-col bg-[#f8f9ff] rounded-l-[30px] border-l border-slate-200/50 overflow-hidden shadow-sm">
+        <div className="flex min-w-0 flex-col bg-[#f8f9ff] border-l border-slate-200/50 overflow-hidden shadow-sm">
           <Header />
           <div className="flex-1 px-6 py-8 md:px-10 max-w-7xl w-full mx-auto">
             {/* Greeting Hero */}
