@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { TrendingUp, CircleAlert, WifiOff } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
-import { Header } from "./components/Header";
 
 // ---------------------------------------------------------------------------
 // Datos de sesión simulados — reemplazar con datos en tiempo real del backend.
@@ -256,7 +255,6 @@ export function SessionAnalytics() {
         <Sidebar />
         <div className="flex flex-col p-3 sm:p-4 lg:p-5 h-screen">
           <div className="flex-1 flex flex-col bg-[#f8f9ff] rounded-[30px] border border-slate-200/50 overflow-hidden shadow-sm min-h-0">
-            <Header />
             <div className="flex-1 overflow-y-auto p-6 lg:p-8">
               <div className="max-w-[1400px] mx-auto">
 

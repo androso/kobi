@@ -12,7 +12,6 @@ import {
 import { useNavigate } from "react-router-dom";
 import type { DifficultyBand } from "@kobi/activities";
 import { Sidebar } from "./components/Sidebar";
-import { Header } from "./components/Header";
 import { WaveformVisualizer } from "./components/WaveformVisualizer";
 import { KobiMascot } from "./components/KobiMascot";
 import { useClassStore, type SavedSession, type ClassItem } from "../../lib/store";
@@ -1082,7 +1081,6 @@ export function LiveClassMonitor() {
         <Sidebar />
         <div className="flex flex-col p-3 sm:p-4 lg:p-5 h-screen">
           <div className="flex-1 flex flex-col bg-[#f8f9ff] rounded-[30px] border border-slate-200/50 overflow-hidden shadow-sm min-h-0">
-            <Header />
             <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-5 min-h-0">
               {/* Session header — clase que se está monitoreando */}
               <div className="flex items-center justify-between flex-wrap gap-3 shrink-0">
