@@ -27,6 +27,7 @@ export const assignments = pgTable(
     score: real("score"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
   },
   (table) => [
     unique("assignments_session_student_unique").on(table.sessionId, table.studentId),

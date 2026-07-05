@@ -42,6 +42,7 @@ export interface AssignmentUpsert {
   student_id: string;
   variant: DifficultyBand;
   status: "assigned";
+  dismissed_at: null;
 }
 
 export interface PublishedAssignment {
@@ -79,6 +80,11 @@ export interface ActivityDeliveryStore {
   ): Promise<void>;
   upsertAssignments(assignments: AssignmentUpsert[]): Promise<PublishedAssignment[]>;
   loadLatestAssignmentForStudent(studentId: string): Promise<StudentAssignment | null>;
+  dismissAssignmentForStudent(input: {
+    assignmentId: string;
+    studentId: string;
+    dismissedAt: string;
+  }): Promise<void>;
   writeEvent(input: {
     assignmentId: string;
     type: "attempt" | "hint" | "complete";
@@ -202,6 +208,7 @@ export function buildAssignmentUpserts(input: {
       student_id: student.id,
       variant: approved.difficulty_band,
       status: "assigned",
+      dismissed_at: null,
     };
   });
 }
@@ -421,6 +428,7 @@ export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
       .from("assignments")
       .select("id,session_id,activity_id,student_id,variant,status,created_at")
       .eq("student_id", studentId)
+      .is("dismissed_at", null)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -445,6 +453,20 @@ export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
       manifest,
       bundleHtml: bundle.index_html,
     };
+  }
+
+  async dismissAssignmentForStudent(input: {
+    assignmentId: string;
+    studentId: string;
+    dismissedAt: string;
+  }) {
+    const { error } = await this.client
+      .from("assignments")
+      .update({ dismissed_at: input.dismissedAt })
+      .eq("id", input.assignmentId)
+      .eq("student_id", input.studentId);
+
+    if (error) throw new Error(error.message);
   }
 
   async writeEvent(input: {
