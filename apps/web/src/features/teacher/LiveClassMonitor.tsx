@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type FormEvent } from "react";
 import {
   Pause,
   StopCircle,
@@ -14,6 +14,20 @@ import { Sidebar } from "./components/Sidebar";
 import { WaveformVisualizer } from "./components/WaveformVisualizer";
 import { KobiMascot } from "./components/KobiMascot";
 import { useClassStore, type SavedSession, type ClassItem } from "../../lib/store";
+import {
+  createBackendSession,
+  isAudioApiConfigured,
+  resolveBackendClassId,
+  submitManualLessonState,
+  uploadAudioChunk,
+} from "../../lib/audioApi";
+
+const AUDIO_CHUNK_MS = 15_000;
+
+function logRecorder(message: string, details?: Record<string, unknown>) {
+  if (!import.meta.env.DEV) return;
+  console.info(`[Kobi recorder] ${message}`, details ?? {});
+}
 
 // Metadatos de materia según el ícono de la clase
 const SUBJECT_META: Record<
@@ -54,11 +68,7 @@ function buildSession(cls: ClassItem, durationSeconds: number): SavedSession {
     duration: formatTime(durationSeconds),
     summaryPoints,
     nextSteps,
-    transcript: MOCK_TRANSCRIPT.map((t) => ({
-      time: t.time,
-      speaker: "Docente",
-      text: t.interim ? `${t.text}${t.interim}` : t.text,
-    })),
+    transcript: [],
   };
 }
 
@@ -82,28 +92,6 @@ const MOCK_INSIGHTS = {
   engagementPulse: [40, 65, 85, 70, 95, 60, 45],
   suggestedActivity: "Juego de redes de energía",
 };
-
-// Entradas de transcripción — texto final más un segmento "interino" opcional
-// (aún siendo reconocido) que se muestra en gris. El backend transmitirá estas entradas.
-const MOCK_TRANSCRIPT: Array<{
-  time: string;
-  text: string;
-  interim?: string;
-}> = [
-  {
-    time: "10:48",
-    text: "Bien, hoy vamos a ver cómo se mueve la energía a través de un ecosistema — no la materia, la energía específicamente.",
-  },
-  {
-    time: "10:50",
-    text: "El sol es nuestro punto de partida. La energía solar se convierte en energía química mediante la fotosíntesis, lo que sustenta casi toda la vida en la Tierra.",
-  },
-  {
-    time: "10:52",
-    text: "A medida que subimos cada nivel trófico, recuerden que una gran parte de esa energía se pierde como calor, por eso la",
-    interim: " pirámide de energía se hace más pequeña",
-  },
-];
 
 // ---------------------------------------------------------------------------
 
@@ -136,11 +124,17 @@ function TranscriptPlayerCard({
   remaining,
   isRecording,
   onToggleRecording,
+  uploadStatus,
+  recordingError,
+  uploadedChunkCount,
 }: {
   elapsed: number;
   remaining: number;
   isRecording: boolean;
   onToggleRecording: () => void;
+  uploadStatus: string | null;
+  recordingError: string | null;
+  uploadedChunkCount: number;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -172,19 +166,17 @@ function TranscriptPlayerCard({
       {/* Cuerpo de la transcripción (desplazable) */}
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-6 flex flex-col gap-4">
         {isRecording ? (
-          MOCK_TRANSCRIPT.map((entry, i) => (
-            <div key={i} className="flex gap-4 items-start">
-              <span className="text-xs font-semibold text-slate-400 tabular-nums shrink-0 mt-0.5 w-10">
-                {entry.time}
-              </span>
-              <p className="text-slate-700 text-[15px] leading-relaxed">
-                {entry.text}
-                {entry.interim && (
-                  <span className="text-slate-400">{entry.interim}</span>
-                )}
+          <div className="flex-1 flex flex-col items-center justify-center text-center gap-3 py-10">
+            <span className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center">
+              <Circle className="h-5 w-5 text-emerald-500 fill-emerald-500 animate-pulse" />
+            </span>
+            <div>
+              <p className="text-sm font-bold text-slate-700">Grabando audio...</p>
+              <p className="text-xs text-slate-400 mt-1 max-w-xs">
+                La transcripción en vivo estará disponible próximamente.
               </p>
             </div>
-          ))
+          </div>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center gap-3 py-10">
             <span className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center">
@@ -206,10 +198,21 @@ function TranscriptPlayerCard({
       </div>
 
       {/* Controles de grabación */}
-      <div className="bg-slate-50 px-6 py-4 flex items-center justify-between shrink-0">
+      <div className="bg-slate-50 px-6 py-4 flex items-center justify-between gap-4 shrink-0">
         <span className={`text-sm font-bold tabular-nums ${isRecording ? "text-slate-500" : "text-slate-300"}`}>
           {formatTime(elapsed)}
         </span>
+
+        <div className="min-w-0 flex-1 text-center">
+          {recordingError ? (
+            <p className="text-xs font-semibold text-red-600 truncate">{recordingError}</p>
+          ) : uploadStatus ? (
+            <p className="text-xs font-semibold text-slate-500 truncate">
+              {uploadStatus}
+              {uploadedChunkCount > 0 ? ` · ${uploadedChunkCount} fragmentos enviados` : ""}
+            </p>
+          ) : null}
+        </div>
 
         {isRecording ? (
           <div className="flex items-center gap-3">
@@ -351,6 +354,86 @@ function SuggestedActivityFAB({ activity }: { activity: string }) {
   );
 }
 
+function ManualFallbackForm({
+  disabled,
+  onSubmit,
+}: {
+  disabled: boolean;
+  onSubmit: (input: { topic: string; objective?: string }) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [topic, setTopic] = useState("");
+  const [objective, setObjective] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsSubmitting(true);
+    try {
+      await onSubmit({ topic, objective: objective || undefined });
+      setTopic("");
+      setObjective("");
+      setOpen(false);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        className="text-sm font-bold text-slate-500 hover:text-slate-800 transition self-start"
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+        type="button"
+      >
+        No se detecto bien la clase {"->"} Escribir tema manualmente
+      </button>
+    );
+  }
+
+  return (
+    <form
+      className="rounded-2xl border border-slate-200 bg-white p-4 flex flex-col gap-3 max-w-xl"
+      onSubmit={handleSubmit}
+    >
+      <label className="flex flex-col gap-1 text-sm font-semibold text-slate-700">
+        Tema que estas dando
+        <input
+          className="rounded-xl border border-slate-200 px-3 py-2 font-normal"
+          onChange={(event) => setTopic(event.target.value)}
+          required
+          value={topic}
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-sm font-semibold text-slate-700">
+        Objetivo
+        <input
+          className="rounded-xl border border-slate-200 px-3 py-2 font-normal"
+          onChange={(event) => setObjective(event.target.value)}
+          value={objective}
+        />
+      </label>
+      <div className="flex gap-2">
+        <button
+          className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+          disabled={disabled || isSubmitting}
+          type="submit"
+        >
+          Guardar tema
+        </button>
+        <button
+          className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-bold text-slate-600"
+          onClick={() => setOpen(false)}
+          type="button"
+        >
+          Cancelar
+        </button>
+      </div>
+    </form>
+  );
+}
+
 // -- Página ------------------------------------------------------------------
 
 export function LiveClassMonitor() {
@@ -358,11 +441,21 @@ export function LiveClassMonitor() {
   const [elapsed, setElapsed] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [finishedSession, setFinishedSession] = useState<SavedSession | null>(null);
+  const [recordingError, setRecordingError] = useState<string | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
+  const [uploadedChunkCount, setUploadedChunkCount] = useState(0);
 
   const monitoringClassId = useClassStore((state) => state.monitoringClassId);
   const classes = useClassStore((state) => state.classes);
   const endSession = useClassStore((state) => state.endSession);
   const monitoringClass = classes.find((c) => c.id === monitoringClassId) ?? null;
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const apiSessionIdRef = useRef<string | null>(null);
+  const chunkIndexRef = useRef(0);
+  const recordingStartedAtRef = useRef<number | null>(null);
+  const rotationTimerRef = useRef<number | null>(null);
+  const isStoppingRef = useRef(false);
 
   // Timer runs only while recording
   useEffect(() => {
@@ -371,20 +464,213 @@ export function LiveClassMonitor() {
     return () => clearInterval(id);
   }, [isRecording]);
 
-  function toggleRecording() {
-    if (isRecording) {
-      // DETENER → finaliza y guarda la sesión
-      setIsRecording(false);
-      if (monitoringClass) {
-        const session = buildSession(monitoringClass, elapsed);
-        endSession(session); // guarda en historial + limpia el monitor activo
-        setFinishedSession(session);
-      }
+  useEffect(() => {
+    return () => {
+      stopBrowserRecording();
+    };
+  }, []);
+
+  function stopBrowserRecording() {
+    isStoppingRef.current = true;
+
+    if (rotationTimerRef.current !== null) {
+      window.clearInterval(rotationTimerRef.current);
+      rotationTimerRef.current = null;
+    }
+
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== "inactive") {
+      logRecorder("stopping recorder", { state: recorder.state });
+      recorder.stop();
+    }
+
+    mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+    logRecorder("microphone tracks stopped");
+    mediaRecorderRef.current = null;
+    mediaStreamRef.current = null;
+  }
+
+  async function ensureBackendSession() {
+    if (apiSessionIdRef.current) return apiSessionIdRef.current;
+
+    if (!isAudioApiConfigured()) {
+      throw new Error("Configura VITE_KOBI_API_URL para enviar audio al worker.");
+    }
+
+    if (!monitoringClass) {
+      throw new Error("Selecciona una clase antes de iniciar la sesion.");
+    }
+
+    const { sessionId } = await createBackendSession({ classId: resolveBackendClassId(monitoringClass.id) });
+    apiSessionIdRef.current = sessionId;
+    return sessionId;
+  }
+
+  async function handleAudioChunk(audio: Blob) {
+    const sessionId = apiSessionIdRef.current;
+    const startedAt = recordingStartedAtRef.current;
+    if (audio.size === 0) return;
+
+    if (!sessionId || !startedAt) {
+      logRecorder("chunk emitted without upload", {
+        hasSessionId: Boolean(sessionId),
+        hasStartedAt: Boolean(startedAt),
+        mimeType: audio.type || "application/octet-stream",
+        sizeBytes: audio.size,
+      });
       return;
     }
-    // Iniciar grabación
+
+    const chunkIndex = chunkIndexRef.current;
+    chunkIndexRef.current += 1;
+
+    logRecorder("chunk emitted", {
+      sessionId,
+      chunkIndex,
+      mimeType: audio.type || "application/octet-stream",
+      sizeBytes: audio.size,
+    });
+
+    setUploadStatus(`Enviando fragmento ${chunkIndex + 1}`);
+    try {
+      await uploadAudioChunk({
+        sessionId,
+        audio,
+        chunkIndex,
+        startMs: chunkIndex * AUDIO_CHUNK_MS,
+        endMs: Math.max(Date.now() - startedAt, (chunkIndex + 1) * AUDIO_CHUNK_MS),
+      });
+      setUploadedChunkCount((count) => count + 1);
+      setUploadStatus("Audio enviado al worker");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo enviar el audio.";
+      setRecordingError(message);
+      setUploadStatus(null);
+    }
+  }
+
+  // Cada instancia de MediaRecorder produce un unico blob autocontenido al
+  // detenerse (sin timeslice). Encadenamos instancias para poder subir
+  // fragmentos periodicos que sean decodificables de forma independiente.
+  function attachRecorderHandlers(recorder: MediaRecorder) {
+    recorder.ondataavailable = (event) => {
+      void handleAudioChunk(event.data);
+    };
+    recorder.onerror = () => {
+      setRecordingError("No se pudo grabar el audio del navegador.");
+    };
+  }
+
+  function startNewRecorderSegment() {
+    const stream = mediaStreamRef.current;
+    if (!stream || isStoppingRef.current) return;
+
+    const recorder = new MediaRecorder(stream);
+    attachRecorderHandlers(recorder);
+    mediaRecorderRef.current = recorder;
+    recorder.start();
+    logRecorder("recorder segment started", { mimeType: recorder.mimeType });
+  }
+
+  function rotateRecorderSegment() {
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === "inactive") return;
+
+    recorder.onstop = () => {
+      if (!isStoppingRef.current) {
+        startNewRecorderSegment();
+      }
+    };
+    recorder.stop();
+  }
+
+  async function startRecording() {
     setElapsed(0);
-    setIsRecording(true);
+    setUploadedChunkCount(0);
+    setRecordingError(null);
+
+    try {
+      if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+        throw new Error("Este navegador no soporta grabacion de audio.");
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      const sessionId = isAudioApiConfigured() ? await ensureBackendSession() : null;
+
+      logRecorder("microphone permission granted", {
+        trackCount: stream.getAudioTracks().length,
+        apiSessionId: sessionId,
+      });
+
+      apiSessionIdRef.current = sessionId;
+      chunkIndexRef.current = 0;
+      recordingStartedAtRef.current = Date.now();
+      isStoppingRef.current = false;
+
+      startNewRecorderSegment();
+      rotationTimerRef.current = window.setInterval(rotateRecorderSegment, AUDIO_CHUNK_MS);
+
+      logRecorder("recorder started", {
+        segmentMs: AUDIO_CHUNK_MS,
+        mimeType: mediaRecorderRef.current?.mimeType,
+        uploadsEnabled: Boolean(sessionId),
+      });
+      setUploadStatus(
+        sessionId
+          ? "Grabando audio para transcripcion"
+          : "Microfono activo en modo demo; configura VITE_KOBI_API_URL para transcribir.",
+      );
+      setIsRecording(true);
+    } catch (error) {
+      isStoppingRef.current = true;
+      if (rotationTimerRef.current !== null) {
+        window.clearInterval(rotationTimerRef.current);
+        rotationTimerRef.current = null;
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+      mediaRecorderRef.current = null;
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+      const message = error instanceof Error ? error.message : "No se pudo iniciar la grabacion.";
+      logRecorder("recording start failed", { error: message });
+      setRecordingError(message);
+      setUploadStatus(null);
+    }
+  }
+
+  function stopRecording() {
+    stopBrowserRecording();
+    setIsRecording(false);
+    setUploadStatus(apiSessionIdRef.current ? "Sesion enviada al worker" : uploadStatus);
+
+    if (monitoringClass) {
+      const session = buildSession(monitoringClass, elapsed);
+      endSession(session); // guarda en historial + limpia el monitor activo
+      setFinishedSession(session);
+    }
+  }
+
+  function toggleRecording() {
+    if (isRecording) {
+      stopRecording();
+      return;
+    }
+    void startRecording();
+  }
+
+  async function handleManualLessonState(input: { topic: string; objective?: string }) {
+    setRecordingError(null);
+    try {
+      const sessionId = await ensureBackendSession();
+      await submitManualLessonState({ sessionId, ...input });
+      setUploadStatus("Tema manual guardado como lesson_state");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo guardar el tema manual.";
+      setRecordingError(message);
+    }
   }
 
   const remaining = MOCK_INSIGHTS.totalSeconds - elapsed;
@@ -429,12 +715,19 @@ export function LiveClassMonitor() {
                     remaining={remaining}
                     isRecording={isRecording}
                     onToggleRecording={toggleRecording}
+                    uploadStatus={uploadStatus}
+                    recordingError={recordingError}
+                    uploadedChunkCount={uploadedChunkCount}
                   />
                 </div>
                 <div className="col-span-5 min-h-0">
                   <InsightsPanel />
                 </div>
               </div>
+              <ManualFallbackForm
+                disabled={!isAudioApiConfigured()}
+                onSubmit={handleManualLessonState}
+              />
             </div>
           </div>
         </div>
