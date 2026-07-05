@@ -7,8 +7,9 @@ interface ClassItem {
   topics: readonly string[];
   accent: string;
   tone: string;
-  badge: string;
+  badge?: string;
   icon: LucideIcon;
+  image?: string;
 }
 
 export function ClassCard({ item, viewMode }: { item: ClassItem; viewMode: "grid" | "list" }) {
@@ -16,37 +17,51 @@ export function ClassCard({ item, viewMode }: { item: ClassItem; viewMode: "grid
   const isList = viewMode === "list";
 
   return (
-    <article className={`overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm ${isList ? "grid md:grid-cols-[16rem_minmax(0,1fr)]" : ""}`}>
-      <div className={`relative overflow-hidden ${isList ? "min-h-48" : "min-h-52 sm:min-h-56"}`}>
+    <article className={`overflow-hidden rounded-3xl border border-slate-200/60 bg-white shadow-sm hover:shadow-md transition-all flex flex-col group ${isList ? "grid md:grid-cols-[16rem_minmax(0,1fr)]" : ""}`}>
+      <div className={`relative overflow-hidden ${isList ? "min-h-48" : "h-40"}`}>
         <div className={`absolute inset-0 bg-gradient-to-br ${item.tone}`} />
-        <div className="absolute inset-0 opacity-25 [background-image:radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.65)_1px,transparent_0)] [background-size:24px_24px]" />
-        <div className="absolute left-5 top-5 rounded-full border border-white/20 bg-white/20 px-3 py-1 text-[11px] font-semibold tracking-[0.22em] text-white backdrop-blur-sm">
-          {item.badge}
-        </div>
-        <Icon className="absolute right-5 top-5 h-14 w-14 text-white/20 sm:h-16 sm:w-16" />
-        <div className="absolute bottom-5 left-5 right-5 flex items-end justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-white/80">Panel docente</p>
-            <p className="mt-1 line-clamp-2 text-xl font-semibold leading-tight text-white/95 sm:text-2xl">{item.focus}</p>
+        {item.image && (
+          <img
+            src={item.image}
+            alt={item.title}
+            className="w-full h-full object-cover mix-blend-overlay opacity-65 group-hover:scale-105 transition-transform duration-500"
+          />
+        )}
+        <div className="absolute inset-0 opacity-15 [background-image:radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.65)_1px,transparent_0)] [background-size:24px_24px]" />
+        
+        {item.badge && (
+          <div className="absolute left-4 top-4 rounded-full border border-white/20 bg-white/20 px-3 py-1 text-[10px] font-bold tracking-widest text-white backdrop-blur-sm uppercase">
+            {item.badge}
           </div>
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-sm">
-            <ChevronRight className="h-5 w-5" />
+        )}
+        <Icon className="absolute right-4 top-4 h-12 w-12 text-white/20" />
+        
+        <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold text-white/80 uppercase tracking-wider">Teacher Portal</p>
+            <p className="mt-0.5 line-clamp-1 text-lg font-bold leading-tight text-white/95">{item.focus}</p>
+          </div>
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/15 text-white backdrop-blur-sm hover:bg-white/25 transition">
+            <ChevronRight className="h-4 w-4" />
           </div>
         </div>
       </div>
 
-      <div className="p-5 sm:p-6">
-        <h4 className="text-xl font-semibold tracking-tight text-slate-950 sm:text-2xl">{item.title}</h4>
-        <p className={`mt-2 text-base font-semibold ${item.accent}`}>{item.focus}</p>
-        <div className="mt-5 flex items-center gap-2 text-sm text-slate-600">
-          <Users className="h-4 w-4" />
-          <span>{item.students}</span>
+      <div className="p-6 flex-1 flex flex-col justify-between">
+        <div>
+          <h4 className="text-lg font-bold tracking-tight text-slate-900 group-hover:text-[#004ac6] transition-colors">{item.title}</h4>
+          <p className={`mt-1 text-xs font-semibold uppercase tracking-wider ${item.accent}`}>{item.focus}</p>
+          <div className="mt-4 flex items-center gap-2 text-xs text-slate-500">
+            <Users className="h-4 w-4" />
+            <span>{item.students}</span>
+          </div>
         </div>
+
         <div className="mt-6">
-          <p className="text-sm font-semibold uppercase tracking-[0.2em] text-slate-400">Temas</p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Topics</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
             {item.topics.map((topic) => (
-              <span className="rounded-full bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700" key={topic}>
+              <span className="rounded-lg bg-slate-50 border border-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600" key={topic}>
                 {topic}
               </span>
             ))}

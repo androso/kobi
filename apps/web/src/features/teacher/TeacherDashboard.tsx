@@ -1,39 +1,40 @@
 import { useState } from "react";
-import { LayoutGrid, List, Plus, Leaf, Sigma, PenLine } from "lucide-react";
+import { LayoutGrid, List, Plus, Leaf, Sigma, BookOpen, Zap } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { Header } from "./components/Header";
 import { ClassCard } from "./components/ClassCard";
 
 const teacherClasses = [
   {
-    title: "Ciencia 4to - Seccion A",
-    focus: "Ecosistemas y energia",
-    students: "24 estudiantes activos",
-    topics: ["Fotosintesis", "Cadenas alimentarias", "Niveles troficos"],
+    title: "Grade 4 Science - Section A",
+    focus: "Ecosystems & Energy",
+    students: "24 Students Active",
+    topics: ["Photosynthesis", "Food Webs", "Trophic Levels"],
     accent: "text-emerald-700",
-    tone: "from-[#2d6bf3] via-[#5f83f4] to-[#8b5cf6]",
-    badge: "LECCION ACTIVA",
-    icon: Leaf
+    tone: "from-emerald-600 to-teal-500",
+    badge: "Active Lesson",
+    icon: Leaf,
+    image: "https://lh3.googleusercontent.com/aida-public/AB6AXuBCAwPsVw47e0Nv2o8f8sBJM_d_mY5O81AtCriMIujynK1Z4qFVr-U_1_BOLZz-c9WnkGdFLcIxY-pCddOH7FNrl4Nz3RJSepvcldBk9Hn-unZmUUahnjRaxJUfGgcqzcrtMmlDFp3i945BScZwFB8FpFCiY7l7hpZt_9Ac6FLAoZZcrdpnH05aRWNP5a3NlMK0drZNLJ05ejf9BogvXk_G02ZR5Gq8nCFjvbqq7-deOlmo_kbRavVCO0AbBkNsIOBOJN1NGhVDmOM"
   },
   {
-    title: "Matematicas 5to - Algebra basica",
-    focus: "Matematicas",
-    students: "22 estudiantes activos",
-    topics: ["Variables", "Ecuaciones", "Orden de operaciones"],
+    title: "Grade 5 Math - Algebra Basics",
+    focus: "Mathematics",
+    students: "22 Students Active",
+    topics: ["Variables", "Equations", "Order of Ops"],
     accent: "text-blue-700",
-    tone: "from-[#17b26a] via-[#0f9d77] to-[#0b7d5d]",
-    badge: "NUEVO BLOQUE",
-    icon: Sigma
+    tone: "from-blue-600 to-indigo-500",
+    icon: Sigma,
+    image: "https://lh3.googleusercontent.com/aida-public/AB6AXuA932KhbIrFuy-YeSLoezsXY1m5ssXcWSCC6nKu52j9iVzwAW0nbMgsKdzmvGZ-x1ZGA4YLqNnsEUuf0YbOjW3QTAaVw7AeJSd_HlaLZEYO49CWgi58UglcAAkhr5-GeZxDYNYJqtLwLnL2xl8gvQpmNmluT-yrr4iOuyjeJSoGn0jgZG5Y4gQjl0kaq9cxGKhtuOToJYeEkDpLt8KG6AeUI7yRUTLfqyF6MB4w0o2AGtWFJOCeN6Wh_eTS3RPoN6ml2gq0Y37Tr9w"
   },
   {
-    title: "Lengua 6to - Escritura creativa",
-    focus: "Lengua y artes",
-    students: "28 estudiantes activos",
-    topics: ["Metaforas", "Estructura narrativa", "Voz"],
+    title: "Grade 8 Lit - Creative Writing",
+    focus: "English & Arts",
+    students: "28 Students Active",
+    topics: ["Metaphors", "Story Arch", "Voice"],
     accent: "text-violet-700",
-    tone: "from-[#d4b4ff] via-[#b784ff] to-[#9f5af8]",
-    badge: "ESCRITURA",
-    icon: PenLine
+    tone: "from-violet-600 to-purple-500",
+    icon: BookOpen,
+    image: "https://lh3.googleusercontent.com/aida-public/AB6AXuCpycvw0OTR6LZbzoWOMk7z3c-p9wMvTQoYyHII1w-4g5rUbzvB_0p33ESghjGNCfseRdj5ouhEUbTrXj52sIfJ9RMFn5JMtRfNXZ-v-KXEWkKpr1lMH23hOqgtEYhMsBcX4JD-tKQdkAq1X93KbzOX4BGFAvHo8O9E9_8IYAluDRxNGs-niCbr2pMnBUC3cFbqF6wlnSubrpUUrKu2hTKD8mzsjSdQRgJilvuO9f_lM7l_NZR1J3YxBJAprOGHte9ecoWntu4mMVY"
   }
 ] as const;
 
@@ -41,69 +42,101 @@ export function TeacherDashboard() {
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
   return (
-    <main className="min-h-screen bg-[#eef3fb] p-3 text-foreground sm:p-4 lg:p-5">
-      <div className="mx-auto grid min-h-[calc(100vh-1.5rem)] max-w-[1520px] overflow-hidden rounded-[30px] border border-slate-200/80 bg-[#f7f9fe] shadow-[0_30px_90px_-40px_rgba(15,23,42,0.45)] lg:grid-cols-[15.5rem_minmax(0,1fr)]">
+    <main className="min-h-screen bg-[#f8f9ff] text-foreground">
+      <div className="mx-auto grid min-h-screen max-w-[1520px] lg:grid-cols-[240px_minmax(0,1fr)]">
         <Sidebar />
         <div className="flex min-w-0 flex-col">
           <Header />
-          <div className="flex-1 px-3 py-5 sm:px-4 lg:px-6 lg:py-6">
-            <section className="mb-8 lg:mb-10">
-              <h2 className="max-w-4xl text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl lg:text-[3.4rem] lg:leading-[1.02]">
-                Bienvenida de nuevo, Sra. Henderson
+          <div className="flex-1 px-6 py-8 md:px-10 max-w-7xl w-full mx-auto">
+            {/* Greeting Hero */}
+            <section className="mb-10">
+              <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl lg:text-[40px] leading-tight">
+                Welcome back, Mrs. Henderson
               </h2>
-              <p className="mt-3 max-w-3xl text-base leading-7 text-slate-600 sm:text-[1.05rem]">
-                Tienes 2 clases proximas hoy y 46 estudiantes activos para acompañar.
+              <p className="mt-2 text-slate-500 text-base sm:text-lg">
+                You have 2 upcoming lessons today and 46 active students to engage with.
               </p>
             </section>
 
+            {/* Classes Section */}
             <section>
-              <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
-                <h3 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">Tus clases</h3>
-                <div className="inline-flex rounded-2xl bg-[#e5eefc] p-1">
+              <div className="mb-6 flex items-center justify-between">
+                <h3 className="text-xl font-bold text-slate-900 sm:text-2xl">Your Classes</h3>
+                <div className="inline-flex rounded-xl bg-slate-100 p-1">
                   <button
-                    className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
-                      viewMode === "grid" ? "bg-white text-[#1557d4] shadow-sm" : "text-slate-600 hover:text-slate-900"
+                    className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                      viewMode === "grid" ? "bg-white text-[#004ac6] shadow-sm" : "text-slate-500 hover:text-slate-900"
                     }`}
                     onClick={() => setViewMode("grid")}
                     type="button"
                   >
-                    <LayoutGrid className="h-4 w-4" />
-                    Cuadricula
+                    <LayoutGrid className="h-3.5 w-3.5" />
+                    Grid
                   </button>
                   <button
-                    className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition ${
-                      viewMode === "list" ? "bg-white text-[#1557d4] shadow-sm" : "text-slate-600 hover:text-slate-900"
+                    className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
+                      viewMode === "list" ? "bg-white text-[#004ac6] shadow-sm" : "text-slate-500 hover:text-slate-900"
                     }`}
                     onClick={() => setViewMode("list")}
                     type="button"
                   >
-                    <List className="h-4 w-4" />
-                    Lista
+                    <List className="h-3.5 w-3.5" />
+                    List
                   </button>
                 </div>
               </div>
 
-              <button className="group mb-5 flex min-h-32 w-full items-center justify-center rounded-[28px] border-2 border-dashed border-slate-300 bg-[#f4f7fd] px-5 py-6 text-slate-600 transition hover:border-[#b6ccf7] hover:bg-[#f7faff]" type="button">
-                <div className="flex flex-col items-center gap-4">
-                  <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#eadcff] text-[#321f7a] transition group-hover:bg-[#dcc8ff]">
-                    <Plus className="h-8 w-8" />
+              {/* Bento Grid */}
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {/* Create New Class Card */}
+                <button className="group relative border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-3xl flex flex-col items-center justify-center cursor-pointer transition-all hover:bg-slate-100/50 hover:border-[#004ac6]/30 hover:shadow-md md:col-span-2 lg:col-span-3 h-40" type="button">
+                  <div className="w-14 h-14 rounded-full bg-blue-50 text-[#004ac6] flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
+                    <Plus className="h-6 w-6 font-bold" />
                   </div>
-                  <p className="text-xl font-semibold tracking-tight text-slate-700 sm:text-2xl">Crear nueva clase</p>
-                </div>
-              </button>
+                  <span className="text-base font-bold text-slate-500 group-hover:text-[#004ac6] transition-colors">Create new class</span>
+                </button>
 
-              <div className={viewMode === "grid" ? "grid gap-6 xl:grid-cols-3" : "grid gap-4"}>
                 {teacherClasses.map((item) => (
                   <ClassCard item={item} key={item.title} viewMode={viewMode} />
                 ))}
+              </div>
+            </section>
+
+            {/* Bottom Quick Stats / Activity */}
+            <section className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Engagement Insight Card */}
+              <div className="md:col-span-2 bg-white border border-slate-100 rounded-3xl p-6 flex items-center gap-6 shadow-sm">
+                <div className="w-14 h-14 shrink-0 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                  <Zap className="h-6 w-6 fill-emerald-600" />
+                </div>
+                <div>
+                  <h5 className="text-base font-bold text-slate-900">Weekly Engagement is up 12%</h5>
+                  <p className="mt-1 text-sm text-slate-500 leading-relaxed">
+                    Your students are spending more time on the 'Food Webs' activity than expected. Would you like to add more resources?
+                  </p>
+                </div>
+              </div>
+
+              {/* Next Session Card */}
+              <div className="bg-[#004ac6] text-white rounded-3xl p-6 flex flex-col justify-center shadow-sm">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-200">NEXT SESSION</span>
+                <h5 className="mt-1 text-lg font-bold leading-snug">10:30 AM <br />Science - Sec A</h5>
+                <div className="mt-4 flex items-center -space-x-2">
+                  <img className="w-8 h-8 rounded-full border-2 border-[#004ac6] object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB2qFKoH54IyhZCFdjoIRSChvpUzEa_vrsh5NAv-DyIijb7VD0D3Ts0tkKuP2mH_cO9GLR7KfzZHuGKRUJ8Wh-3T5TuiCnBg2aHxKaUlFn-BnHz33uGetUa_hlSV3YGcfp7chx_L7PW2KHqYb9IRB6tWEpQil0SJTWpFLiO_5Dc0WDVP045Nimgm2MmVuTtA_WwE4cL-3OGefElcQymaB9BG3_F488z_R_M5ydtkfY1sN72R4ra4WEO5J9CMdei-Uk2pI0IE7sYsoA" alt="Student" />
+                  <img className="w-8 h-8 rounded-full border-2 border-[#004ac6] object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDGPE9JjM4R0tsUzBo15GtbRB5rIOIkHgvTh9Kfy5gWTduE0VO329LroiLyCLzBYcbhPanU7a2FFp6mmQYKH9XNd1OaGRVbAViLSZIG85RkwslRmiGgx4LgcE5i5_SB4434YoD-ZlrzWBGDdPdf0hIRlyrJJkZfSM7vFHEUPKGiRsW6DrnOcgINZ6qu-_wE1zW_vahGv_R8hUT6-f7z1gvGfgzlzU1f9x3Wslg_0l2lwd0RBId9q4u-sx0jkCKZ99gJr_Jv_G9W-sE" alt="Student" />
+                  <img className="w-8 h-8 rounded-full border-2 border-[#004ac6] object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBfY6NT0pkS-JKNNZptzFMV5Jq52lVumxB5CA5ALhMzcAEa-afk0aw05IJHWxv2BRp2Se165IMtu5jT6OYuLAW3AvH1xi_wyqK2dJiGknHtBrvN5RXlFTmW_WYgRGOClbS8hbXdWpjcvAFtfjNDFbSE1iSXZVRlvW1p1ooy7Nhe6niCbDjfT9nbTvYuBZxWGvyQm1ZhANgD1VzB9Sk-6cYtTpVZLD11GVuHKieqnGI-3K13SliHZYX2QIdXkHmo0218cVLrhUi66Xs" alt="Student" />
+                  <div className="w-8 h-8 rounded-full bg-[#2563eb] text-[10px] font-bold flex items-center justify-center border-2 border-[#004ac6]">
+                    +21
+                  </div>
+                </div>
               </div>
             </section>
           </div>
         </div>
       </div>
 
-      <button className="fixed bottom-6 right-6 flex h-16 w-16 items-center justify-center rounded-full bg-[#0b57d0] text-3xl text-white shadow-[0_16px_40px_-14px_rgba(11,87,208,0.7)] transition hover:bg-[#094fbf]" type="button">
-        <Plus className="h-8 w-8" />
+      <button className="fixed bottom-6 right-6 flex h-14 w-14 items-center justify-center rounded-full bg-[#004ac6] text-white shadow-lg hover:rotate-90 transition-transform active:scale-95" type="button">
+        <Plus className="h-6 w-6" />
       </button>
     </main>
   );
