@@ -150,7 +150,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: /entrar a clase/i }));
 
     // Lesson list + first quiz question render for the seeded KOBI7 class.
-    expect(screen.getByRole("heading", { name: /vocabulario en contexto: la noticia/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /vocabulario en contexto: la noticia/i })).toBeInTheDocument();
     expect(screen.getByText(/pregunta 1 de 3/i)).toBeInTheDocument();
 
     // Answer all three questions correctly, advancing through the quiz.

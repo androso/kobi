@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type FormEvent } from "react";
+import { useMemo, useState, useEffect, useRef, type FormEvent } from "react";
 import {
   Pause,
   StopCircle,
@@ -10,11 +10,20 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import type { DifficultyBand } from "@kobi/activities";
 import { Sidebar } from "./components/Sidebar";
 import { Header } from "./components/Header";
 import { WaveformVisualizer } from "./components/WaveformVisualizer";
 import { KobiMascot } from "./components/KobiMascot";
 import { useClassStore, type SavedSession, type ClassItem } from "../../lib/store";
+import { supabase } from "../../lib/supabase";
+import {
+  loadOrCreateReadyCandidates,
+  publishAssignments,
+  SupabaseActivityDeliveryStore,
+  type DeliveryCandidate,
+  type StudentForAssignment,
+} from "../activityDelivery/artifactDelivery";
 import {
   createBackendSession,
   isAudioApiConfigured,
@@ -344,14 +353,311 @@ function InsightsPanel() {
   );
 }
 
-function SuggestedActivityFAB({ activity }: { activity: string }) {
+function SuggestedActivityFAB({
+  activity,
+  loading,
+  onGenerate,
+}: {
+  activity: string;
+  loading: boolean;
+  onGenerate: () => void;
+}) {
   return (
     <div className="fixed bottom-6 right-6 z-50">
-      <button className="bg-violet-600 text-white px-5 py-3 rounded-full shadow-2xl flex items-center gap-2 hover:scale-105 transition-all active:scale-95 font-bold text-sm" type="button">
+      <button
+        className="bg-violet-600 text-white px-5 py-3 rounded-full shadow-2xl flex items-center gap-2 hover:scale-105 transition-all active:scale-95 font-bold text-sm disabled:cursor-not-allowed disabled:opacity-70"
+        disabled={loading}
+        onClick={onGenerate}
+        type="button"
+      >
         <Sparkles className="h-4 w-4" />
-        Actividad sugerida: {activity}
+        {loading ? "Generando actividad..." : `Hora de actividad: ${activity}`}
       </button>
     </div>
+  );
+}
+
+const bandLabels: Record<DifficultyBand, string> = {
+  support: "Apoyo",
+  core: "Base",
+  challenge: "Reto",
+};
+
+const bandAccent: Record<
+  DifficultyBand,
+  { text: string; bg: string; border: string; solid: string; ring: string }
+> = {
+  support: {
+    text: "text-blue-700",
+    bg: "bg-blue-50",
+    border: "border-blue-300",
+    solid: "bg-blue-600",
+    ring: "ring-blue-200",
+  },
+  core: {
+    text: "text-emerald-700",
+    bg: "bg-emerald-50",
+    border: "border-emerald-300",
+    solid: "bg-emerald-600",
+    ring: "ring-emerald-200",
+  },
+  challenge: {
+    text: "text-amber-700",
+    bg: "bg-amber-50",
+    border: "border-amber-300",
+    solid: "bg-amber-600",
+    ring: "ring-amber-200",
+  },
+};
+
+const bandOptions: DifficultyBand[] = ["support", "core", "challenge"];
+
+/** Which band a student is currently assigned to; anyone not overridden stays on Base. */
+function resolveStudentBand(
+  studentId: string,
+  overridesByBand: Partial<Record<DifficultyBand, string[]>>,
+): DifficultyBand {
+  if (overridesByBand.support?.includes(studentId)) return "support";
+  if (overridesByBand.challenge?.includes(studentId)) return "challenge";
+  return "core";
+}
+
+function CandidateCard({
+  candidate,
+  isSelected,
+  assignedCount,
+  onSelect,
+}: {
+  candidate: DeliveryCandidate;
+  isSelected: boolean;
+  assignedCount: number | null;
+  onSelect: () => void;
+}) {
+  const accent = bandAccent[candidate.difficultyBand];
+
+  return (
+    <article
+      className={`rounded-2xl border p-4 transition ${
+        isSelected ? `${accent.border} ${accent.bg}` : "border-slate-200 bg-white hover:border-slate-300"
+      }`}
+    >
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${accent.bg} ${accent.text}`}>
+          {bandLabels[candidate.difficultyBand]}
+        </span>
+        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-500">
+          {assignedCount === null
+            ? "Predeterminada"
+            : `${assignedCount} estudiante${assignedCount === 1 ? "" : "s"}`}
+        </span>
+      </div>
+      <h3 className="text-base font-bold text-slate-900">{candidate.manifest.title}</h3>
+      <p className="mt-2 line-clamp-2 text-sm leading-5 text-slate-600">
+        {candidate.manifest.content.items[0]?.prompt}
+      </p>
+      <dl className="mt-3 grid gap-2 text-xs text-slate-500">
+        <div>
+          <dt className="font-bold uppercase tracking-wide text-slate-400">Objetivo</dt>
+          <dd>{candidate.manifest.curriculum.objective}</dd>
+        </div>
+        <div>
+          <dt className="font-bold uppercase tracking-wide text-slate-400">Evidencia</dt>
+          <dd className="line-clamp-1">
+            {candidate.evidence[0]?.section}: {candidate.evidence[0]?.text}
+          </dd>
+        </div>
+        <div>
+          <dt className="font-bold uppercase tracking-wide text-slate-400">Verificador</dt>
+          <dd>
+            {candidate.verifierScores.deterministic} · alineacion{" "}
+            {Math.round(candidate.verifierScores.rubric.curriculum_alignment * 100)}%
+          </dd>
+        </div>
+      </dl>
+      <button
+        className={`mt-4 w-full rounded-xl border px-3 py-2 text-sm font-bold transition ${
+          isSelected
+            ? `${accent.border} ${accent.text} bg-white`
+            : "border-violet-200 text-violet-700 hover:bg-violet-50"
+        }`}
+        onClick={onSelect}
+        type="button"
+      >
+        {isSelected ? "Previsualizando" : "Previsualizar"}
+      </button>
+    </article>
+  );
+}
+
+function StudentBandRow({
+  student,
+  band,
+  onChange,
+}: {
+  student: StudentForAssignment;
+  band: DifficultyBand;
+  onChange: (band: DifficultyBand) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl px-2.5 py-2 transition hover:bg-slate-50">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-bold text-slate-500">
+          {student.displayName.slice(0, 1).toUpperCase()}
+        </span>
+        <span className="truncate text-sm font-semibold text-slate-700">{student.displayName}</span>
+      </div>
+      <div className="flex shrink-0 gap-1 rounded-full bg-slate-100 p-1">
+        {bandOptions.map((option) => {
+          const isActive = band === option;
+          const accent = bandAccent[option];
+          return (
+            <button
+              className={`rounded-full px-3 py-1 text-xs font-bold transition ${
+                isActive ? `${accent.solid} text-white shadow-sm` : "text-slate-500 hover:text-slate-700"
+              }`}
+              key={option}
+              onClick={() => onChange(option)}
+              type="button"
+            >
+              {bandLabels[option]}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ActivityCandidatePanel({
+  candidates,
+  selectedCandidate,
+  students,
+  overridesByBand,
+  publishStatus,
+  onSelectCandidate,
+  onAssignStudentBand,
+  onPublish,
+}: {
+  candidates: DeliveryCandidate[];
+  selectedCandidate: DeliveryCandidate | null;
+  students: StudentForAssignment[];
+  overridesByBand: Partial<Record<DifficultyBand, string[]>>;
+  publishStatus: string | null;
+  onSelectCandidate: (candidate: DeliveryCandidate) => void;
+  onAssignStudentBand: (studentId: string, band: DifficultyBand) => void;
+  onPublish: () => void;
+}) {
+  if (candidates.length === 0) return null;
+
+  const supportIds = overridesByBand.support ?? [];
+  const challengeIds = overridesByBand.challenge ?? [];
+  const coreCount = Math.max(students.length - supportIds.length - challengeIds.length, 0);
+  const assignedCountByBand: Record<DifficultyBand, number | null> = {
+    support: supportIds.length,
+    core: null,
+    challenge: challengeIds.length,
+  };
+
+  return (
+    <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-violet-500">
+            Candidatos verificados
+          </p>
+          <h2 className="text-xl font-bold text-slate-900">Aprobar y entregar actividad</h2>
+          <p className="mt-1 max-w-xl text-sm text-slate-500">
+            Elige quién necesita Apoyo o un Reto extra. El resto de la clase recibe la actividad Base por defecto.
+          </p>
+        </div>
+        <button
+          className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={students.length === 0}
+          onClick={onPublish}
+          type="button"
+        >
+          Publicar a estudiantes
+        </button>
+      </div>
+
+      {students.length > 0 ? (
+        <div className="mb-5 flex flex-wrap gap-2">
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${bandAccent.support.bg} ${bandAccent.support.text}`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${bandAccent.support.solid}`} />
+            {supportIds.length} con Apoyo
+          </span>
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${bandAccent.core.bg} ${bandAccent.core.text}`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${bandAccent.core.solid}`} />
+            {coreCount} con Base (predeterminado)
+          </span>
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold ${bandAccent.challenge.bg} ${bandAccent.challenge.text}`}
+          >
+            <span className={`h-1.5 w-1.5 rounded-full ${bandAccent.challenge.solid}`} />
+            {challengeIds.length} con Reto
+          </span>
+        </div>
+      ) : null}
+
+      <div className="grid gap-3 md:grid-cols-3">
+        {candidates.map((candidate) => (
+          <CandidateCard
+            assignedCount={assignedCountByBand[candidate.difficultyBand]}
+            candidate={candidate}
+            isSelected={selectedCandidate?.id === candidate.id}
+            key={candidate.id}
+            onSelect={() => onSelectCandidate(candidate)}
+          />
+        ))}
+      </div>
+
+      <div className="mt-5 grid gap-4 xl:grid-cols-[400px_minmax(0,1fr)]">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-slate-800">Estudiantes</h3>
+            <span className="text-xs font-semibold text-slate-400">{students.length} conectados</span>
+          </div>
+          {students.length === 0 ? (
+            <p className="text-xs text-slate-400">Sin estudiantes conectados.</p>
+          ) : (
+            <div className="max-h-[560px] space-y-1 overflow-y-auto rounded-xl bg-white p-2">
+              {students.map((student) => (
+                <StudentBandRow
+                  band={resolveStudentBand(student.id, overridesByBand)}
+                  key={student.id}
+                  onChange={(band) => onAssignStudentBand(student.id, band)}
+                  student={student}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+            {selectedCandidate ? (
+              <iframe
+                className="h-[560px] w-full bg-white"
+                sandbox="allow-scripts"
+                srcDoc={selectedCandidate.bundleHtml}
+                title={`Previsualizacion ${selectedCandidate.manifest.title}`}
+              />
+            ) : (
+              <div className="flex h-[560px] items-center justify-center text-sm text-slate-500">
+                Selecciona una actividad para previsualizar.
+              </div>
+            )}
+          </div>
+          {publishStatus ? (
+            <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700">{publishStatus}</p>
+          ) : null}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -442,6 +748,14 @@ export function LiveClassMonitor() {
   const [elapsed, setElapsed] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [finishedSession, setFinishedSession] = useState<SavedSession | null>(null);
+  const [activitySessionId, setActivitySessionId] = useState<string | null>(null);
+  const [candidates, setCandidates] = useState<DeliveryCandidate[]>([]);
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  const [students, setStudents] = useState<StudentForAssignment[]>([]);
+  const [overridesByBand, setOverridesByBand] = useState<Partial<Record<DifficultyBand, string[]>>>({});
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityError, setActivityError] = useState<string | null>(null);
+  const [publishStatus, setPublishStatus] = useState<string | null>(null);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [uploadedChunkCount, setUploadedChunkCount] = useState(0);
@@ -450,6 +764,22 @@ export function LiveClassMonitor() {
   const classes = useClassStore((state) => state.classes);
   const endSession = useClassStore((state) => state.endSession);
   const monitoringClass = classes.find((c) => c.id === monitoringClassId) ?? null;
+  const deliveryStore = useMemo(
+    () => (supabase ? new SupabaseActivityDeliveryStore(supabase) : null),
+    [],
+  );
+  const selectedCandidate =
+    candidates.find((candidate) => candidate.id === selectedCandidateId) ??
+    candidates.find((candidate) => candidate.difficultyBand === "core") ??
+    candidates[0] ??
+    null;
+  // Core is always delivered by default; Apoyo/Reto only activate once a student is assigned to them.
+  const approvedBands = useMemo<DifficultyBand[]>(() => {
+    const bands: DifficultyBand[] = ["core"];
+    if ((overridesByBand.support?.length ?? 0) > 0) bands.push("support");
+    if ((overridesByBand.challenge?.length ?? 0) > 0) bands.push("challenge");
+    return bands;
+  }, [overridesByBand]);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const apiSessionIdRef = useRef<string | null>(null);
@@ -674,6 +1004,76 @@ export function LiveClassMonitor() {
     }
   }
 
+  async function handleGenerateActivity() {
+    if (!monitoringClass || !deliveryStore) {
+      setActivityError("Selecciona una clase y configura Supabase para generar la actividad.");
+      return;
+    }
+
+    setActivityLoading(true);
+    setActivityError(null);
+    setPublishStatus(null);
+
+    try {
+      const result = await loadOrCreateReadyCandidates(deliveryStore, monitoringClass.id);
+      const loadedStudents = await deliveryStore.listStudents(monitoringClass.id);
+      setActivitySessionId(result.sessionId);
+      setCandidates(result.candidates);
+      setStudents(loadedStudents);
+      setSelectedCandidateId(
+        result.candidates.find((candidate) => candidate.difficultyBand === "core")?.id ??
+          result.candidates[0]?.id ??
+          null,
+      );
+    } catch (error) {
+      setActivityError(error instanceof Error ? error.message : "No se pudo generar la actividad.");
+    } finally {
+      setActivityLoading(false);
+    }
+  }
+
+  /** Moves a student to the given band; picking "core" simply clears any override (back to default). */
+  function assignStudentBand(studentId: string, band: DifficultyBand) {
+    setOverridesByBand((current) => {
+      const nextSupport = new Set(current.support ?? []);
+      const nextChallenge = new Set(current.challenge ?? []);
+      nextSupport.delete(studentId);
+      nextChallenge.delete(studentId);
+
+      if (band === "support") nextSupport.add(studentId);
+      if (band === "challenge") nextChallenge.add(studentId);
+
+      return {
+        support: Array.from(nextSupport),
+        challenge: Array.from(nextChallenge),
+      };
+    });
+  }
+
+  async function handlePublish() {
+    if (!monitoringClass || !activitySessionId || !deliveryStore) return;
+
+    setActivityLoading(true);
+    setActivityError(null);
+    setPublishStatus(null);
+
+    try {
+      const published = await publishAssignments({
+        store: deliveryStore,
+        sessionId: activitySessionId,
+        classId: monitoringClass.id,
+        candidates,
+        approvedBands,
+        overridesByBand,
+      });
+      setPublishStatus(`Publicado para ${published.length} estudiantes.`);
+    } catch (error) {
+      setActivityError(error instanceof Error ? error.message : "No se pudo publicar la actividad.");
+    } finally {
+      setActivityLoading(false);
+    }
+  }
+
   const remaining = MOCK_INSIGHTS.totalSeconds - elapsed;
 
   return (
@@ -726,6 +1126,21 @@ export function LiveClassMonitor() {
                   <InsightsPanel />
                 </div>
               </div>
+              {activityError ? (
+                <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+                  {activityError}
+                </div>
+              ) : null}
+              <ActivityCandidatePanel
+                candidates={candidates}
+                onAssignStudentBand={assignStudentBand}
+                onPublish={handlePublish}
+                onSelectCandidate={(candidate) => setSelectedCandidateId(candidate.id)}
+                overridesByBand={overridesByBand}
+                publishStatus={publishStatus}
+                selectedCandidate={selectedCandidate}
+                students={students}
+              />
               <ManualFallbackForm
                 disabled={!isAudioApiConfigured()}
                 onSubmit={handleManualLessonState}
@@ -734,7 +1149,11 @@ export function LiveClassMonitor() {
           </div>
         </div>
       </div>
-      <SuggestedActivityFAB activity={MOCK_INSIGHTS.suggestedActivity} />
+      <SuggestedActivityFAB
+        activity={MOCK_INSIGHTS.suggestedActivity}
+        loading={activityLoading}
+        onGenerate={handleGenerateActivity}
+      />
 
       {/* Resumen de fin de sesión */}
       {finishedSession && (
