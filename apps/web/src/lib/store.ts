@@ -104,6 +104,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (session?.user) {
         await ensureTeacherProfile(session.user);
+        useClassStore.setState({ classes: [], artefactos: [], submissions: [] });
       }
 
       set({
@@ -114,6 +115,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       supabase.auth.onAuthStateChange((_event, nextSession) => {
         if (nextSession?.user) {
           void ensureTeacherProfile(nextSession.user);
+          useClassStore.setState({ classes: [], artefactos: [], submissions: [] });
         }
 
         const localStudentAuth = readLocalStudentAuth();
@@ -141,6 +143,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     await ensureTeacherProfile(data.user);
     clearLocalStudentAuth();
+    useClassStore.setState({ classes: [], artefactos: [], submissions: [] });
     set({ status: "authenticated", user: teacherProfileFromSupabaseUser(data.user) });
     return {};
   },
@@ -161,6 +164,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     await ensureTeacherProfile(data.session.user);
     clearLocalStudentAuth();
+    useClassStore.setState({ classes: [], artefactos: [], submissions: [] });
     set({ status: "authenticated", user: teacherProfileFromSupabaseUser(data.session.user) });
     return {};
   },
