@@ -21,43 +21,42 @@ export function StudentSidebar({ studentName, classCode, progressLabel, onLogout
     <aside
       aria-label="Navegación estudiante"
       className={[
-        "flex h-full w-[7.5rem] flex-col items-center border-r border-slate-100 bg-white px-3 py-7 shadow-sm",
+        "flex h-full w-[6.5rem] flex-col items-center border-r border-[#ece8e1] bg-[#fdfcf9] px-2 py-7",
         className,
       ]
         .filter(Boolean)
         .join(" ")}
     >
       <div className="flex flex-col items-center">
-        <div className="flex h-16 w-16 items-center justify-center rounded-[1.4rem] bg-emerald-50 text-[#19b69b]">
-          <GraduationCap className="h-10 w-10" />
+        <div className="flex h-11 w-11 items-center justify-center text-[#2f9e8f]">
+          <GraduationCap className="h-9 w-9" strokeWidth={1.75} />
         </div>
         <h2 className="sr-only">{studentName}</h2>
         <p className="sr-only">Código de clase {classCode}</p>
         <p className="sr-only">{progressLabel}</p>
       </div>
 
-      <nav className="mt-20 flex w-full flex-1 flex-col items-center gap-11">
+      <nav className="mt-16 flex w-full flex-1 flex-col items-center gap-10">
         {navItems.map((item) => {
           const Icon = item.icon;
 
           return (
             <NavLink
-              className={({ isActive }) =>
-                [
-                  "group relative flex w-full flex-col items-center gap-2 text-center text-slate-400 transition hover:text-slate-600",
-                  isActive ? "text-[#19b69b]" : "",
-                ].join(" ")
-              }
+              className="group relative flex w-full flex-col items-center gap-1.5 text-center text-[#9aa1ac] transition hover:text-[#5b6270]"
               key={item.path}
               to={item.path}
             >
               {({ isActive }) => (
                 <>
-                  <span className="flex h-9 w-9 items-center justify-center">
-                    <Icon className="h-6 w-6 fill-current stroke-current" />
+                  <span className={`flex h-8 w-8 items-center justify-center ${isActive ? "text-[#2f9e8f]" : ""}`}>
+                    <Icon className="h-6 w-6" strokeWidth={1.75} />
                   </span>
-                  <span className="w-full text-[1.05rem] font-medium leading-5 tracking-normal">{item.label}</span>
-                  {isActive ? <span className="absolute right-[-0.75rem] top-1 h-14 w-1 rounded-full bg-[#19b69b]" /> : null}
+                  <span className={`text-[0.8rem] font-medium leading-4 ${isActive ? "text-[#2f9e8f]" : ""}`}>
+                    {item.label}
+                  </span>
+                  {isActive ? (
+                    <span className="absolute left-[-0.5rem] top-0 h-11 w-[3px] rounded-full bg-[#2f9e8f]" />
+                  ) : null}
                 </>
               )}
             </NavLink>
@@ -65,21 +64,21 @@ export function StudentSidebar({ studentName, classCode, progressLabel, onLogout
         })}
       </nav>
 
-      <div className="mt-auto flex flex-col items-center gap-6">
+      <div className="mt-auto flex flex-col items-center gap-5">
         <button
           aria-label="Ayuda"
-          className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-[#19b69b] transition hover:bg-emerald-100"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-[#2f9e8f] text-white shadow-sm transition hover:bg-[#278577]"
           type="button"
         >
-          <CircleHelp className="h-6 w-6 fill-current stroke-current" />
+          <CircleHelp className="h-5 w-5" strokeWidth={2} />
         </button>
         <button
           aria-label="Salir"
-          className="flex h-11 w-11 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-50 hover:text-slate-600"
+          className="flex h-10 w-10 items-center justify-center rounded-full text-[#9aa1ac] transition hover:bg-[#f0ede7] hover:text-[#5b6270]"
           onClick={onLogout}
           type="button"
         >
-          <LogOut className="h-5 w-5" />
+          <LogOut className="h-5 w-5" strokeWidth={1.75} />
         </button>
       </div>
     </aside>

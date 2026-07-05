@@ -71,10 +71,10 @@ describe("App", () => {
     await user.type(screen.getByPlaceholderText(/nombre/i), "Ana");
     await user.click(screen.getByRole("button", { name: /entrar a clase/i }));
 
-    expect(screen.getByRole("heading", { name: /^ana$/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 1, name: /asignaciones y artefactos/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: /hola, ana/i })).toBeInTheDocument();
+    expect(screen.getByText(/estudiante/i)).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /noticia/i }));
+    await user.click(screen.getByRole("button", { name: /^noticia$/i }));
     await user.click(screen.getByRole("button", { name: /entregar respuesta/i }));
 
     expect(screen.getAllByText(/actividad completada/i).length).toBeGreaterThan(0);
