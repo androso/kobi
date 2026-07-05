@@ -1,4 +1,6 @@
 import { ChevronRight, Users, Leaf, Sigma, BookOpen, PenLine } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { useClassStore } from "../../../lib/store";
 
 interface ClassItem {
   id?: string;
@@ -63,15 +65,22 @@ export function ClassCard({ item, viewMode, index = 0 }: { item: ClassItem; view
   const Icon = iconMap[item.icon] || PenLine;
   const isList = viewMode === "list";
   const theme = themeMap[item.icon] || themeMap.pen;
+  const navigate = useNavigate();
+  const startMonitoring = useClassStore((state) => state.startMonitoring);
+
+  function handleOpenMonitor() {
+    if (item.id) startMonitoring(item.id);
+    navigate("/teacher/monitor");
+  }
 
   // Stagger animation delay classes
-  const delayClass = 
+  const delayClass =
     index === 1 ? "animation-delay-100" :
     index === 2 ? "animation-delay-200" :
     index >= 3 ? "animation-delay-300" : "";
 
   return (
-    <article className={`overflow-hidden rounded-[28px] border border-slate-200/60 bg-white shadow-sm hover:shadow-xl hover:shadow-slate-100/50 hover:-translate-y-1 transition-all duration-300 flex flex-col group animate-fade-in-up ${delayClass} ${isList ? "grid md:grid-cols-[16rem_minmax(0,1fr)]" : ""}`}>
+    <article onClick={handleOpenMonitor} className={`cursor-pointer overflow-hidden rounded-[28px] border border-slate-200/60 bg-white shadow-sm hover:shadow-xl hover:shadow-slate-100/50 hover:-translate-y-1 transition-all duration-300 flex flex-col group animate-fade-in-up ${delayClass} ${isList ? "grid md:grid-cols-[16rem_minmax(0,1fr)]" : ""}`}>
       
       {/* Banner Area */}
       <div className={`relative overflow-hidden shrink-0 ${isList ? "min-h-48" : "h-44"}`}>

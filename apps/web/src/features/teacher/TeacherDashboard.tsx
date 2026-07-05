@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { LayoutGrid, List, Plus, Zap } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { Header } from "./components/Header";
@@ -7,6 +8,7 @@ import { CreateClassModal } from "./components/CreateClassModal";
 import { useClassStore } from "../../lib/store";
 
 export function TeacherDashboard() {
+  const navigate = useNavigate();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const classes = useClassStore((state) => state.classes);
@@ -14,7 +16,10 @@ export function TeacherDashboard() {
   return (
     <main className="min-h-screen bg-[#eef3fb] text-foreground overflow-hidden">
       <div className="grid min-h-screen w-full lg:grid-cols-[240px_minmax(0,1fr)] bg-[#eef3fb]">
-        <Sidebar onOpenCreateClass={() => setIsCreateModalOpen(true)} />
+        <Sidebar
+          onOpenCreateClass={() => setIsCreateModalOpen(true)}
+          onOpenHelp={() => navigate("/teacher/ayuda")}
+        />
         <div className="flex flex-col p-3 sm:p-4 lg:p-5 h-screen">
           <div className="flex-1 flex flex-col bg-[#f8f9ff] rounded-[30px] border border-slate-200/50 overflow-hidden shadow-sm">
             <Header />
