@@ -115,9 +115,22 @@ export function PreviousClasses() {
   const [playProgress, setPlayProgress] = useState(30);
   const [playbackRate, setPlaybackRate] = useState(1);
 
-  // Sessions saved live from the monitor appear first, then the seed history
+  // Sessions saved live from the monitor appear first, then the seed history (only for mock teacher)
   const storeSessions = useClassStore((state) => state.sessions);
-  const allSessions = [...storeSessions, ...PREVIOUS_SESSIONS];
+  const isMockTeacher = user?.email === "maestra@kobi.test";
+  const allSessions = isMockTeacher
+    ? [...storeSessions, ...PREVIOUS_SESSIONS]
+    : storeSessions;
+
+  // Calculate dynamic stats
+  const totalSessionsCount = allSessions.length;
+  const totalMinutes = allSessions.reduce((sum, s) => {
+    const parts = s.duration.split(":");
+    const mins = parseInt(parts[0], 10) || 0;
+    return sum + mins;
+  }, 0);
+  const totalHours = Math.round((totalMinutes / 60) * 10) / 10;
+  const averageParticipation = totalSessionsCount > 0 ? "82%" : "0%";
 
   const PLAYBACK_RATES = [1, 1.25, 1.5, 2, 0.5];
   function cyclePlaybackRate() {
@@ -235,40 +248,44 @@ export function PreviousClasses() {
 
                   <div className="space-y-3">
                     <div className="rounded-3xl p-5 bg-violet-100/70 hover:bg-violet-100 transition-colors">
-                      <p className="text-lg font-extrabold text-slate-800 leading-tight">142 clases</p>
+                      <p className="text-lg font-extrabold text-slate-800 leading-tight">
+                        {totalSessionsCount} {totalSessionsCount === 1 ? "clase" : "clases"}
+                      </p>
                       <p className="text-xs text-slate-500 mt-0.5 font-medium">Total de sesiones</p>
                     </div>
 
                     <div className="rounded-3xl p-5 bg-teal-100/60 hover:bg-teal-100/80 transition-colors">
-                      <p className="text-lg font-extrabold text-slate-800 leading-tight">98 h</p>
+                      <p className="text-lg font-extrabold text-slate-800 leading-tight">{totalHours} h</p>
                       <p className="text-xs text-slate-500 mt-0.5 font-medium">Horas grabadas</p>
                     </div>
 
                     <div className="rounded-3xl p-5 bg-blue-100/60 hover:bg-blue-100/80 transition-colors">
-                      <p className="text-lg font-extrabold text-slate-800 leading-tight">82%</p>
+                      <p className="text-lg font-extrabold text-slate-800 leading-tight">{averageParticipation}</p>
                       <p className="text-xs text-slate-500 mt-0.5 font-medium">Participación promedio</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Current Focus — pastel card */}
-                <div className="space-y-4">
-                  <span className="text-xs font-bold text-slate-400 tracking-wider uppercase">Enfoque actual</span>
-                  <div className="rounded-3xl p-5 bg-indigo-100/50">
-                    <div className="flex justify-between items-center mb-2">
-                      <h4 className="font-bold text-sm text-slate-800">Ciencias - 4to Grado</h4>
-                      <span className="text-xs font-extrabold text-indigo-600">64%</span>
+                {allSessions.length > 0 ? (
+                  <div className="space-y-4">
+                    <span className="text-xs font-bold text-slate-400 tracking-wider uppercase">Enfoque actual</span>
+                    <div className="rounded-3xl p-5 bg-indigo-100/50">
+                      <div className="flex justify-between items-center mb-2">
+                        <h4 className="font-bold text-sm text-slate-800">{allSessions[0].title}</h4>
+                        <span className="text-xs font-extrabold text-indigo-600">64%</span>
+                      </div>
+                      <div className="w-full bg-white/70 h-2 rounded-full overflow-hidden">
+                        <div className="bg-indigo-500 h-full w-[64%] rounded-full"></div>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-2.5 font-medium">{allSessions[0].focus}</p>
                     </div>
-                    <div className="w-full bg-white/70 h-2 rounded-full overflow-hidden">
-                      <div className="bg-indigo-500 h-full w-[64%] rounded-full"></div>
-                    </div>
-                    <p className="text-xs text-slate-500 mt-2.5 font-medium">Unidad 2: Ecosistemas</p>
-                  </div>
 
-                  <button className="w-full py-3 text-xs font-bold text-slate-700 bg-slate-100 rounded-2xl hover:bg-slate-200/70 transition-colors">
-                    Ver analíticas detalladas
-                  </button>
-                </div>
+                    <button className="w-full py-3 text-xs font-bold text-slate-700 bg-slate-100 rounded-2xl hover:bg-slate-200/70 transition-colors">
+                      Ver analíticas detalladas
+                    </button>
+                  </div>
+                ) : null}
 
               </div>
 

@@ -283,7 +283,7 @@ describe("App", () => {
 
     // Verify we are on the Historial de Clases page
     expect(screen.getByText("Historial de Sesiones")).toBeInTheDocument();
-    expect(screen.getByText("Ciencias 4to Grado - Sección A")).toBeInTheDocument();
+    expect(screen.getAllByText("Ciencias 4to Grado - Sección A")[0]).toBeInTheDocument();
 
     // Click on "Ver detalles" button of the first session
     const detailsButtons = screen.getAllByRole("button", { name: /ver detalles/i });
