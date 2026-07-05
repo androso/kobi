@@ -116,7 +116,12 @@ export function StudentDashboard() {
 
             <div className="px-6 py-10 sm:px-10">
               {activeArtefacto ? (
-                <ArtifactRenderer key={activeArtefacto.id} artefacto={activeArtefacto} studentName={studentName} />
+                <ArtifactRenderer
+                  key={activeArtefacto.id}
+                  artefacto={activeArtefacto}
+                  onHome={() => setSelectedArtefactoId(artefactos[0]?.id ?? null)}
+                  studentName={studentName}
+                />
               ) : (
                 <div className="mx-auto max-w-2xl rounded-3xl border border-dashed border-[#e0ddd5] bg-white/60 p-10 text-center text-sm text-[#8a8f98]">
                   No tienes actividades asignadas todavía. Tu profesor las publicará aquí.

@@ -5,19 +5,32 @@ import { QuizPlayer } from "./QuizPlayer";
 interface ArtifactRendererProps {
   artefacto: Artefacto;
   studentName: string;
+  onHome: () => void;
 }
 
-export function ArtifactRenderer({ artefacto, studentName }: ArtifactRendererProps) {
+export function ArtifactRenderer({ artefacto, studentName, onHome }: ArtifactRendererProps) {
   const { content } = artefacto;
+  const crumbs = artefacto.breadcrumb ?? [artefacto.section];
 
   return (
     <div className="mx-auto max-w-2xl">
       <nav aria-label="Ruta" className="flex flex-wrap items-center gap-1.5 text-sm text-[#8a8f98]">
-        <Home className="h-4 w-4" strokeWidth={1.75} />
-        {(artefacto.breadcrumb ?? [artefacto.section]).map((part) => (
+        <button
+          aria-label="Volver al inicio de la unidad"
+          className="flex items-center rounded-md p-1 text-[#8a8f98] transition hover:bg-[#f0ede7] hover:text-[#5b6270]"
+          onClick={onHome}
+          type="button"
+        >
+          <Home className="h-4 w-4" strokeWidth={1.75} />
+        </button>
+        {crumbs.map((part, index) => (
           <span className="flex items-center gap-1.5" key={part}>
             <ChevronRight className="h-3.5 w-3.5 text-[#c2c6cd]" />
-            <span className="font-medium text-[#5b6270]">{part}</span>
+            <span
+              className={index === crumbs.length - 1 ? "font-semibold text-[#2b2b2b]" : "font-medium text-[#5b6270]"}
+            >
+              {part}
+            </span>
           </span>
         ))}
       </nav>
