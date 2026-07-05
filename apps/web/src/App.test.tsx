@@ -1,8 +1,13 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "./App";
+import { useAuthStore } from "./lib/store";
 
 describe("App", () => {
+  beforeEach(() => {
+    window.history.replaceState({}, "", "/");
+    useAuthStore.setState({ user: null });
+  });
   it("renders the teacher login surface", () => {
     render(<App />);
 
@@ -43,8 +48,8 @@ describe("App", () => {
     await user.type(screen.getByPlaceholderText(/contrasena/i), "kobi123");
     await user.click(screen.getByRole("button", { name: /^entrar$/i }));
 
-    expect(screen.getByRole("heading", { name: /7mo lenguaje - clase en vivo/i })).toBeInTheDocument();
-    expect(screen.getByText(/actividad sugerida/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /bienvenida de nuevo, sra\. henderson/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /tus clases/i })).toBeInTheDocument();
   });
 
   it("logs into the student dashboard with the demo class code", async () => {
