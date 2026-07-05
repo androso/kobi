@@ -19,6 +19,7 @@ Creative direction:
 Artifact constraints:
 - Each HTML draft must be a complete `<!doctype html>` document with inline CSS and inline JavaScript.
 - Include a visible title and at least one visible item prompt from the manifest.
+- Include the exact SDK version string `activity-sdk/v1` in the HTML JavaScript, for example `const SDK_VERSION = "activity-sdk/v1";`.
 - Include SDK hook names in code: `getManifest`, `getBand`, `reportAttempt`, `reportHint`, and `reportComplete`.
 - Send telemetry only with `window.parent.postMessage`; do not write to Supabase or any network endpoint.
 - Keep interactions simple enough for the last 10 minutes of class.
@@ -31,7 +32,7 @@ Allowed families:
 Manifest content:
 - Use `content.items` with prompts, answer keys, and hints.
 - Include enough item content for a teacher to understand the learning goal and how success is measured.
-- Optional `telemetry_events` may list `attempt`, `hint`, and `complete`.
+- `telemetry_events` must be either a list containing `attempt`, `hint`, and `complete`, or `null` when the default SDK event set should be used.
 
 Output:
 - Return only structured output matching the schema supplied by the API.
