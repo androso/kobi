@@ -1,0 +1,240 @@
+import { describe, expect, it } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type PgBoss from "pg-boss";
+import type { LessonState } from "@kobi/ai-core";
+import type { CurriculumMatch } from "@kobi/curriculum";
+import { runEvaluateCheckpointJob } from "./evaluateCheckpoint.job.js";
+import { JOB_GENERATE_ACTIVITY_ARTIFACTS } from "../queue.js";
+
+const lessonState: LessonState = {
+  topic: "La noticia y sus partes",
+  objective_guess: "Identificar titular, entradilla y fuente en una noticia breve",
+  key_terms: ["titular", "entradilla", "fuente"],
+  transcript_summary: "La docente explico la noticia.",
+  confidence: 0.88,
+  evidence: {
+    quoted_phrases: ["titular de la noticia"],
+    reason: "La clase se centro en reconocer partes de una noticia.",
+  },
+};
+
+const curriculumMatches: CurriculumMatch[] = [
+  {
+    objective_code: "L7.4.2",
+    unit: "U4",
+    grade: 7,
+    subject: "lenguaje",
+    text: "Reconoce la estructura de la noticia: titular, entradilla, cuerpo y fuente.",
+    similarity: 0.91,
+  },
+];
+
+describe("evaluateCheckpoint job", () => {
+  it("does nothing when there are no new segments since the last ready checkpoint", async () => {
+    const supabase = fakeSupabase({ lastReadyCheckpointAt: "2026-01-01T00:00:00Z", segments: [] });
+    const boss = fakeBoss();
+
+    const result = await runEvaluateCheckpointJob(
+      supabase.client,
+      boss.instance,
+      { sessionId: "session-1" },
+      {
+        evaluator: async () => {
+          throw new Error("evaluator should not be called when there is nothing new");
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      evaluated: false,
+      ready: null,
+      skippedReason: "no new segments since last checkpoint",
+    });
+    expect(boss.sent).toHaveLength(0);
+    expect(supabase.insertedCheckpoints).toHaveLength(0);
+  });
+
+  it("records a not-ready checkpoint and does not enqueue generation", async () => {
+    const supabase = fakeSupabase({ lastReadyCheckpointAt: null, segments: [lessonState] });
+    const boss = fakeBoss();
+
+    const result = await runEvaluateCheckpointJob(
+      supabase.client,
+      boss.instance,
+      { sessionId: "session-1" },
+      {
+        evaluator: async () => ({ ready: false, reason: "Falta material.", summary: "Aun poco contenido." }),
+      },
+    );
+
+    expect(result).toEqual({ evaluated: true, ready: false, skippedReason: null });
+    expect(supabase.insertedCheckpoints).toHaveLength(1);
+    expect(supabase.insertedCheckpoints[0]).toMatchObject({
+      session_id: "session-1",
+      ready: false,
+      reason: "Falta material.",
+    });
+    expect(boss.sent).toHaveLength(0);
+  });
+
+  it("records a ready checkpoint, retrieves curriculum matches, and enqueues generate-activity-artifacts", async () => {
+    const supabase = fakeSupabase({ lastReadyCheckpointAt: null, segments: [lessonState] });
+    const boss = fakeBoss();
+    let retrieverCalls = 0;
+
+    const result = await runEvaluateCheckpointJob(
+      supabase.client,
+      boss.instance,
+      { sessionId: "session-1" },
+      {
+        evaluator: async () => ({ ready: true, reason: "Suficiente material.", summary: "Se enseno la noticia." }),
+        curriculumRetriever: async () => {
+          retrieverCalls += 1;
+          return curriculumMatches;
+        },
+      },
+    );
+
+    expect(result).toEqual({ evaluated: true, ready: true, skippedReason: null });
+    expect(retrieverCalls).toBe(1);
+    expect(supabase.insertedCheckpoints[0]).toMatchObject({ session_id: "session-1", ready: true });
+    expect(boss.sent).toHaveLength(1);
+    expect(boss.sent[0].name).toBe(JOB_GENERATE_ACTIVITY_ARTIFACTS);
+    expect(boss.sent[0].data).toMatchObject({
+      sessionId: "session-1",
+      lessonState,
+      curriculumMatches,
+    });
+  });
+
+  it("only loads segments created after the last ready checkpoint", async () => {
+    const supabase = fakeSupabase({ lastReadyCheckpointAt: "2026-01-01T00:05:00Z", segments: [lessonState] });
+    const boss = fakeBoss();
+
+    await runEvaluateCheckpointJob(
+      supabase.client,
+      boss.instance,
+      { sessionId: "session-1" },
+      { evaluator: async () => ({ ready: false, reason: "x", summary: "y" }) },
+    );
+
+    expect(supabase.segmentsGtValue).toBe("2026-01-01T00:05:00Z");
+  });
+});
+
+interface FakeSupabaseOptions {
+  lastReadyCheckpointAt: string | null;
+  segments: LessonState[];
+}
+
+function fakeSupabase(options: FakeSupabaseOptions) {
+  const insertedCheckpoints: unknown[] = [];
+  const state = { segmentsGtValue: null as string | null };
+
+  const client = {
+    from(table: string) {
+      if (table === "checkpoints") {
+        return new CheckpointsQuery(options.lastReadyCheckpointAt, insertedCheckpoints);
+      }
+      if (table === "segments") {
+        return new SegmentsQuery(options.segments, state);
+      }
+      throw new Error(`fakeSupabase: unexpected table ${table}`);
+    },
+  } as unknown as SupabaseClient;
+
+  return {
+    client,
+    insertedCheckpoints,
+    get segmentsGtValue() {
+      return state.segmentsGtValue;
+    },
+  };
+}
+
+class CheckpointsQuery {
+  constructor(
+    private readonly lastReadyCheckpointAt: string | null,
+    private readonly insertedCheckpoints: unknown[],
+  ) {}
+
+  select() {
+    return this;
+  }
+
+  insert(value: unknown) {
+    this.insertedCheckpoints.push(value);
+    return this;
+  }
+
+  eq() {
+    return this;
+  }
+
+  order() {
+    return this;
+  }
+
+  limit() {
+    return this;
+  }
+
+  maybeSingle() {
+    return Promise.resolve({
+      data: this.lastReadyCheckpointAt ? { created_at: this.lastReadyCheckpointAt } : null,
+      error: null,
+    });
+  }
+
+  then<TResult1 = unknown, TResult2 = never>(
+    onfulfilled?: ((value: { data: null; error: null }) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+  ) {
+    return Promise.resolve({ data: null, error: null }).then(onfulfilled, onrejected);
+  }
+}
+
+class SegmentsQuery {
+  constructor(
+    private readonly segments: LessonState[],
+    private readonly state: { segmentsGtValue: string | null },
+  ) {}
+
+  select() {
+    return this;
+  }
+
+  eq() {
+    return this;
+  }
+
+  order() {
+    return this;
+  }
+
+  gt(_column: string, value: string) {
+    this.state.segmentsGtValue = value;
+    return this;
+  }
+
+  then<TResult1 = unknown, TResult2 = never>(
+    onfulfilled?: ((value: { data: unknown[]; error: null }) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+  ) {
+    const data = this.segments.map((lessonState) => ({ lesson_state: lessonState }));
+    return Promise.resolve({ data, error: null }).then(onfulfilled, onrejected);
+  }
+}
+
+function fakeBoss() {
+  const sent: { name: string; data: unknown; options?: unknown }[] = [];
+
+  const instance = {
+    send: async (name: string, data: unknown, sendOptions?: unknown) => {
+      sent.push({ name, data, options: sendOptions });
+      return "job-id";
+    },
+  } as unknown as PgBoss;
+
+  return { instance, sent };
+}

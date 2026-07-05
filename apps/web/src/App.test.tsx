@@ -3,6 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { App } from "./App";
 import { useAuthStore, useClassStore } from "./lib/store";
 import { MemoryRouter } from "react-router-dom";
+import { vi } from "vitest";
+
+vi.mock("./lib/supabase", () => ({ supabase: null }));
 
 describe("App", () => {
   beforeEach(() => {

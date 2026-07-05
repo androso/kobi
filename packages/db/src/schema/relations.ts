@@ -6,6 +6,7 @@ import { studentProfiles } from "./studentProfiles.js";
 import { sessions } from "./sessions.js";
 import { audioChunks } from "./audioChunks.js";
 import { segments } from "./segments.js";
+import { checkpoints } from "./checkpoints.js";
 import { activityBundles } from "./activityBundles.js";
 import { activities } from "./activities.js";
 import { sessionActivityCandidates } from "./sessionActivityCandidates.js";
@@ -42,6 +43,7 @@ export const sessionsRelations = relations(sessions, ({ one, many }) => ({
   class: one(classes, { fields: [sessions.classId], references: [classes.id] }),
   audioChunks: many(audioChunks),
   segments: many(segments),
+  checkpoints: many(checkpoints),
   activityCandidates: many(sessionActivityCandidates),
   assignments: many(assignments),
 }));
@@ -52,6 +54,10 @@ export const audioChunksRelations = relations(audioChunks, ({ one }) => ({
 
 export const segmentsRelations = relations(segments, ({ one }) => ({
   session: one(sessions, { fields: [segments.sessionId], references: [sessions.id] }),
+}));
+
+export const checkpointsRelations = relations(checkpoints, ({ one }) => ({
+  session: one(sessions, { fields: [checkpoints.sessionId], references: [sessions.id] }),
 }));
 
 export const activityBundlesRelations = relations(activityBundles, ({ many }) => ({

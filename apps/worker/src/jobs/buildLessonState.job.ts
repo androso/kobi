@@ -1,8 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildLessonState, type LessonState } from "@kobi/ai-core";
-import { buildCurriculumQueryText, retrieveCurriculumMatches } from "@kobi/curriculum";
 import type PgBoss from "pg-boss";
-import { JOB_GENERATE_ACTIVITY_ARTIFACTS } from "../queue.js";
 
 export interface BuildLessonStateJobData {
   sessionId: string;
@@ -13,12 +11,15 @@ export interface BuildLessonStateJobData {
 }
 
 /**
- * On 1-2 newly transcribed chunks: build the rolling lesson_state, persist it
- * as a segments row, then kick off Area B retrieval so candidate curriculum
- * evidence is ready before the teacher taps "Hora de actividad".
+ * On 1-2 newly transcribed chunks: build the rolling lesson_state and persist
+ * it as a segments row. This job no longer decides when to move to the
+ * Propose stage — that decision now lives in the checkpoint gate
+ * (checkpointScheduler.job.ts + evaluateCheckpoint.job.ts), which runs on its
+ * own timer independent of this per-chunk cadence and reads accumulated
+ * segments directly.
  *
- * TODO(Area D/Realtime): push the new lesson_state + curriculum matches to
- * the teacher UI via Supabase Realtime once apps/web subscribes to it.
+ * TODO(Area D/Realtime): push the new lesson_state to the teacher UI via
+ * Supabase Realtime once apps/web subscribes to it.
  */
 export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClient) {
   return boss.work<BuildLessonStateJobData>(
@@ -28,7 +29,7 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
       const job = jobs[0];
       if (!job) return;
 
-      const { sessionId, grade = 7, subject = "lenguaje", unit } = job.data;
+      const { sessionId } = job.data;
 
       const { data: chunks, error: chunksError } = await supabase
         .from("audio_chunks")
@@ -79,23 +80,6 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
       if (segmentError) {
         throw new Error(`buildLessonState job: failed to insert segment: ${segmentError.message}`);
       }
-
-      // Skip retrieval on low-confidence lesson_state (avoid feeding Area C noisy evidence).
-      if (lessonState.confidence < 0.5) return;
-
-      const queryText = buildCurriculumQueryText(lessonState);
-
-      const curriculumMatches = await retrieveCurriculumMatches(supabase, {
-        queryText,
-        grade,
-        subject,
-        unit,
-      });
-      await boss.send(JOB_GENERATE_ACTIVITY_ARTIFACTS, {
-        sessionId,
-        lessonState,
-        curriculumMatches,
-      });
     },
   );
 }
