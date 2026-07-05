@@ -58,12 +58,14 @@ interface SessionCandidateToInsert {
   sessionContext: SessionContext;
   artifact: ActivityArtifact | ActivityRepositoryRow;
   source: ActivitySource;
+  origin: "openai" | "static" | "repository";
 }
 
 interface PlannedSessionArtifact {
   band: DifficultyBand;
   reusable?: RankedActivityRepositoryRow;
   candidate?: ActivityArtifactCandidate;
+  origin?: "openai" | "static";
 }
 
 export function registerGenerateActivityArtifactsJob(
@@ -125,14 +127,18 @@ export async function runGenerateActivityArtifactsJob(
     const maxOpenAiGenerationsPerSession = options.maxOpenAiGenerationsPerSession ?? 3;
 
     if (generatedCount < maxOpenAiGenerationsPerSession) {
-      const result = await options.openAiGenerator({
-        lessonState,
-        sessionContext,
-        curriculumMatches,
-        bands: missingBands,
-        parentIdByBand,
-      });
-      openAiCandidates = result.candidates;
+      try {
+        const result = await options.openAiGenerator({
+          lessonState,
+          sessionContext,
+          curriculumMatches,
+          bands: missingBands,
+          parentIdByBand,
+        });
+        openAiCandidates = result.candidates;
+      } catch {
+        openAiCandidates = [];
+      }
     }
   }
 
@@ -156,6 +162,7 @@ export async function runGenerateActivityArtifactsJob(
         sessionContext,
         artifact: artifact.reusable,
         source: artifact.reusable.source === "seeded" ? "seeded" : "reused",
+        origin: "repository",
       });
       continue;
     }
@@ -170,6 +177,7 @@ export async function runGenerateActivityArtifactsJob(
       sessionContext,
       artifact: persisted.artifact,
       source: persisted.source,
+      origin: artifact.origin ?? "static",
     });
   }
 
@@ -186,7 +194,7 @@ export async function runGenerateActivityArtifactsJob(
   return {
     inserted: candidatesToInsert.length,
     reused: candidatesToInsert.filter((candidate) => candidate.source !== "new").length,
-    generated: candidatesToInsert.filter((candidate) => candidate.source === "new").length,
+    generated: candidatesToInsert.filter((candidate) => candidate.origin === "openai").length,
     skippedReason: null,
   };
 }
@@ -205,12 +213,20 @@ export function planSessionArtifacts(input: {
       continue;
     }
 
-    const candidate =
-      input.openAiCandidates.find((artifact) => artifact.manifest.difficulty_band === band) ??
-      input.staticCandidates.find((artifact) => artifact.manifest.difficulty_band === band);
+    const openAiCandidate = input.openAiCandidates.find(
+      (artifact) => artifact.manifest.difficulty_band === band,
+    );
+    if (openAiCandidate) {
+      planned.push({ band, candidate: openAiCandidate, origin: "openai" });
+      continue;
+    }
+
+    const candidate = input.staticCandidates.find(
+      (artifact) => artifact.manifest.difficulty_band === band,
+    );
 
     if (candidate) {
-      planned.push({ band, candidate });
+      planned.push({ band, candidate, origin: "static" });
     }
   }
 
@@ -299,17 +315,18 @@ async function countGeneratedSessionCandidates(
   supabase: SupabaseClient,
   sessionId: string,
 ): Promise<number> {
-  const { count, error } = await supabase
+  const { data, error } = await supabase
     .from("session_activity_candidates")
-    .select("id", { count: "exact", head: true })
+    .select("id, activities!inner(bundle_ref)")
     .eq("session_id", sessionId)
-    .eq("source", "new");
+    .eq("source", "new")
+    .like("activities.bundle_ref", "artifact-bundles/openai/%");
 
   if (error) {
     throw new Error(`generateActivityArtifacts job: failed to count generated candidates: ${error.message}`);
   }
 
-  return count ?? 0;
+  return data?.length ?? 0;
 }
 
 function parseSessionContext(value: unknown): SessionContext | null {
@@ -362,7 +379,7 @@ function withServerDerivedCandidateFields(
 ): ActivityArtifactCandidate {
   return {
     ...candidate,
-    bundle_ref: createUnguessableBundleRef(),
+    bundle_ref: createUnguessableBundleRef("static"),
     parent_id: parentIdByBand[candidate.manifest.difficulty_band] ?? null,
     status: "candidate",
   };
