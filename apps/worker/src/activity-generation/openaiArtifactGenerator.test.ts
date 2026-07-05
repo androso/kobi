@@ -75,6 +75,28 @@ describe("OpenAI activity artifact generator", () => {
       },
       evidence: [{ objective_code: "L7.4.2" }],
     });
+    expect(result.candidates[0].manifest.content.telemetry_events).toEqual([
+      "attempt",
+      "hint",
+      "complete",
+    ]);
+  });
+
+  it("normalizes nullable OpenAI telemetry events to the optional manifest field", () => {
+    const result = normalizeOpenAiActivityDrafts(
+      { artifacts: [rawArtifact("support", { telemetryEvents: null })] },
+      {
+        lessonState,
+        sessionContext,
+        curriculumMatches,
+        bands: ["support"],
+      },
+      () => "artifact-bundles/test/index.html",
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0].manifest.content.telemetry_events).toBeUndefined();
   });
 
   it("rejects model-supplied trusted fields", () => {
@@ -92,6 +114,16 @@ describe("OpenAI activity artifact generator", () => {
 
     expect(result.candidates).toHaveLength(0);
     expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it("reports requested bands that are missing from a parsed draft response", () => {
+    const result = normalizeOpenAiActivityDrafts(
+      { artifacts: [rawArtifact("support")] },
+      { lessonState, sessionContext, curriculumMatches, bands: ["support", "core"] },
+    );
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.errors).toContain("draft schema: missing requested difficulty band core");
   });
 
   it("rejects unsafe HTML before returning candidates for persistence", async () => {
@@ -135,6 +167,31 @@ describe("OpenAI activity artifact generator", () => {
     expect(result.candidates).toHaveLength(1);
   });
 
+  it("retries missing bands from a partial repair response", async () => {
+    const client = mockClient([
+      { artifacts: [{ ...rawArtifact("support"), index_html: "<!doctype html><html><script></script></html>" }] },
+      { artifacts: [rawArtifact("support")] },
+      { artifacts: [rawArtifact("core")] },
+    ]);
+
+    const result = await generateOpenAiActivityCandidates(
+      { lessonState, sessionContext, curriculumMatches, bands: ["support", "core"] },
+      {
+        client,
+        model: "gpt-5.5",
+        templates: { system: "system", repair: "repair" },
+      },
+    );
+
+    expect(client.calls).toBe(3);
+    expect(result.attempts).toBe(3);
+    expect(result.candidates.map((candidate) => candidate.manifest.difficulty_band)).toEqual([
+      "support",
+      "core",
+    ]);
+    expect(result.errors).toContain("draft schema: missing requested difficulty band core");
+  });
+
   it("keeps raw transcript and likely student names out of prompt input", () => {
     const prompt = buildActivityGenerationPrompt({
       lessonState,
@@ -171,7 +228,10 @@ describe("OpenAI activity artifact generator", () => {
   });
 });
 
-function rawArtifact(band: DifficultyBand) {
+function rawArtifact(
+  band: DifficultyBand,
+  options: { telemetryEvents?: Array<"attempt" | "hint" | "complete"> | null } = {},
+) {
   const title = `Actividad ${band}`;
   const prompt = `Responde sobre la noticia en nivel ${band}.`;
   return {
@@ -189,6 +249,10 @@ function rawArtifact(band: DifficultyBand) {
             hints: ["Busca la parte que presenta el hecho principal."],
           },
         ],
+        telemetry_events:
+          "telemetryEvents" in options
+            ? options.telemetryEvents
+            : ["attempt", "hint", "complete"],
       },
     },
     index_html: validHtml(title, prompt),

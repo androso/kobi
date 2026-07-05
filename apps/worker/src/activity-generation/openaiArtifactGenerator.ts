@@ -44,13 +44,18 @@ const rawManifestDraftSchema = z
               .object({
                 prompt: z.string().min(1).max(600),
                 answer_key: z.array(z.string().min(1).max(160)).min(1).max(12),
-                hints: z.array(z.string().min(1).max(220)).max(4).default([]),
+                hints: z.array(z.string().min(1).max(220)).max(4),
               })
               .strict(),
           )
           .min(1)
           .max(8),
-        telemetry_events: z.array(activityTelemetryEventTypeSchema).min(1).max(3).optional(),
+        telemetry_events: z
+          .array(activityTelemetryEventTypeSchema)
+          .min(1)
+          .max(3)
+          .nullable()
+          .describe("Telemetry events used by the artifact, or null to use the default SDK event set."),
       })
       .strict(),
   })
@@ -243,7 +248,7 @@ export async function generateOpenAiActivityCandidates(
 
   const templates = options.templates ?? (await loadActivityPromptTemplates());
   const bundleRefFactory = options.bundleRefFactory ?? createUnguessableBundleRef;
-  const maxRepairAttempts = options.maxRepairAttempts ?? 1;
+  const maxRepairAttempts = options.maxRepairAttempts ?? 2;
   const errors: string[] = [];
   let attempts = 0;
 
@@ -276,18 +281,21 @@ export async function generateOpenAiActivityCandidates(
       );
     }
   }
+  recordMissingDraftBands(bands, firstAttempt.candidates, failedVerifierErrors);
 
-  const missingAfterFirst = bands.filter((band) => !accepted.has(band));
-  if (missingAfterFirst.length > 0 && maxRepairAttempts > 0) {
+  for (let repairIndex = 0; repairIndex < maxRepairAttempts; repairIndex += 1) {
+    const missingBands = bands.filter((band) => !accepted.has(band));
+    if (missingBands.length === 0) break;
+
     const repairAttempt = await requestAndNormalizeDrafts(
-      { ...input, bands: missingAfterFirst },
+      { ...input, bands: missingBands },
       {
         model: options.model,
         client: options.client,
         systemPrompt: `${templates.system}\n\n${templates.repair}`,
         userPrompt: buildActivityGenerationPrompt({
           ...input,
-          bands: missingAfterFirst,
+          bands: missingBands,
           verifierErrors: failedVerifierErrors,
         }),
         bundleRefFactory,
@@ -308,6 +316,7 @@ export async function generateOpenAiActivityCandidates(
         );
       }
     }
+    recordMissingDraftBands(missingBands, repairAttempt.candidates, failedVerifierErrors);
   }
 
   return {
@@ -365,12 +374,14 @@ export function normalizeOpenAiActivityDrafts(
   const primaryMatch = input.curriculumMatches[0];
   const errors: string[] = [];
   const candidates: ActivityArtifactCandidate[] = [];
+  const seenRequestedBands = new Set<DifficultyBand>();
 
   for (const artifact of parsed.data.artifacts) {
     if (!requestedBands.has(artifact.difficulty_band)) {
       errors.push(`draft schema: unexpected difficulty band ${artifact.difficulty_band}`);
       continue;
     }
+    seenRequestedBands.add(artifact.difficulty_band);
 
     const manifest: ActivityManifest = {
       family: artifact.manifest_draft.family as ActivityFamily,
@@ -383,7 +394,7 @@ export function normalizeOpenAiActivityDrafts(
         objective: primaryMatch.objective_code,
       },
       est_minutes: artifact.manifest_draft.est_minutes,
-      content: artifact.manifest_draft.content,
+      content: normalizeDraftContent(artifact.manifest_draft.content),
       entry: "index.html",
       sdk_version: ACTIVITY_SDK_VERSION,
       allowed_capabilities: artifact.manifest_draft.allowed_capabilities,
@@ -411,7 +422,32 @@ export function normalizeOpenAiActivityDrafts(
     });
   }
 
+  for (const band of input.bands) {
+    if (!seenRequestedBands.has(band)) {
+      errors.push(`draft schema: missing requested difficulty band ${band}`);
+    }
+  }
+
   return { candidates, errors };
+}
+
+function recordMissingDraftBands(
+  requestedBands: DifficultyBand[],
+  candidates: ActivityArtifactCandidate[],
+  failedVerifierErrors: Partial<Record<DifficultyBand, string[]>>,
+) {
+  const returnedBands = new Set(candidates.map((candidate) => candidate.manifest.difficulty_band));
+  for (const band of requestedBands) {
+    if (!returnedBands.has(band)) {
+      failedVerifierErrors[band] = ["draft schema: missing requested difficulty band"];
+    }
+  }
+}
+
+function normalizeDraftContent(content: OpenAiActivityDraft["manifest_draft"]["content"]): ActivityManifest["content"] {
+  return content.telemetry_events === null
+    ? { items: content.items }
+    : { items: content.items, telemetry_events: content.telemetry_events };
 }
 
 export function buildActivityGenerationPrompt(input: BuildPromptInput): string {
@@ -422,7 +458,7 @@ export function buildActivityGenerationPrompt(input: BuildPromptInput): string {
       artifact_contract: {
         allowed_families: ["match_classify", "sequence_order", "guided_practice"],
         content_modes: [
-          "exercise items with prompts, answer keys, hints, and optional telemetry_events",
+          "exercise items with prompts, answer keys, hints, and telemetry_events as an array or null",
         ],
       },
       creativity_brief: {
@@ -452,6 +488,8 @@ export function buildActivityGenerationPrompt(input: BuildPromptInput): string {
       },
       sdk: {
         version: ACTIVITY_SDK_VERSION,
+        exact_version_string_required_in_html: ACTIVITY_SDK_VERSION,
+        required_inline_js_constant: `const SDK_VERSION = "${ACTIVITY_SDK_VERSION}";`,
         required_methods: [
           "getManifest",
           "getBand",
