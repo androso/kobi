@@ -43,7 +43,11 @@ export function LessonList({
           const Icon = isDone ? CheckCircle2 : kindIcon[artefacto.kind];
 
           return (
-            <li key={artefacto.id}>
+            <li
+              className="duration-500 animate-in fade-in slide-in-from-left-3 fill-mode-both"
+              key={artefacto.id}
+              style={{ animationDelay: `${index * 70}ms` }}
+            >
               <button
                 className={`relative flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition ${
                   isActive ? "bg-[#f1f0fb]" : "hover:bg-[#f5f3ee]"

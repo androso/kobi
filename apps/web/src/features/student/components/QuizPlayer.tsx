@@ -16,9 +16,20 @@ export function QuizPlayer({ artefacto, content, studentName }: QuizPlayerProps)
   const questions = content.questions;
 
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [direction, setDirection] = useState<"next" | "prev">("next");
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [revealedHints, setRevealedHints] = useState<Record<string, number>>({});
   const [submitted, setSubmitted] = useState(false);
+
+  function goPrev() {
+    setDirection("prev");
+    setCurrentIndex((i) => Math.max(0, i - 1));
+  }
+
+  function goNext() {
+    setDirection("next");
+    setCurrentIndex((i) => Math.min(questions.length - 1, i + 1));
+  }
 
   const question = questions[currentIndex];
   const selectedChoiceId = answers[question.id];
@@ -76,9 +87,9 @@ export function QuizPlayer({ artefacto, content, studentName }: QuizPlayerProps)
   if (submitted) {
     const passed = score === questions.length;
     return (
-      <div className="mt-8">
+      <div className="mt-8 duration-500 animate-in fade-in slide-in-from-bottom-3 fill-mode-both">
         <div
-          className={`rounded-3xl border p-6 ${
+          className={`rounded-3xl border p-6 duration-500 animate-in zoom-in-95 fill-mode-both ${
             passed ? "border-emerald-100 bg-emerald-50" : "border-amber-100 bg-amber-50"
           }`}
         >
@@ -165,67 +176,75 @@ export function QuizPlayer({ artefacto, content, studentName }: QuizPlayerProps)
         </div>
       </div>
 
-      <h3 className="text-2xl font-bold leading-snug text-[#2b2b2b]">{question.prompt}</h3>
-      <p className="mt-1 text-sm text-[#8a8f98]">Elige una sola respuesta:</p>
+      <div
+        className={`duration-300 animate-in fade-in fill-mode-both ${
+          direction === "next" ? "slide-in-from-right-6" : "slide-in-from-left-6"
+        }`}
+        key={question.id}
+      >
+        <h3 className="text-2xl font-bold leading-snug text-[#2b2b2b]">{question.prompt}</h3>
+        <p className="mt-1 text-sm text-[#8a8f98]">Elige una sola respuesta:</p>
 
-      <div className="mt-5 space-y-3">
-        {question.choices.map((choice) => {
-          const isSelected = selectedChoiceId === choice.id;
+        <div className="mt-5 space-y-3">
+          {question.choices.map((choice, index) => {
+            const isSelected = selectedChoiceId === choice.id;
 
-          return (
+            return (
+              <button
+                className={`flex w-full items-center gap-4 rounded-2xl border px-5 py-4 text-left transition duration-300 animate-in fade-in slide-in-from-bottom-2 fill-mode-both ${
+                  isSelected
+                    ? "border-[#5b5bd6] bg-[#eeeefb]"
+                    : "border-[#ece9e2] bg-white hover:border-[#cdcdf2] hover:bg-[#f7f7fd]"
+                }`}
+                key={choice.id}
+                onClick={() => handleSelect(choice.id)}
+                style={{ animationDelay: `${100 + index * 60}ms` }}
+                type="button"
+              >
+                <span
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
+                    isSelected ? "border-[#5b5bd6]" : "border-[#c9c6bf]"
+                  }`}
+                >
+                  {isSelected ? <span className="h-2.5 w-2.5 rounded-full bg-[#5b5bd6]" /> : null}
+                </span>
+                <span className="text-[15px] leading-6 text-[#2b2b2b]">{choice.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {question.hints && question.hints.length > 0 ? (
+          <div className="mt-4">
             <button
-              className={`flex w-full items-center gap-4 rounded-2xl border px-5 py-4 text-left transition ${
-                isSelected
-                  ? "border-[#5b5bd6] bg-[#eeeefb]"
-                  : "border-[#ece9e2] bg-white hover:border-[#cdcdf2] hover:bg-[#f7f7fd]"
-              }`}
-              key={choice.id}
-              onClick={() => handleSelect(choice.id)}
+              className="inline-flex items-center gap-2 text-sm font-medium text-[#5b5bd6] transition hover:text-[#4444c0]"
+              onClick={handleRevealHint}
               type="button"
             >
-              <span
-                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
-                  isSelected ? "border-[#5b5bd6]" : "border-[#c9c6bf]"
-                }`}
-              >
-                {isSelected ? <span className="h-2.5 w-2.5 rounded-full bg-[#5b5bd6]" /> : null}
-              </span>
-              <span className="text-[15px] leading-6 text-[#2b2b2b]">{choice.label}</span>
+              <HelpCircle className="h-4 w-4" />
+              {revealed < question.hints.length ? "Mostrar pista" : "Sin más pistas"}
             </button>
-          );
-        })}
+            {revealed > 0 ? (
+              <ul className="mt-2 space-y-2">
+                {question.hints.slice(0, revealed).map((hint) => (
+                  <li
+                    className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 duration-300 animate-in fade-in slide-in-from-top-1 fill-mode-both"
+                    key={hint}
+                  >
+                    {hint}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
       </div>
-
-      {question.hints && question.hints.length > 0 ? (
-        <div className="mt-4">
-          <button
-            className="inline-flex items-center gap-2 text-sm font-medium text-[#5b5bd6] transition hover:text-[#4444c0]"
-            onClick={handleRevealHint}
-            type="button"
-          >
-            <HelpCircle className="h-4 w-4" />
-            {revealed < question.hints.length ? "Mostrar pista" : "Sin más pistas"}
-          </button>
-          {revealed > 0 ? (
-            <ul className="mt-2 space-y-2">
-              {question.hints.slice(0, revealed).map((hint) => (
-                <li
-                  className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-2.5 text-sm text-amber-900"
-                  key={hint}
-                >
-                  {hint}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      ) : null}
 
       <div className="mt-8 flex items-center justify-between border-t border-[#ece9e2] pt-5">
         <button
           className="inline-flex items-center gap-1 rounded-xl px-4 py-2 text-sm font-semibold text-[#7c8189] transition hover:bg-[#f0ede7] disabled:opacity-40 disabled:hover:bg-transparent"
           disabled={currentIndex === 0}
-          onClick={() => setCurrentIndex((i) => Math.max(0, i - 1))}
+          onClick={goPrev}
           type="button"
         >
           <ChevronLeft className="h-4 w-4" />
@@ -245,7 +264,7 @@ export function QuizPlayer({ artefacto, content, studentName }: QuizPlayerProps)
           <button
             className="inline-flex items-center gap-1 rounded-xl bg-[#5b5bd6] px-5 py-2 text-sm font-semibold text-white transition hover:bg-[#4a4ac2] disabled:opacity-40"
             disabled={!selectedChoiceId}
-            onClick={() => setCurrentIndex((i) => Math.min(questions.length - 1, i + 1))}
+            onClick={goNext}
             type="button"
           >
             Siguiente

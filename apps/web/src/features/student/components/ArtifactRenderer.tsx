@@ -12,7 +12,7 @@ export function ArtifactRenderer({ artefacto, studentName, onHome }: ArtifactRen
   const { content } = artefacto;
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-2xl duration-500 animate-in fade-in slide-in-from-bottom-4 fill-mode-both">
       <nav aria-label="Ruta" className="flex flex-wrap items-center gap-1.5 text-sm text-[#8a8f98]">
         <button
           aria-label="Volver al inicio de la unidad"
