@@ -55,7 +55,7 @@ export function verifyActivityArtifact(
 
   const verifier_scores: ActivityVerifierScores = {
     deterministic,
-    rubric: scoreRubric(candidate, errors),
+    rubric: scoreRubric(candidate),
     ...(errors.length > 0 ? { errors } : {}),
   };
 
@@ -115,54 +115,41 @@ function checkManifestCodeConsistency(candidate: ActivityArtifactCandidate): str
   const errors: string[] = [];
   const html = candidate.bundle_html.toLocaleLowerCase("es-SV");
   const title = candidate.manifest.title.toLocaleLowerCase("es-SV");
-  const contentMarkers = visibleManifestContent(candidate.manifest)
-    .map((value) => value.toLocaleLowerCase("es-SV"));
+  const prompts = candidate.manifest.content.items.map((item) =>
+    item.prompt.toLocaleLowerCase("es-SV"),
+  );
 
   if (!html.includes(title)) {
     errors.push("bundle does not render the manifest title");
   }
 
   if (
-    !contentMarkers.some((marker) => {
-      const prefix = marker.slice(0, Math.min(marker.length, 40));
+    !prompts.some((prompt) => {
+      const prefix = prompt.slice(0, Math.min(prompt.length, 40));
       return html.includes(prefix) || html.includes(escapeHtml(prefix).toLocaleLowerCase("es-SV"));
     })
   ) {
-    errors.push("bundle does not render any manifest content marker");
+    errors.push("bundle does not render any manifest item prompt");
   }
 
   return errors;
 }
 
-function scoreRubric(
-  candidate: ActivityArtifactCandidate,
-  deterministicErrors: string[],
-): ActivityRubricScores {
+function scoreRubric(candidate: ActivityArtifactCandidate): ActivityRubricScores {
   const objective = candidate.manifest.curriculum.objective;
   const evidenceObjectives = new Set(candidate.evidence.map((evidence) => evidence.objective_code));
-  const items = candidate.manifest.content.items ?? [];
-  const allAnswers = items.flatMap((item) => item.answer_key ?? []);
-  const allHints = items.flatMap((item) => item.hints ?? []);
-  const successCriteria = candidate.manifest.content.success_criteria ?? [];
+  const allAnswers = candidate.manifest.content.items.flatMap((item) => item.answer_key);
+  const allHints = candidate.manifest.content.items.flatMap((item) => item.hints);
 
   return {
     curriculum_alignment: evidenceObjectives.has(objective) ? 0.95 : 0.72,
     age_fit: candidate.manifest.curriculum.grade === 7 ? 0.92 : 0.78,
     duration_fit: candidate.manifest.est_minutes >= 4 && candidate.manifest.est_minutes <= 8 ? 0.9 : 0.7,
-    answer_correctness: allAnswers.length > 0 || successCriteria.length > 0 ? 0.9 : 0.55,
+    answer_correctness: allAnswers.length > 0 ? 0.9 : 0,
     hint_leakage: hintsLeakAnswers(allHints, allAnswers) ? 0.35 : 0.9,
     duplicate_risk: 0.86,
     spanish_suitability: looksSpanish(candidate.bundle_html) ? 0.9 : 0.62,
   };
-}
-
-function visibleManifestContent(manifest: ActivityArtifactCandidate["manifest"]): string[] {
-  return [
-    manifest.content.description,
-    manifest.content.learning_goal,
-    ...(manifest.content.success_criteria ?? []),
-    ...(manifest.content.items ?? []).map((item) => item.prompt),
-  ].filter((value): value is string => Boolean(value));
 }
 
 function hintsLeakAnswers(hints: string[], answers: string[]): boolean {

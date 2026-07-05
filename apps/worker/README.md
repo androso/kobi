@@ -12,7 +12,7 @@ Node/TS background worker (Railway/Fly). Queue: pg-boss on Postgres — no extra
 ## Contracts
 
 - Reads: `curriculum_chunks`, `activities` (repository) from `packages/db`
-- Writes: `segments.lesson_state`, candidate `activities`, banded `assignments`
+- Writes: `segments.lesson_state`, verified `activities`, `session_activity_candidates`, and later `assignments` variants after teacher approval
 - Uses: `packages/ai-core` for model routing, `packages/curriculum` for retrieval, `packages/activities` for manifest schema, verifier, and SDK contracts
 
 Status: placeholder only — no tooling installed yet.

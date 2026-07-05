@@ -8,3 +8,6 @@ build/
 .turbo/
 *.log
 *.tsbuildinfo
+
+# Stitch assets directory
+apps/web/src/features/teacher/assets/

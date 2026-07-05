@@ -12,6 +12,7 @@ import {
   type ActivityArtifact,
   type ActivityArtifactCandidate,
   type ActivityRepositoryRow,
+  type ActivitySource,
   type DifficultyBand,
   type RankedActivityRepositoryRow,
   type SessionContext,
@@ -56,7 +57,7 @@ interface SessionCandidateToInsert {
   band: DifficultyBand;
   sessionContext: SessionContext;
   artifact: ActivityArtifact | ActivityRepositoryRow;
-  source: "reused" | "forked" | "generated";
+  source: ActivitySource;
 }
 
 interface PlannedSessionArtifact {
@@ -136,8 +137,6 @@ export async function runGenerateActivityArtifactsJob(
   }
 
   const planned = planSessionArtifacts({
-    sessionId,
-    sessionContext,
     reusableByBand,
     openAiCandidates,
     staticCandidates,
@@ -156,7 +155,7 @@ export async function runGenerateActivityArtifactsJob(
         band: artifact.band,
         sessionContext,
         artifact: artifact.reusable,
-        source: "reused",
+        source: artifact.reusable.source === "seeded" ? "seeded" : "reused",
       });
       continue;
     }
@@ -186,15 +185,13 @@ export async function runGenerateActivityArtifactsJob(
 
   return {
     inserted: candidatesToInsert.length,
-    reused: candidatesToInsert.filter((candidate) => candidate.source === "reused").length,
-    generated: candidatesToInsert.filter((candidate) => candidate.source !== "reused").length,
+    reused: candidatesToInsert.filter((candidate) => candidate.source !== "new").length,
+    generated: candidatesToInsert.filter((candidate) => candidate.source === "new").length,
     skippedReason: null,
   };
 }
 
 export function planSessionArtifacts(input: {
-  sessionId: string;
-  sessionContext: SessionContext;
   reusableByBand: Partial<Record<DifficultyBand, RankedActivityRepositoryRow>>;
   openAiCandidates: ActivityArtifactCandidate[];
   staticCandidates: ActivityArtifactCandidate[];
@@ -306,7 +303,7 @@ async function countGeneratedSessionCandidates(
     .from("session_activity_candidates")
     .select("id", { count: "exact", head: true })
     .eq("session_id", sessionId)
-    .in("source", ["generated", "forked"]);
+    .eq("source", "new");
 
   if (error) {
     throw new Error(`generateActivityArtifacts job: failed to count generated candidates: ${error.message}`);
@@ -389,7 +386,7 @@ async function persistGeneratedArtifact(
 ): Promise<{
   id: string;
   artifact: ActivityArtifact;
-  source: "forked" | "generated";
+  source: "new";
 }> {
   const result = verifyActivityArtifact(candidate);
   if (!result.ok) {
@@ -411,7 +408,6 @@ async function persistGeneratedArtifact(
     throw new Error(`generateActivityArtifacts job: failed to store bundle: ${bundleError.message}`);
   }
 
-  const source = candidate.parent_id ? "forked" : "generated";
   const { data, error } = await supabase
     .from("activities")
     .upsert(
@@ -422,7 +418,7 @@ async function persistGeneratedArtifact(
         evidence: result.artifact.evidence,
         parent_id: result.artifact.parent_id,
         status: result.artifact.status,
-        source,
+        source: "new",
         verifier_scores: result.artifact.verifier_scores,
         curriculum_tags: result.artifact.evidence.map((evidence) => evidence.objective_code),
       },
@@ -436,9 +432,9 @@ async function persistGeneratedArtifact(
   }
 
   return {
-    id: data.id,
+    id: String(data.id),
     artifact: result.artifact,
-    source,
+    source: "new",
   };
 }
 
@@ -472,12 +468,9 @@ function parseRepositoryRow(row: Record<string, unknown>): ActivityRepositoryRow
   if (row.status !== "verified") return null;
 
   const source =
-    row.source === "seeded" ||
-    row.source === "reused" ||
-    row.source === "forked" ||
-    row.source === "generated"
+    row.source === "seeded" || row.source === "reused" || row.source === "new"
       ? row.source
-      : "generated";
+      : "new";
 
   return {
     id: String(row.id),

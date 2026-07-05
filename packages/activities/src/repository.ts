@@ -58,16 +58,12 @@ export function pickReusableActivitiesByBand(
 }
 
 function activitySearchText(row: ActivityRepositoryRow): string {
-  const content = row.manifest.content;
   return [
     row.manifest.title,
-    content.description,
-    content.learning_goal,
-    ...(content.success_criteria ?? []),
-    ...(content.items ?? []).map((item) => item.prompt),
-  ]
-    .filter(Boolean)
-    .join(" ");
+    ...row.manifest.content.items.map((item) => item.prompt),
+    ...row.manifest.content.items.flatMap((item) => item.answer_key),
+    ...row.manifest.content.items.flatMap((item) => item.hints),
+  ].join(" ");
 }
 
 function textOverlapScore(left: string, right: string): number {

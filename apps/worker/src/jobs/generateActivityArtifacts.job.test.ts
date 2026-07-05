@@ -5,20 +5,8 @@ import {
   type ActivityArtifactCandidate,
   type ActivityManifest,
   type RankedActivityRepositoryRow,
-  type SessionContext,
 } from "@kobi/activities";
 import { planSessionArtifacts } from "./generateActivityArtifacts.job.js";
-
-const sessionContext: SessionContext = {
-  latest_topic: "La noticia",
-  latest_objective: "Identificar partes de una noticia",
-  vocabulary: ["titular", "fuente"],
-  examples_used: [],
-  misconceptions: [],
-  time_remaining_minutes: 10,
-  confidence: 0.9,
-  segment_count: 1,
-};
 
 describe("generateActivityArtifacts job planning", () => {
   it("uses reusable activities first, OpenAI candidates for missing bands, then static fallback", () => {
@@ -28,8 +16,6 @@ describe("generateActivityArtifacts job planning", () => {
     const staticChallenge = candidate("challenge", "static-challenge");
 
     const planned = planSessionArtifacts({
-      sessionId: "session-1",
-      sessionContext,
       reusableByBand: { support: reusableSupport },
       openAiCandidates: [openAiCore],
       staticCandidates: [staticCore, staticChallenge],

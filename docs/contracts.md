@@ -24,28 +24,29 @@ The manual-fallback path (D6) produces the same `lesson_state` shape via `lesson
 
 ## 2. `ActivityArtifact`
 
-Gate 0 decision on 2026-07-04: v0 activities are verified HTML artifacts, not JSON-rendered activities. There are no legacy JSON activities or consumers, so no migration or compatibility adapter is required.
+Produced by the planner/generator, checked by the verifier, stored in `activities` (the repository), and delivered through the sandbox host. Per the revised D2, an activity is one of the three verified HTML artifact families plus a manifest: `activities.bundle_ref` points at the self-contained HTML bundle, and `activities.manifest` (jsonb) is the schema-validated contract for curriculum tags, answer key, hints, `est_minutes`, variants, and family. Gate 0 decision on 2026-07-04: v0 activities are verified HTML artifacts within the three MVP families, not JSON-rendered activities. There are no legacy JSON activities or consumers, so no migration or compatibility adapter is required. Schema and SDK contracts are owned by `packages/activities`.
 
-Produced by the planner/generator, checked by the verifier, stored in `activities` (the repository), and delivered through the sandbox host. Schema and SDK contracts are owned by `packages/activities`.
+For the teacher approval flow, Area C writes support/core/challenge rows to `session_activity_candidates`. The teacher may assign selected students to support or challenge; every unselected student receives the approved core candidate by default. Area E records the final per-student delivery in `assignments.variant`.
 
 ```json
 {
   "contract_version": "activity-artifact/v1",
   "manifest": {
-    "family": "custom_interactive",
-    "title": "Explora la piramide de la noticia",
+    "family": "guided_practice",
+    "title": "Practica: La noticia y sus partes",
     "difficulty_band": "core",
     "curriculum": { "grade": 7, "subject": "lenguaje", "unit": "U4", "objective": "L7.4.2" },
     "est_minutes": 6,
     "entry": "index.html",
     "sdk_version": "activity-sdk/v1",
-    "allowed_capabilities": ["dom", "css", "svg"],
+    "allowed_capabilities": ["dom", "css"],
     "content": {
-      "description": "Manipula las partes de una noticia para ver como cambia la claridad del texto.",
-      "learning_goal": "Identificar como titular, entradilla, cuerpo y fuente organizan una noticia.",
-      "success_criteria": [
-        "Reconoce cada parte de la noticia.",
-        "Completa una version organizada con evidencia del texto."
+      "items": [
+        {
+          "prompt": "Responde usando el objetivo L7.4.2: identificar titular, entradilla y fuente.",
+          "answer_key": ["titular", "entradilla", "fuente"],
+          "hints": ["Vuelve al vocabulario clave antes de responder."]
+        }
       ],
       "telemetry_events": ["attempt", "hint", "complete"]
     }
@@ -75,12 +76,12 @@ Produced by the planner/generator, checked by the verifier, stored in `activitie
 
 - Bundle format is one self-contained `index.html` with inline CSS/JS.
 - No external imports, assets, network calls, credentialed requests, storage APIs, top navigation, popups, or same-origin assumptions.
-- Allowed families are `match_classify`, `sequence_order`, `guided_practice`, `custom_interactive`, and `exploratory_tool`.
-- `content.items[]` is optional for custom/exploratory artifacts; those artifacts must instead provide enough `description`, `learning_goal`, `success_criteria`, and/or `telemetry_events` for teacher review and verifier consistency checks.
+- Allowed families are `match_classify`, `sequence_order`, and `guided_practice`.
+- `content.items[]` is required and must include prompts plus answer keys; hints default to an empty list when omitted.
 - `bundle_ref` must be unguessable and authorized by assignment/class before iframe delivery.
 - The parent injects only manifest, assignment id, and difficulty band. It must not inject Supabase credentials, student PII, raw transcript, or broader class/session context.
 - The iframe communicates only through the Activity SDK over `postMessage`: `getManifest()`, `getBand()`, `reportAttempt()`, `reportHint()`, and `reportComplete()`.
-- The parent validates message source, schema, assignment/student authorization, method allowlist, payload size, and telemetry rate limits.
+- The parent validates message source, schema, assignment authorization, method allowlist, payload size, and telemetry rate limits.
 - Teacher edits are manifest-only and must pass schema validation, escaped rendering, forbidden field checks, and manifest/code consistency smoke validation.
 
 ## 3. Telemetry event

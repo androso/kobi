@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "generate:auth-images": "node scripts/generate-auth-images.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",

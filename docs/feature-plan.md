@@ -10,7 +10,7 @@
 ## Key Interfaces
 
 - Update contracts/docs from the stale JSON-player model to: `ActivityArtifact = manifest + bundle_ref + verifier_scores + evidence`.
-- Manifest includes: family, title, difficulty_band, curriculum, est_minutes, content, entry: `index.html`, sdk_version, and allowed_capabilities. `content.items` with answer keys/hints is supported for exercise-shaped artifacts; custom/exploratory artifacts may instead use `description`, `learning_goal`, `success_criteria`, and `telemetry_events`.
+- Manifest includes: family, title, difficulty_band, curriculum, est_minutes, content, entry: `index.html`, sdk_version, and allowed_capabilities. `content.items` with prompts, answer keys, and hints is required; `telemetry_events` may list attempt/hint/complete events.
 - Bundle format: one self-contained `index.html` with inline CSS/JS, no external imports/assets/network. Game-like activities may use DOM, CSS animations, SVG, or canvas.
 - Activity SDK lives in `packages/activities` and is exposed to the iframe via `postMessage`: `getManifest()`, `getBand()`, `reportAttempt()`, `reportHint()`, `reportComplete()`.
 - Area B contract: `retrieveCurriculumMatches(supabase, { queryText, grade, subject, unit })` returns top-3 `CurriculumMatch[]` results from `@kobi/curriculum`: `objective_code`, `unit`, `grade`, `subject`, `text`, and `similarity`. Area C should use those structured fields directly for grounding and derive teacher-visible artifact evidence from them.
@@ -32,8 +32,8 @@ Area C owns the job handler and generation pipeline behind this payload; the wor
 - On each confident lesson-state update or objective/topic change, consume the Area C pre-generation job with `sessionId`, `LessonState`, and `CurriculumMatch[]`. Keep the latest verified support/core/challenge artifacts warm for the session; mark older candidates superseded when context changes materially.
 - Retrieval-first generation:
   - Query activity repository using session context plus matched curriculum objective.
-  - Reuse strong matches, fork/adapt near matches, generate new only when retrieval is weak.
-  - Store adapted/new passing artifacts back into the shared repository with `parent_id` for forks.
+  - Reuse strong matches and generate new only when retrieval is weak.
+  - Store new passing artifacts back into the shared repository with `parent_id` pointing at the nearest reusable activity when available.
 - Teacher flow:
   - "Hora de actividad" returns the latest verified support/core/challenge artifacts within 60s.
   - Teacher manifest editing is optional for the demo loop. If implemented, teachers may edit manifest content only, not code; edits trigger manifest/schema validation plus a fast smoke check.
@@ -43,8 +43,8 @@ Area C owns the job handler and generation pipeline behind this payload; the wor
   - Rubric model: curriculum alignment, age fit, duration, answer correctness, hint leakage, duplicate risk, and Spanish suitability.
 - Sandbox host is owned by Area E:
   - iframe with strict sandbox/CSP, no Supabase credentials inside generated code.
-  - parent page injects manifest/assignment/band and binds telemetry writes to parent-owned assignment/student/session context.
-  - parent-side telemetry handling validates iframe source, message schema, method allowlist, assignment/student/session authorization, payload size, and rate limits before writing events.
+  - parent page injects manifest/assignment/band and binds telemetry writes to parent-owned assignment context.
+  - parent-side telemetry handling validates iframe source, message schema, method allowlist, assignment authorization, payload size, and rate limits before writing events.
   - crashes or missing telemetry reject the artifact before teacher display.
 - Repository ranking should bias toward objective match, embedding similarity over manifest plus code summary, verifier score, times_used, and avg_score.
 
@@ -52,11 +52,11 @@ Area C owns the job handler and generation pipeline behind this payload; the wor
 
 - Contract tests for manifest validation and SDK message shapes.
 - Worker tests proving RAG queries are built from `session_context`, not transcript, and `CurriculumMatch[]` fields are mapped into artifact evidence without inventing unavailable Area B fields.
-- Retrieval tests for reuse, fork/adapt, generate-new, and stale-candidate invalidation.
+- Retrieval tests for reuse, generate-new, and stale-candidate invalidation.
 - Sandbox tests loading seeded and generated HTML, blocking network/storage, verifying boot plus attempt/hint/complete events.
 - Telemetry/sandbox tests proving parent-side authorization, payload limits, rate limiting, and parent-owned assignment/student/session binding.
 - End-to-end smoke: seeded artifact -> teacher approval -> assignment by band -> student iframe plays -> telemetry row written.
-- Demo acceptance: three verified artifacts ready within 60s, at least one reused and one new/forked, and pre-seeded code artifacts survive generation failure.
+- Demo acceptance: three verified artifacts ready within 60s, at least one reused and one new, and pre-seeded code artifacts survive generation failure.
 
 ## Assumptions
 
@@ -105,7 +105,6 @@ flowchart TD
 - Store activity generation and rubric prompt templates under `prompts/`; the worker generator loads them and composes them with minimized `lessonState`, bounded `sessionContext`, and `CurriculumMatch[]`.
   - Require Spanish student-facing text.
   - Require one self-contained `index.html` per band.
-  - Allow `custom_interactive` and `exploratory_tool` when a broader mini-app better teaches the objective than a prompt/answer-key exercise.
   - Forbid external imports/assets/network/storage.
   - Require SDK names: `getManifest`, `getBand`, `reportAttempt`, `reportHint`, `reportComplete`.
   - Explicitly state: consume only `lessonState`, bounded `sessionContext`, and `CurriculumMatch[]`; never raw transcript.
@@ -113,8 +112,8 @@ flowchart TD
 - Refactor `apps/worker/src/jobs/generateActivityArtifacts.job.ts` to choose generation source.
   - Try repository reuse first, as today.
   - For missing bands only, call OpenAI generator when `OPENAI_API_KEY` and model configuration are valid and generation caps allow it.
-  - Normalize raw DTOs into complete `ActivityArtifactCandidate`s in the worker: enforce `contract_version`, validate/complete manifest fields, create cryptographically unguessable `bundle_ref`s, derive evidence from `CurriculumMatch[]` only, set `parent_id` from repository fork/adapt context, initialize verifier scores, and leave status finalization to verifier results.
-  - Run `verifyActivityArtifact()` on every generated or adapted candidate.
+  - Normalize raw DTOs into complete `ActivityArtifactCandidate`s in the worker: enforce `contract_version`, validate/complete manifest fields, create cryptographically unguessable `bundle_ref`s, derive evidence from `CurriculumMatch[]` only, set `parent_id` from repository nearest-parent context, initialize verifier scores, and leave status finalization to verifier results.
+  - Run `verifyActivityArtifact()` on every generated candidate.
   - If verification fails, send one repair prompt with verifier errors.
   - If repair still fails, OpenAI is unavailable, caps are exceeded, or config is invalid, fall back to `createActivityArtifactCandidates()` and/or pre-seeded verified artifacts.
   - Add job idempotency/deduplication and generation caps per session/class so noisy confident lesson-state updates cannot repeatedly spend tokens.
@@ -135,7 +134,7 @@ flowchart TD
   - Prove OpenAI is called only for missing bands.
   - Prove repair then fallback behavior.
   - Prove retries do not duplicate persistence.
-- Add telemetry/sandbox tests proving parent-side source validation, schema/method allowlists, assignment/student/session authorization binding, payload-size limits, rate limiting, and event writes from parent-owned context.
+- Add telemetry/sandbox tests proving parent-side source validation, schema/method allowlists, assignment authorization binding, payload-size limits, rate limiting, and event writes from parent-owned context.
 - Keep existing validation gates:
   - `pnpm --filter @kobi/activities test`
   - `pnpm --filter @kobi/activities typecheck`

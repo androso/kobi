@@ -3,8 +3,6 @@ import type { ActivitySdkEvent } from "./types.js";
 
 export interface ParentTelemetryContext {
   assignmentId: string;
-  studentId: string;
-  sessionId: string;
   sourceMatches: boolean;
   eventOrigin?: string;
   allowedOrigin?: string;
@@ -15,8 +13,6 @@ export interface ParentTelemetryContext {
 
 export interface AuthorizedTelemetryEvent {
   assignment_id: string;
-  student_id: string;
-  session_id: string;
   type: "attempt" | "hint" | "complete";
   payload: Record<string, unknown>;
 }
@@ -69,8 +65,6 @@ export function authorizeActivityTelemetryMessage(
     ok: true,
     event: {
       assignment_id: context.assignmentId,
-      student_id: context.studentId,
-      session_id: context.sessionId,
       type: eventTypeFromSdkMethod(parsed.data.method),
       payload: payloadFromSdkEvent(parsed.data, context.assignmentId),
     },

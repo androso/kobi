@@ -77,7 +77,12 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
         .filter(Boolean)
         .join(" ");
 
-      const curriculumMatches = await retrieveCurriculumMatches(supabase, { queryText, grade, subject, unit });
+      const curriculumMatches = await retrieveCurriculumMatches(supabase, {
+        queryText,
+        grade,
+        subject,
+        unit,
+      });
       await boss.send(JOB_GENERATE_ACTIVITY_ARTIFACTS, {
         sessionId,
         lessonState,

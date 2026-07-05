@@ -29,7 +29,7 @@ const bandSpecs: Record<
   core: {
     family: "guided_practice",
     estMinutes: 6,
-    titlePrefix: "Práctica",
+    titlePrefix: "Practica",
   },
   challenge: {
     family: "sequence_order",
@@ -60,16 +60,12 @@ export function createActivityArtifactCandidates(
       },
       est_minutes: spec.estMinutes,
       content: {
-        description: `Actividad breve para practicar ${input.sessionContext.latest_objective ?? input.sessionContext.latest_topic}.`,
-        learning_goal: input.sessionContext.latest_objective ?? input.sessionContext.latest_topic,
-        success_criteria: ["Responder con base en el vocabulario y evidencia de la clase."],
-        telemetry_events: ["attempt", "hint", "complete"],
         items: buildItemsForBand(band, input.sessionContext, primaryMatch),
+        telemetry_events: ["attempt", "hint", "complete"],
       },
       entry: "index.html",
       sdk_version: ACTIVITY_SDK_VERSION,
-      allowed_capabilities:
-        band === "challenge" ? ["dom", "css", "svg"] : ["dom", "css"],
+      allowed_capabilities: band === "challenge" ? ["dom", "css", "svg"] : ["dom", "css"],
     };
 
     const bundleHtml = renderActivityHtml(manifest);
@@ -107,7 +103,7 @@ function buildItemsForBand(
   match: CurriculumMatch,
 ) {
   const terms = context.vocabulary.length > 0 ? context.vocabulary : extractTerms(match.text);
-  const boundedTerms = terms.slice(0, 4);
+  const boundedTerms = terms.length > 0 ? terms.slice(0, 4) : ["idea principal", "vocabulario", "evidencia"];
 
   if (band === "support") {
     return [
@@ -115,7 +111,7 @@ function buildItemsForBand(
         prompt: `Clasifica estas palabras del tema "${context.latest_topic}" como ideas clave de la clase.`,
         answer_key: boundedTerms,
         hints: [
-          "Busca palabras que la docente repitió o explicó con ejemplos.",
+          "Busca palabras que la docente repitio o explico con ejemplos.",
           "Relaciona cada palabra con el objetivo de la unidad.",
         ],
       },
@@ -132,8 +128,8 @@ function buildItemsForBand(
           "Justificar con evidencia del texto",
         ],
         hints: [
-          "Primero ubica de qué trata el texto.",
-          "La justificación debe aparecer después de reconocer las pistas.",
+          "Primero ubica de que trata el texto.",
+          "La justificacion debe aparecer despues de reconocer las pistas.",
         ],
       },
     ];
@@ -152,8 +148,8 @@ function buildItemsForBand(
 }
 
 function renderActivityHtml(manifest: ActivityManifest): string {
-  const item = manifest.content.items?.[0];
-  const answers = item?.answer_key ?? manifest.content.success_criteria ?? [];
+  const item = manifest.content.items[0];
+  const answers = item.answer_key;
   const buttons = answers
     .map(
       (answer, index) =>
@@ -185,9 +181,9 @@ function renderActivityHtml(manifest: ActivityManifest): string {
 <body>
   <main>
     <section class="card" aria-labelledby="activity-title">
-      <p>Actividad ${escapeHtml(manifest.difficulty_band)} · ${escapeHtml(manifest.curriculum.objective)}</p>
+      <p>Actividad ${escapeHtml(manifest.difficulty_band)} - ${escapeHtml(manifest.curriculum.objective)}</p>
       <h1 id="activity-title">${escapeHtml(manifest.title)}</h1>
-      <p class="prompt">${escapeHtml(item?.prompt ?? manifest.content.description ?? manifest.content.learning_goal ?? manifest.title)}</p>
+      <p class="prompt">${escapeHtml(item.prompt)}</p>
       <div id="options">${buttons}</div>
       <div class="actions">
         <button id="hint" type="button">Pedir pista</button>
@@ -237,15 +233,14 @@ function renderActivityHtml(manifest: ActivityManifest): string {
     });
 
     document.getElementById("hint").addEventListener("click", () => {
-      const hints = manifest.content.items?.[0]?.hints || [];
+      const hints = manifest.content.items[0].hints;
       document.getElementById("feedback").textContent = hints[hintIndex] || "Ya usaste todas las pistas.";
       reportHint({ assignment_id: assignmentId, item_index: 0, hint_index: hintIndex });
       hintIndex += 1;
     });
 
     document.getElementById("complete").addEventListener("click", () => {
-      const total = manifest.content.items?.[0]?.answer_key?.length || manifest.content.success_criteria?.length || 1;
-      reportComplete({ assignment_id: assignmentId, score: selected.size, total, completed_at: new Date().toISOString() });
+      reportComplete({ assignment_id: assignmentId, score: selected.size, total: manifest.content.items[0].answer_key.length, completed_at: new Date().toISOString() });
       document.getElementById("feedback").textContent = "Actividad completada. Gracias.";
     });
   </script>

@@ -7,7 +7,7 @@ Outcome:
 - Student-facing text must be Spanish suitable for Salvadoran classrooms.
 - Activities must be grounded only in the provided lesson_state summary fields, bounded session_context, and CurriculumMatch records.
 - Do not use raw transcript, student personal data, external facts, external assets, external imports, network calls, storage APIs, cookies, popups, top navigation, or same-origin assumptions.
-- Prefer a custom interactive design when it better teaches the objective than a worksheet-like prompt. The best output should feel closer to a small classroom manipulative, lab, or studio than a static quiz.
+- Prefer an interaction design inside the three allowed families when it better teaches the objective than a worksheet-like prompt. The best output should feel closer to a small classroom manipulative, lab, or studio than a static quiz.
 
 Creative direction:
 - Start from the learning objective and invent a concrete interaction metaphor for it: sorting board, evidence map, headline workshop, source-check desk, story sequencer, vocabulary lab, argument builder, timeline, checklist inspector, or another lightweight classroom tool.
@@ -18,7 +18,7 @@ Creative direction:
 
 Artifact constraints:
 - Each HTML draft must be a complete `<!doctype html>` document with inline CSS and inline JavaScript.
-- Include a visible title and at least one visible manifest content marker: item prompt, description, learning goal, or success criterion.
+- Include a visible title and at least one visible item prompt from the manifest.
 - Include SDK hook names in code: `getManifest`, `getBand`, `reportAttempt`, `reportHint`, and `reportComplete`.
 - Send telemetry only with `window.parent.postMessage`; do not write to Supabase or any network endpoint.
 - Keep interactions simple enough for the last 10 minutes of class.
@@ -27,13 +27,11 @@ Allowed families:
 - `match_classify`
 - `sequence_order`
 - `guided_practice`
-- `custom_interactive` for bespoke mini-apps, game-like practice, manipulatives, or visual interactions that do not fit the three exercise families.
-- `exploratory_tool` for student-controlled exploration, simulations, organizers, or concept tools.
 
 Manifest content:
-- Exercise-shaped artifacts may use `content.items` with prompts, answer keys, and hints.
-- Broader artifacts may instead use `description`, `learning_goal`, `success_criteria`, and `telemetry_events`.
-- Include enough manifest content for a teacher to understand the learning goal and how success is measured.
+- Use `content.items` with prompts, answer keys, and hints.
+- Include enough item content for a teacher to understand the learning goal and how success is measured.
+- Optional `telemetry_events` may list `attempt`, `hint`, and `complete`.
 
 Output:
 - Return only structured output matching the schema supplied by the API.

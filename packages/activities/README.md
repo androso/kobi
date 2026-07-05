@@ -2,7 +2,7 @@
 
 Area C: Activity Generation & Quality (owned by Androso) — artifact manifest schema, verifier, sandbox SDK, and rubric side shared by `apps/web` and `apps/worker`.
 
-**Contract:** `lesson_state` + curriculum chunks + repository → 3 verified candidate `ActivityArtifact`s.
+**Contract:** `lesson_state` + curriculum chunks + repository -> 3 verified candidate `ActivityArtifact`s.
 
 Gate 0 decision on 2026-07-04: v0 uses self-contained HTML/CSS/JS mini-app artifacts plus structured manifests. There are no legacy JSON activities or consumers, so no JSON migration path is needed.
 
@@ -12,15 +12,13 @@ Gate 0 decision on 2026-07-04: v0 uses self-contained HTML/CSS/JS mini-app artif
 - `CurriculumMatch[]` (from `@kobi/curriculum`'s `retrieveCurriculumMatches()`) — top-3 curriculum chunks grounding the current lesson segment.
 - The activity repository (`activities` table) — for the reuse-vs-generate decision.
 
-**Expected usage flow:** ground a planner call in `lesson_state` + `CurriculumMatch[]`, check the repository for a reusable match first, generate new candidates only when nothing fits, verify each candidate, and produce 3 ranked candidates for the teacher shortlist.
+**Expected usage flow:** ground a planner call in `lesson_state` + `CurriculumMatch[]`, check the repository for a reusable match first, generate new candidates only when nothing fits, verify each candidate, and produce 3 ranked candidates for the teacher shortlist. The teacher can assign selected students to support/challenge; unselected students receive core by default.
 
-Five artifact families ship in v0:
+Three artifact families ship in v0:
 
 1. **Match/classify** — vocabulary or concept grouping
 2. **Sequence/order** — process, story, or argument steps
 3. **Guided practice/checkpoint** — short applied questions with hints and feedback
-4. **Custom interactive** — bespoke mini-apps, game-like practice, manipulatives, or visual interactions
-5. **Exploratory tool** — student-controlled simulations, organizers, or concept tools
 
 Each artifact is a single self-contained `index.html` bundle plus a manifest:
 
@@ -28,25 +26,26 @@ Each artifact is a single self-contained `index.html` bundle plus a manifest:
 {
   "contract_version": "activity-artifact/v1",
   "manifest": {
-    "family": "custom_interactive",
-    "title": "Explora la piramide de la noticia",
+    "family": "guided_practice",
+    "title": "Practica: La noticia y sus partes",
     "difficulty_band": "core",
     "curriculum": { "grade": 7, "subject": "lenguaje", "unit": "U4", "objective": "L7.4.2" },
     "est_minutes": 6,
     "entry": "index.html",
     "sdk_version": "activity-sdk/v1",
-    "allowed_capabilities": ["dom", "css", "svg"],
+    "allowed_capabilities": ["dom", "css"],
     "content": {
-      "description": "Manipula las partes de una noticia para ver como cambia la claridad del texto.",
-      "learning_goal": "Identificar como titular, entradilla, cuerpo y fuente organizan una noticia.",
-      "success_criteria": [
-        "Reconoce cada parte de la noticia.",
-        "Completa una version organizada con evidencia del texto."
+      "items": [
+        {
+          "prompt": "Responde usando el objetivo L7.4.2: identificar titular, entradilla y fuente.",
+          "answer_key": ["titular", "entradilla", "fuente"],
+          "hints": ["Vuelve al vocabulario clave antes de responder."]
+        }
       ],
       "telemetry_events": ["attempt", "hint", "complete"]
     }
   },
-  "bundle_ref": "artifact-bundles/...",
+  "bundle_ref": "artifact-bundles/.../index.html",
   "verifier_scores": {},
   "evidence": [],
   "status": "verified"
@@ -55,10 +54,11 @@ Each artifact is a single self-contained `index.html` bundle plus a manifest:
 
 Implemented exports:
 
-- manifest, artifact, evidence, verifier-score, and SDK `postMessage` validators
+- manifest, artifact, evidence, verifier-score, source, and SDK `postMessage` validators
 - `buildActivitySessionContext()` for bounded context from structured `lesson_state` rows only
 - `createActivityArtifactCandidates()` for deterministic support/core/challenge HTML fallback artifacts
-- `verifyActivityArtifact()` for schema, static bundle, SDK hook, and manifest/code consistency checks across both exercise-shaped and broader interactive content
+- `verifyActivityArtifact()` for schema, static bundle, SDK hook, and manifest/code consistency checks
+- `authorizeActivityTelemetryMessage()` for parent-owned assignment telemetry validation
 - repository ranking helpers that bias objective match, verifier score, usage, outcomes, and topic overlap
 
 The verifier currently performs deterministic checks plus local rubric scoring. Browser sandbox boot remains Area E-owned and should call these same schemas before teacher display.

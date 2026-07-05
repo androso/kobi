@@ -26,8 +26,6 @@ const activityFamilySchema = z.enum([
   "match_classify",
   "sequence_order",
   "guided_practice",
-  "custom_interactive",
-  "exploratory_tool",
 ]);
 const activityCapabilitySchema = z.enum(["dom", "css", "svg", "canvas"]);
 const activityTelemetryEventTypeSchema = z.enum(["attempt", "hint", "complete"]);
@@ -45,16 +43,13 @@ const rawManifestDraftSchema = z
             z
               .object({
                 prompt: z.string().min(1).max(600),
-                answer_key: z.array(z.string().min(1).max(160)).max(12).optional(),
-                hints: z.array(z.string().min(1).max(220)).max(4).optional(),
+                answer_key: z.array(z.string().min(1).max(160)).min(1).max(12),
+                hints: z.array(z.string().min(1).max(220)).max(4).default([]),
               })
               .strict(),
           )
-          .max(8)
-          .optional(),
-        description: z.string().min(1).max(1200).optional(),
-        learning_goal: z.string().min(1).max(500).optional(),
-        success_criteria: z.array(z.string().min(1).max(240)).max(8).optional(),
+          .min(1)
+          .max(8),
         telemetry_events: z.array(activityTelemetryEventTypeSchema).min(1).max(3).optional(),
       })
       .strict(),
@@ -425,16 +420,9 @@ export function buildActivityGenerationPrompt(input: BuildPromptInput): string {
       task: "Generate one activity artifact draft for each requested band.",
       requested_bands: input.bands,
       artifact_contract: {
-        allowed_families: [
-          "match_classify",
-          "sequence_order",
-          "guided_practice",
-          "custom_interactive",
-          "exploratory_tool",
-        ],
+        allowed_families: ["match_classify", "sequence_order", "guided_practice"],
         content_modes: [
-          "exercise items with prompts, optional answer keys, and hints",
-          "broader interactive content with description, learning_goal, success_criteria, and telemetry_events",
+          "exercise items with prompts, answer keys, hints, and optional telemetry_events",
         ],
       },
       creativity_brief: {
