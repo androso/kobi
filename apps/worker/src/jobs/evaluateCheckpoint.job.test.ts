@@ -3,7 +3,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type PgBoss from "pg-boss";
 import type { LessonState } from "@kobi/ai-core";
 import type { CurriculumMatch } from "@kobi/curriculum";
-import { runEvaluateCheckpointJob } from "./evaluateCheckpoint.job.js";
+import {
+  buildGenerateActivityArtifactsJobData,
+  runEvaluateCheckpointJob,
+} from "./evaluateCheckpoint.job.js";
 import { JOB_GENERATE_ACTIVITY_ARTIFACTS } from "../queue.js";
 
 const lessonState: LessonState = {
@@ -30,6 +33,20 @@ const curriculumMatches: CurriculumMatch[] = [
 ];
 
 describe("evaluateCheckpoint job", () => {
+  it("builds the Area C job payload from structured lesson state and curriculum matches only", () => {
+    expect(
+      buildGenerateActivityArtifactsJobData({
+        sessionId: "session-1",
+        lessonState,
+        curriculumMatches,
+      }),
+    ).toEqual({
+      sessionId: "session-1",
+      lessonState,
+      curriculumMatches,
+    });
+  });
+
   it("does nothing when there are no new segments since the last ready checkpoint", async () => {
     const supabase = fakeSupabase({ lastReadyCheckpointAt: "2026-01-01T00:00:00Z", segments: [] });
     const boss = fakeBoss();
@@ -81,6 +98,7 @@ describe("evaluateCheckpoint job", () => {
     const supabase = fakeSupabase({ lastReadyCheckpointAt: null, segments: [lessonState] });
     const boss = fakeBoss();
     let retrieverCalls = 0;
+    const retrieverInputs: Array<{ queryText: string; grade: number; subject: string; unit?: string }> = [];
 
     const result = await runEvaluateCheckpointJob(
       supabase.client,
@@ -88,8 +106,9 @@ describe("evaluateCheckpoint job", () => {
       { sessionId: "session-1" },
       {
         evaluator: async () => ({ ready: true, reason: "Suficiente material.", summary: "Se enseno la noticia." }),
-        curriculumRetriever: async () => {
+        curriculumRetriever: async (_supabase, input) => {
           retrieverCalls += 1;
+          retrieverInputs.push(input);
           return curriculumMatches;
         },
       },
@@ -97,6 +116,15 @@ describe("evaluateCheckpoint job", () => {
 
     expect(result).toEqual({ evaluated: true, ready: true, skippedReason: null });
     expect(retrieverCalls).toBe(1);
+    const retrieverInput = retrieverInputs[0];
+    expect(retrieverInput).toMatchObject({
+      grade: 7,
+      subject: "lenguaje",
+    });
+    expect(retrieverInput.queryText).toContain(lessonState.objective_guess);
+    expect(retrieverInput.queryText).toContain(lessonState.topic);
+    expect(retrieverInput.queryText).toContain("titular");
+    expect(retrieverInput.queryText).toContain(lessonState.transcript_summary);
     expect(supabase.insertedCheckpoints[0]).toMatchObject({ session_id: "session-1", ready: true });
     expect(boss.sent).toHaveLength(1);
     expect(boss.sent[0].name).toBe(JOB_GENERATE_ACTIVITY_ARTIFACTS);
@@ -120,6 +148,23 @@ describe("evaluateCheckpoint job", () => {
 
     expect(supabase.segmentsGtValue).toBe("2026-01-01T00:05:00Z");
   });
+
+  it("never queries raw audio chunks while evaluating the checkpoint handoff", async () => {
+    const supabase = fakeSupabase({ lastReadyCheckpointAt: null, segments: [lessonState] });
+    const boss = fakeBoss();
+
+    await runEvaluateCheckpointJob(
+      supabase.client,
+      boss.instance,
+      { sessionId: "session-1" },
+      {
+        evaluator: async () => ({ ready: true, reason: "Suficiente material.", summary: "Se enseno la noticia." }),
+        curriculumRetriever: async () => curriculumMatches,
+      },
+    );
+
+    expect(supabase.tablesRead).toEqual(["checkpoints", "segments", "checkpoints"]);
+  });
 });
 
 interface FakeSupabaseOptions {
@@ -129,10 +174,11 @@ interface FakeSupabaseOptions {
 
 function fakeSupabase(options: FakeSupabaseOptions) {
   const insertedCheckpoints: unknown[] = [];
-  const state = { segmentsGtValue: null as string | null };
+  const state = { segmentsGtValue: null as string | null, tablesRead: [] as string[] };
 
   const client = {
     from(table: string) {
+      state.tablesRead.push(table);
       if (table === "checkpoints") {
         return new CheckpointsQuery(options.lastReadyCheckpointAt, insertedCheckpoints);
       }
@@ -148,6 +194,9 @@ function fakeSupabase(options: FakeSupabaseOptions) {
     insertedCheckpoints,
     get segmentsGtValue() {
       return state.segmentsGtValue;
+    },
+    get tablesRead() {
+      return state.tablesRead;
     },
   };
 }
