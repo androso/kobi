@@ -89,11 +89,11 @@ export function TeacherDashboard() {
               {/* Bento Grid */}
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {/* Create New Class Card */}
-                <button className="group relative border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-3xl flex flex-col items-center justify-center cursor-pointer transition-all hover:bg-slate-100/50 hover:border-[#004ac6]/30 hover:shadow-md h-full min-h-[280px]" type="button">
-                  <div className="w-14 h-14 rounded-full bg-blue-50 text-[#004ac6] flex items-center justify-center mb-3 group-hover:scale-105 transition-transform">
-                    <Plus className="h-6 w-6 font-bold" />
+                <button className="group relative border-2 border-dashed border-slate-200 bg-slate-50/50 rounded-[20px] flex items-center justify-center gap-3 cursor-pointer transition-all hover:bg-slate-100/50 hover:border-[#004ac6]/30 hover:shadow-sm md:col-span-2 lg:col-span-3 h-16 py-3" type="button">
+                  <div className="w-9 h-9 rounded-full bg-blue-50 text-[#004ac6] flex items-center justify-center group-hover:scale-105 transition-transform shrink-0">
+                    <Plus className="h-4 w-4 font-bold" />
                   </div>
-                  <span className="text-base font-bold text-slate-500 group-hover:text-[#004ac6] transition-colors">Crear nueva clase</span>
+                  <span className="text-sm font-bold text-slate-500 group-hover:text-[#004ac6] transition-colors">Crear nueva clase</span>
                 </button>
 
                 {teacherClasses.map((item) => (
