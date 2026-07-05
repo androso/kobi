@@ -1,8 +1,8 @@
-import { google } from "@ai-sdk/google";
+import { createOpenAI } from "@ai-sdk/openai";
 import { generateObject } from "ai";
 import { lessonStateSchema, type LessonState } from "./lessonState.schema.js";
 
-const DEFAULT_LESSON_STATE_MODEL = "gemini-2.0-flash";
+const DEFAULT_LESSON_STATE_MODEL = "gpt-4o-mini";
 const MAX_TRANSCRIPT_CHARS = 8_000;
 
 export interface BuildLessonStateInput {
@@ -25,8 +25,10 @@ export async function buildLessonState(
     throw new Error("buildLessonState: transcriptText is required");
   }
 
+  const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
   const { object } = await generateObject({
-    model: google(input.model ?? DEFAULT_LESSON_STATE_MODEL),
+    model: openai(input.model ?? DEFAULT_LESSON_STATE_MODEL),
     schema: lessonStateSchema,
     prompt: [
       "You are analyzing a short slice of a 7th-grade Lenguaje class transcript in El Salvador.",

@@ -180,7 +180,6 @@ export function PreviousClasses() {
     setAudioDuration(0);
 
     const isMock = session.id.startsWith("seed-");
-    console.log("Opening session:", session.id, "isMock:", isMock);
     if (!isMock && supabase) {
       try {
         const [{ data: chunks, error }, { data: segmentRow }] = await Promise.all([
@@ -197,8 +196,6 @@ export function PreviousClasses() {
             .limit(1)
             .maybeSingle(),
         ]);
-
-        console.log("Audio chunks query:", { sessionId: session.id, count: chunks?.length, error, chunks });
 
         let summaryPoints = session.summaryPoints;
         let nextSteps = session.nextSteps;
@@ -246,7 +243,6 @@ export function PreviousClasses() {
             }));
 
           const storagePaths = chunks.map((c) => c.storage_path).filter(Boolean);
-          console.log("Storage paths:", storagePaths);
           
           const urls: string[] = [];
           for (const path of storagePaths) {
@@ -254,17 +250,12 @@ export function PreviousClasses() {
               .from("audio-chunks")
               .createSignedUrl(path, 60 * 60);
             
-            console.log("Signed URL result for", path, { signedUrl, urlError });
-            
             if (urlError) {
               console.error("Error creating signed URL for", path, urlError);
             } else if (signedUrl && signedUrl.signedUrl) {
               urls.push(signedUrl.signedUrl);
-            } else {
-              console.error("No signed URL returned for", path);
             }
           }
-          console.log("Final audio URLs:", urls);
 
           const totalDurationMs = chunks.reduce((sum, c) => sum + (c.end_ms - c.start_ms), 0);
 
