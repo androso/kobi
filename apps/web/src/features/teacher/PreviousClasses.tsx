@@ -116,10 +116,14 @@ export function PreviousClasses() {
 
   // Sessions saved live from the monitor appear first, then the seed history (only for mock teacher)
   const storeSessions = useClassStore((state) => state.sessions);
+  const teacherId = user?.id;
+  const currentTeacherSessions = storeSessions.filter(
+    (s) => !s.teacherId || s.teacherId === teacherId
+  );
   const isMockTeacher = user?.email === "maestra@kobi.test";
   const allSessions = isMockTeacher
-    ? [...storeSessions, ...PREVIOUS_SESSIONS]
-    : storeSessions;
+    ? [...currentTeacherSessions, ...PREVIOUS_SESSIONS]
+    : currentTeacherSessions;
 
   // Calculate dynamic stats
   const totalSessionsCount = allSessions.length;

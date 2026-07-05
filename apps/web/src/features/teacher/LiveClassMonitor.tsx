@@ -13,7 +13,7 @@ import { useNavigate } from "react-router-dom";
 import { Sidebar } from "./components/Sidebar";
 import { WaveformVisualizer } from "./components/WaveformVisualizer";
 import { KobiMascot } from "./components/KobiMascot";
-import { useClassStore, type SavedSession, type ClassItem } from "../../lib/store";
+import { useAuthStore, useClassStore, type SavedSession, type ClassItem } from "../../lib/store";
 import {
   createBackendSession,
   isAudioApiConfigured,
@@ -41,7 +41,7 @@ const SUBJECT_META: Record<
 };
 
 // Construye una sesión guardada a partir de la clase monitoreada y los datos en vivo
-function buildSession(cls: ClassItem, durationSeconds: number): SavedSession {
+function buildSession(cls: ClassItem, durationSeconds: number, teacherId?: string): SavedSession {
   const meta = SUBJECT_META[cls.icon] ?? SUBJECT_META.pen;
   const summaryPoints = [
     `Tema trabajado: ${MOCK_INSIGHTS.detectedTopic}.`,
@@ -69,6 +69,7 @@ function buildSession(cls: ClassItem, durationSeconds: number): SavedSession {
     summaryPoints,
     nextSteps,
     transcript: [],
+    teacherId,
   };
 }
 
@@ -647,7 +648,8 @@ export function LiveClassMonitor() {
     setUploadStatus(apiSessionIdRef.current ? "Sesion enviada al worker" : uploadStatus);
 
     if (monitoringClass) {
-      const session = buildSession(monitoringClass, elapsed);
+      const teacherId = useAuthStore.getState().user?.id;
+      const session = buildSession(monitoringClass, elapsed, teacherId);
       endSession(session); // guarda en historial + limpia el monitor activo
       setFinishedSession(session);
     }
