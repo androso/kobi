@@ -69,11 +69,7 @@ function buildSession(cls: ClassItem, durationSeconds: number): SavedSession {
     duration: formatTime(durationSeconds),
     summaryPoints,
     nextSteps,
-    transcript: MOCK_TRANSCRIPT.map((t) => ({
-      time: t.time,
-      speaker: "Docente",
-      text: t.interim ? `${t.text}${t.interim}` : t.text,
-    })),
+    transcript: [],
   };
 }
 
@@ -97,28 +93,6 @@ const MOCK_INSIGHTS = {
   engagementPulse: [40, 65, 85, 70, 95, 60, 45],
   suggestedActivity: "Juego de redes de energía",
 };
-
-// Entradas de transcripción — texto final más un segmento "interino" opcional
-// (aún siendo reconocido) que se muestra en gris. El backend transmitirá estas entradas.
-const MOCK_TRANSCRIPT: Array<{
-  time: string;
-  text: string;
-  interim?: string;
-}> = [
-  {
-    time: "10:48",
-    text: "Bien, hoy vamos a ver cómo se mueve la energía a través de un ecosistema — no la materia, la energía específicamente.",
-  },
-  {
-    time: "10:50",
-    text: "El sol es nuestro punto de partida. La energía solar se convierte en energía química mediante la fotosíntesis, lo que sustenta casi toda la vida en la Tierra.",
-  },
-  {
-    time: "10:52",
-    text: "A medida que subimos cada nivel trófico, recuerden que una gran parte de esa energía se pierde como calor, por eso la",
-    interim: " pirámide de energía se hace más pequeña",
-  },
-];
 
 // ---------------------------------------------------------------------------
 
@@ -193,19 +167,17 @@ function TranscriptPlayerCard({
       {/* Cuerpo de la transcripción (desplazable) */}
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-6 flex flex-col gap-4">
         {isRecording ? (
-          MOCK_TRANSCRIPT.map((entry, i) => (
-            <div key={i} className="flex gap-4 items-start">
-              <span className="text-xs font-semibold text-slate-400 tabular-nums shrink-0 mt-0.5 w-10">
-                {entry.time}
-              </span>
-              <p className="text-slate-700 text-[15px] leading-relaxed">
-                {entry.text}
-                {entry.interim && (
-                  <span className="text-slate-400">{entry.interim}</span>
-                )}
+          <div className="flex-1 flex flex-col items-center justify-center text-center gap-3 py-10">
+            <span className="w-12 h-12 rounded-full bg-emerald-50 flex items-center justify-center">
+              <Circle className="h-5 w-5 text-emerald-500 fill-emerald-500 animate-pulse" />
+            </span>
+            <div>
+              <p className="text-sm font-bold text-slate-700">Grabando audio...</p>
+              <p className="text-xs text-slate-400 mt-1 max-w-xs">
+                La transcripción en vivo estará disponible próximamente.
               </p>
             </div>
-          ))
+          </div>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-center gap-3 py-10">
             <span className="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center">
