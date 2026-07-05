@@ -117,7 +117,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: /^nueva clase$/i }));
 
     // Verify modal is open
-    expect(screen.getByRole("heading", { name: /crear nueva clase/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /hagamos que el aprendizaje fluya/i })).toBeInTheDocument();
 
     // Fill form
     await user.type(screen.getByLabelText(/nombre de la clase/i), "Historia 6to");
