@@ -21,6 +21,7 @@ const PREVIOUS_SESSIONS = [
     id: 1,
     subject: "CIENCIAS",
     subjectColor: "text-emerald-700 bg-emerald-50 border-emerald-100",
+    dotColor: "bg-emerald-500",
     title: "Ciencias 4to Grado - Sección A",
     focus: "Ecosistemas y energía",
     date: "15 de junio, 2024",
@@ -39,6 +40,7 @@ const PREVIOUS_SESSIONS = [
     id: 2,
     subject: "MATEMÁTICAS",
     subjectColor: "text-blue-700 bg-blue-50 border-blue-100",
+    dotColor: "bg-blue-500",
     title: "Matemáticas 5to Grado - Sección B",
     focus: "Ecuaciones lineales",
     date: "14 de junio, 2024",
@@ -55,6 +57,7 @@ const PREVIOUS_SESSIONS = [
     id: 3,
     subject: "HISTORIA",
     subjectColor: "text-amber-700 bg-amber-50 border-amber-100",
+    dotColor: "bg-amber-500",
     title: "Historia 4to Grado - Sección A",
     focus: "Culturas Prehispánicas",
     date: "12 de junio, 2024",
@@ -62,7 +65,7 @@ const PREVIOUS_SESSIONS = [
     iconColor: "text-amber-600 bg-amber-50",
     summary: "Taller sobre los asentamientos antiguos y la agricultura prehispánica en Centroamérica. Los alumnos trabajaron en grupos pequeños investigando el sistema de cultivo por terrazas.",
     transcript: [
-      { time: "11:10", speaker: "Sra. Henderson", text: "Hoy nos enfocaremos en las técnicas agrícolas utilizadas por las civilizaciones antiguas." },
+      { time: "11:10", speaker: "Sra. Henderson", text: "Hoy nos enfocaciones en las técnicas agrícolas utilizadas por las civilizaciones antiguas." },
       { time: "11:30", speaker: "Mateo", text: "¿El maíz era el único cultivo principal?" },
       { time: "11:31", speaker: "Sra. Henderson", text: "Principalmente sí, Mateo, pero también cultivaban frijol, calabaza y cacao." }
     ]
@@ -160,8 +163,8 @@ export function PreviousClasses() {
                           className="bg-white p-5 rounded-3xl border border-slate-100 hover:border-[#004ac6]/20 hover:shadow-md transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-4 group"
                         >
                           <div className="flex items-center gap-5">
-                            <div className="w-14 h-14 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center text-[#004ac6] shrink-0">
-                              <FolderOpen className="h-7 w-7 text-[#004ac6]/80" />
+                            <div className="w-10 h-10 rounded-full bg-slate-50 border border-slate-100 flex items-center justify-center shrink-0">
+                              <div className={`w-3 h-3 rounded-full ${session.dotColor}`} />
                             </div>
                             <div>
                               <span className={`inline-block text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border ${session.subjectColor} mb-1.5`}>

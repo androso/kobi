@@ -16,28 +16,28 @@ import { Sidebar } from "./components/Sidebar";
 import { WaveformVisualizer } from "./components/WaveformVisualizer";
 
 // ---------------------------------------------------------------------------
-// Mock session data — replace with real-time backend data when transcription
-// is implemented.
+// Datos de sesión simulados — reemplazar con datos en tiempo real del backend
+// cuando la transcripción esté implementada.
 // ---------------------------------------------------------------------------
 const MOCK_INSIGHTS = {
   totalSeconds: 29 * 60 + 41,
-  detectedTopic: "Ecosystems",
-  currentObjective: "Analyze the flow of energy through trophic levels.",
-  keywords: ["Photosynthesis", "Decomposers", "Trophic Levels", "Energy Pyramid"],
-  highlightedKeyword: "Trophic Levels",
+  detectedTopic: "Ecosistemas",
+  currentObjective: "Analizar el flujo de energía a través de los niveles tróficos.",
+  keywords: ["Fotosíntesis", "Descomponedores", "Niveles tróficos", "Pirámide de energía"],
+  highlightedKeyword: "Niveles tróficos",
   misconceptions: [
     {
-      title: "Confusing Energy vs Matter",
+      title: "Confusión entre energía y materia",
       description:
-        '3 students asked if energy is "recycled" like water. Common confusion with the Law of Conservation of Matter.',
+        '3 estudiantes preguntaron si la energía se "recicla" como el agua. Confusión común con la Ley de Conservación de la Materia.',
     },
   ],
   engagementPulse: [40, 65, 85, 70, 95, 60, 45],
-  suggestedActivity: "Energy Web Game",
+  suggestedActivity: "Juego de redes de energía",
 };
 
-// Transcript entries — final text plus an optional trailing "interim" segment
-// (still being recognized) that renders faded. Backend will stream these.
+// Entradas de transcripción — texto final más un segmento "interino" opcional
+// (aún siendo reconocido) que se muestra en gris. El backend transmitirá estas entradas.
 const MOCK_TRANSCRIPT: Array<{
   time: string;
   text: string;
@@ -45,23 +45,20 @@ const MOCK_TRANSCRIPT: Array<{
 }> = [
   {
     time: "10:48",
-    text:
-      "Alright everyone, today we're looking at how energy moves through an ecosystem — not matter, energy specifically.",
+    text: "Bien, hoy vamos a ver cómo se mueve la energía a través de un ecosistema — no la materia, la energía específicamente.",
   },
   {
     time: "10:50",
-    text:
-      "So the sun is our starting point. The energy from sunlight is converted into chemical energy through photosynthesis, powering almost all life on Earth.",
+    text: "El sol es nuestro punto de partida. La energía solar se convierte en energía química mediante la fotosíntesis, lo que sustenta casi toda la vida en la Tierra.",
   },
   {
     time: "10:52",
-    text:
-      "As we move up each trophic level, remember that a large portion of that energy is lost as heat, which is why the",
-    interim: " energy pyramid gets smaller",
+    text: "A medida que subimos cada nivel trófico, recuerden que una gran parte de esa energía se pierde como calor, por eso la",
+    interim: " pirámide de energía se hace más pequeña",
   },
 ];
 
-const LANGUAGE = "English";
+const IDIOMA = "Español";
 
 // ---------------------------------------------------------------------------
 
@@ -73,7 +70,7 @@ function formatTime(seconds: number) {
   return `${m}:${s}`;
 }
 
-// -- Sub-components ----------------------------------------------------------
+// -- Sub-componentes ---------------------------------------------------------
 
 function LiveMonitorHeader() {
   const navigate = useNavigate();
@@ -86,9 +83,9 @@ function LiveMonitorHeader() {
 
       <nav className="hidden md:flex items-center gap-6">
         {[
-          { label: "Dashboard", path: "/teacher" },
-          { label: "Live Monitor", path: "/teacher/monitor", active: true },
-          { label: "Analytics", path: "/teacher/analytics" },
+          { label: "Panel", path: "/teacher" },
+          { label: "Monitoreo en vivo", path: "/teacher/monitor", active: true },
+          { label: "Analíticas", path: "/teacher/analytics" },
         ].map(({ label, path, active }) => (
           <button
             key={label}
@@ -115,7 +112,7 @@ function LiveMonitorHeader() {
           </button>
         </div>
         <button className="bg-[#dce9ff] text-[#004ac6] px-4 py-2 rounded-lg text-xs font-bold hover:shadow-md transition-all active:scale-95" type="button">
-          Class Selector
+          Selector de clase
         </button>
       </div>
     </header>
@@ -128,7 +125,7 @@ function NotificationBar() {
       <div className="flex items-center gap-2">
         <Sparkles className="h-5 w-5 text-violet-500 animate-bounce" />
         <span className="text-sm text-slate-600">
-          Kobi is searching repositories / preparing 3 activities...
+          Kobi está buscando repositorios / preparando 3 actividades...
         </span>
       </div>
       <div className="flex gap-1">
@@ -149,7 +146,6 @@ function TranscriptPlayerCard({
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Keep the newest line in view as the transcript grows
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
@@ -157,18 +153,18 @@ function TranscriptPlayerCard({
 
   return (
     <div className="bg-white rounded-[20px] shadow-sm border border-slate-200 overflow-hidden flex flex-col flex-1 min-h-0">
-      {/* Transcript header */}
+      {/* Encabezado de transcripción */}
       <div className="flex items-center justify-between px-6 pt-5 pb-3 shrink-0">
         <span className="text-[10px] font-bold tracking-widest uppercase text-slate-400">
-          Live Transcript
+          Transcripción en vivo
         </span>
         <span className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest uppercase text-emerald-600">
           <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-          Live
+          En vivo
         </span>
       </div>
 
-      {/* Transcript body (scrollable) */}
+      {/* Cuerpo de la transcripción (desplazable) */}
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-6 flex flex-col gap-4">
         {MOCK_TRANSCRIPT.map((entry, i) => (
           <div key={i} className="flex gap-4 items-start">
@@ -185,7 +181,7 @@ function TranscriptPlayerCard({
         ))}
       </div>
 
-      {/* Actions row: copy / export + language */}
+      {/* Acciones: copiar / exportar + idioma */}
       <div className="flex items-center justify-between px-6 py-3 shrink-0">
         <div className="flex items-center gap-2">
           <button
@@ -193,37 +189,35 @@ function TranscriptPlayerCard({
             type="button"
           >
             <Copy className="h-3.5 w-3.5" />
-            Copy
+            Copiar
           </button>
           <button
             className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wide text-slate-500 hover:bg-slate-100 transition-colors active:scale-95"
             type="button"
           >
             <FileDown className="h-3.5 w-3.5" />
-            Export
+            Exportar
           </button>
         </div>
         <button
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-bold uppercase tracking-wide text-slate-600 hover:bg-slate-50 transition-colors"
           type="button"
         >
-          {LANGUAGE}
+          {IDIOMA}
           <ChevronDown className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      {/* Waveform strip */}
+      {/* Visualizador de forma de onda */}
       <div className="h-24 bg-[#f8f7f5] border-y border-slate-200 px-4 shrink-0">
         <WaveformVisualizer />
       </div>
 
-      {/* Playback controls */}
+      {/* Controles de reproducción */}
       <div className="bg-slate-50 px-6 py-4 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-4">
-          <span className="text-sm font-bold text-slate-500 tabular-nums">
-            {formatTime(elapsed)}
-          </span>
-        </div>
+        <span className="text-sm font-bold text-slate-500 tabular-nums">
+          {formatTime(elapsed)}
+        </span>
 
         <div className="flex items-center gap-3">
           <button
@@ -238,7 +232,7 @@ function TranscriptPlayerCard({
           >
             <StopCircle className="h-5 w-5" />
             <span>
-              STOP{" "}
+              DETENER{" "}
               <span className="opacity-75 font-normal">{formatTime(remaining)}</span>
             </span>
           </button>
@@ -251,10 +245,10 @@ function TranscriptPlayerCard({
 function InsightsPanel() {
   return (
     <div className="bg-white rounded-[28px] p-6 border border-slate-200 shadow-sm h-full flex flex-col gap-6 overflow-y-auto">
-      {/* Detected Topic */}
+      {/* Tema detectado */}
       <div className="flex flex-col gap-2">
         <label className="text-[10px] font-bold tracking-widest uppercase text-slate-400">
-          Detected Topic
+          Tema detectado
         </label>
         <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full border-2 border-emerald-600 text-emerald-700 bg-emerald-50 font-bold text-base w-fit">
           <Leaf className="h-4 w-4" />
@@ -262,10 +256,10 @@ function InsightsPanel() {
         </span>
       </div>
 
-      {/* Current Objective */}
+      {/* Objetivo actual */}
       <div className="flex flex-col gap-2">
         <label className="text-[10px] font-bold tracking-widest uppercase text-slate-400">
-          Current Objective
+          Objetivo actual
         </label>
         <div className="bg-slate-50 rounded-2xl p-4 border-l-4 border-violet-500">
           <p className="text-sm text-slate-700 italic font-medium">
@@ -274,10 +268,10 @@ function InsightsPanel() {
         </div>
       </div>
 
-      {/* Keywords */}
+      {/* Palabras clave */}
       <div className="flex flex-col gap-2">
         <label className="text-[10px] font-bold tracking-widest uppercase text-slate-400">
-          Keywords Detected
+          Palabras clave detectadas
         </label>
         <div className="flex flex-wrap gap-2">
           {MOCK_INSIGHTS.keywords.map((kw) => (
@@ -295,10 +289,10 @@ function InsightsPanel() {
         </div>
       </div>
 
-      {/* Misconceptions */}
+      {/* Conceptos erróneos */}
       <div className="flex flex-col gap-2">
         <label className="text-[10px] font-bold tracking-widest uppercase text-slate-400">
-          Misconceptions Caught
+          Conceptos erróneos detectados
         </label>
         {MOCK_INSIGHTS.misconceptions.map((m) => (
           <div
@@ -316,10 +310,10 @@ function InsightsPanel() {
         ))}
       </div>
 
-      {/* Engagement Pulse */}
+      {/* Pulso de participación */}
       <div className="flex flex-col gap-2">
         <label className="text-[10px] font-bold tracking-widest uppercase text-slate-400">
-          Engagement Pulse
+          Pulso de participación
         </label>
         <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
           <div className="flex justify-between items-end h-20 gap-1.5 px-2">
@@ -334,7 +328,7 @@ function InsightsPanel() {
           <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase px-2 mt-2">
             <span>T-20m</span>
             <span>T-10m</span>
-            <span>NOW</span>
+            <span>AHORA</span>
           </div>
         </div>
       </div>
@@ -347,16 +341,15 @@ function SuggestedActivityFAB({ activity }: { activity: string }) {
     <div className="fixed bottom-6 right-6 z-50">
       <button className="bg-violet-600 text-white px-5 py-3 rounded-full shadow-2xl flex items-center gap-2 hover:scale-105 transition-all active:scale-95 font-bold text-sm" type="button">
         <Sparkles className="h-4 w-4" />
-        Suggested Activity: {activity}
+        Actividad sugerida: {activity}
       </button>
     </div>
   );
 }
 
-// -- Page --------------------------------------------------------------------
+// -- Página ------------------------------------------------------------------
 
 export function LiveClassMonitor() {
-  // Start at 12:41 to match design; will start from 0 when session begins for real
   const [elapsed, setElapsed] = useState(12 * 60 + 41);
 
   useEffect(() => {
