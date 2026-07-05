@@ -8,7 +8,7 @@ Kobi v0 turns the last 10 minutes of any class into a personalized, curriculum-g
 
 ## In / out of scope (v0)
 
-**In:** one class/grade/subject, 3 activity template families, difficulty-banded personalization (3 variants), plain student experience (activity + hints + results), repository reuse within own content, teacher approval as a hard gate, session report (completion + correctness).
+**In:** one class/grade/subject, 3 activity template families, difficulty-banded personalization (support/core/challenge artifacts), plain student experience (activity + hints + results), repository reuse within own content, teacher approval as a hard gate, session report (completion + correctness).
 
 **Out:** multi-school/admin portals, arbitrary generative game mechanics, deep learner modeling, pet companion, cross-school repositories, auto-delivery without review, longitudinal analytics.
 
@@ -19,7 +19,7 @@ Kobi v0 turns the last 10 minutes of any class into a personalized, curriculum-g
 | D1 | Subject: 7th-grade Lenguaje (reading comprehension + vocabulary) | Team owns the Ministry textbooks; avoids math's complex interaction mechanics |
 | D2 | Activity artifacts are verified HTML mini-apps plus manifests | Gate 0 decision on 2026-07-04: v0 uses self-contained HTML/CSS/JS artifacts in a sandboxed iframe, described by a structured manifest and verified before teacher display. This replaces the earlier JSON-player direction. |
 | D3 | TypeScript stack: Vite + React frontend, Node API/worker backend | 3 devs, 24 hours, TS-native team. Supabase (Postgres, pgvector, Realtime) gives the same layering as a Python split without adding another language |
-| D4 | Personalization v0 = difficulty banding, not learner modeling | 3 variants (support/core/challenge); don't ship personalization you can't measure |
+| D4 | Personalization v0 = difficulty banding, not learner modeling | Generate support/core/challenge artifacts and require teacher approval per band; don't ship personalization you can't measure |
 | D5 | No pet in v0 | Cut for scope; hints stay in the activity artifact manifest/runtime, not the pet; pet is a post-MVP retention layer |
 | D6 | Manual fallback at every AI stage | Transcription fails → teacher types 2-line topic summary; generation slow → pull from pre-seeded repository |
 | D7 | UI in Spanish, code/docs in English | Salvadoran classroom product |
@@ -41,13 +41,12 @@ flowchart TD
     CUR[(Curriculum chunks)] --> PRE
     REPO[(Activity repository)] --> PRE
     PRE --> VER[Verifier]
-    VER --> SHORT[Teacher shortlist UI]
-    SHORT -->|approve| VAR[Variant maker]
-    VAR --> DEL[Student delivery - realtime]
+    VER --> SHORT[Teacher band approval UI]
+    SHORT -->|approve per band| DEL[Student delivery - realtime]
     DEL --> TEL[(Telemetry)]
     TEL --> REP[Session report]
     TEL --> PROF[(Student profiles)]
-    PROF --> VAR
+    PROF --> DEL
 ```
 
 ## Ownership Areas
@@ -56,9 +55,9 @@ flowchart TD
 |---|---|---|
 | A. Listening & Understanding | Turn live classroom audio into a machine-readable picture of what's being taught | mic audio → rolling `lesson_state` |
 | B. Curriculum & Retrieval | Make the textbook searchable and match it to the live lesson | textbook unit + `lesson_state` → matching objectives/chunks |
-| C. Activity Generation & Quality | Produce classroom-ready, verified activity artifacts grounded in curriculum | `lesson_state` + curriculum chunks + repository → 3 verified candidate `ActivityArtifact`s |
-| D. Teacher Experience | Zero-prep control: start session, see understanding, approve with evidence, monitor, review | candidate activities + telemetry → approval decision + session report |
-| E. Student Experience & Activity Engine | Deliver activities as a clean, fast student experience, capture telemetry | approved activity + student band → rendered play + telemetry |
+| C. Activity Generation & Quality | Produce classroom-ready, verified activity artifacts grounded in curriculum | `lesson_state` + curriculum chunks + repository → verified support/core/challenge `ActivityArtifact`s |
+| D. Teacher Experience | Zero-prep control: start session, see understanding, approve with evidence, monitor, review | banded artifacts + telemetry → per-band approval decision + session report |
+| E. Student Experience & Activity Engine | Deliver activities as a clean, fast student experience, capture telemetry | approved banded artifact + student band → rendered play + telemetry |
 | F. Platform & Data Backbone | Shared substrate: identity, storage, realtime delivery, background jobs | every other area reads/writes through it |
 
 Put one name on each area (one person can own two small ones). Agree the shared contracts (`lesson_state`, `ActivityArtifact`, telemetry event — see `docs/contracts.md`) first, then build in parallel.
@@ -66,7 +65,7 @@ Put one name on each area (one person can own two small ones). Agree the shared 
 ## Cut Lines (if behind schedule, cut in this order)
 
 1. Live monitor → simple completed-count
-2. Variant maker → single *core* variant for everyone
+2. Support/challenge bands → approved *core* artifact for everyone
 3. Live transcription → teacher manual topic entry (this is a feature, per D6, not just a fallback)
 
 **Never cut:** teacher approval gate, verified artifact delivery, curriculum grounding with visible evidence.
@@ -74,9 +73,9 @@ Put one name on each area (one person can own two small ones). Agree the shared 
 ## Definition of Done (no-mock test)
 
 - A teacher creates a class and runs a session on real audio with no developer help
-- 3 curriculum-grounded options appear ≤ 60s after "Hora de actividad"
-- Each option shows evidence: objective + textbook section + reused/new
-- 3+ student devices receive banded variants and complete them
+- Support/core/challenge curriculum-grounded artifacts appear ≤ 60s after "Hora de actividad"
+- Each artifact shows evidence: objective + textbook section + reused/new
+- 3+ student devices receive approved banded artifacts and complete them
 - The session report reflects real telemetry, not seeds
 - Kill the wifi mid-session → manual fallback still completes the loop
 

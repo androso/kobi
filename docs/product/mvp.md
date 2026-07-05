@@ -8,12 +8,12 @@ Validate that Kobi can turn the last 10 minutes of a real class into a personali
 
 - Teacher creates a class, picks the pre-ingested textbook unit, gets a join code.
 - Teacher starts a live session; mic audio streams; lesson-state (topic, objective, confidence) builds in the background.
-- Teacher sees a shortlist of 3 curriculum-grounded candidate activities, each with evidence (objective matched, textbook section, reused vs. new, estimated minutes).
-- Teacher approves one candidate, optionally edits it, before it reaches students (hard gate).
+- Teacher sees support/core/challenge curriculum-grounded artifacts, each with evidence (objective matched, textbook section, reused vs. new, estimated minutes).
+- Teacher approves each band before it reaches students (hard gate); if support/challenge is not approved, that band receives the approved core artifact.
 - Teacher sees a live monitor (who's done, who's stuck) and a session report (completion + correctness) after the session.
 - Student joins via code + display name, waits, plays the assigned activity, gets a hint after wrong attempts, sees results.
 - 3 activity artifact families only: match/classify, sequence/order, guided practice/checkpoint — verified HTML bundles plus structured manifests, rendered in the sandboxed artifact iframe.
-- Difficulty-banded personalization: 3 variants (support/core/challenge) per approved activity.
+- Difficulty-banded personalization: support/core/challenge artifacts, approved per band.
 - Manual fallback at every AI stage: transcription fails → teacher types a topic summary; generation is slow → pull from the pre-seeded activity repository.
 - Basic auth: teachers via magic link, students via join code + display name.
 - Basic telemetry: attempt/hint/complete events, enough to drive the session report.

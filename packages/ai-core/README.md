@@ -7,9 +7,8 @@ Model routing for every AI stage. Cheap online path, expensive offline path — 
 | Transcription | Gemini Flash, 45-60s chunks | rolling async | chunked > streaming: cheaper, resilient |
 | Lesson-state builder | small model, structured output | every ~2 min | emits `lesson_state` JSON; raw transcript never travels downstream |
 | Retrieval | pgvector top-3 + metadata filters | sync | curriculum chunks are atomic, objective-level, ~150-300 tokens |
-| Planner + generator | frontier model | background (pre-creation) | retrieval-first: adapt existing before authoring new |
+| Planner + generator | frontier model | background (pre-creation) | retrieval-first: adapt existing before authoring support/core/challenge artifacts |
 | Verifier | mid model, rubric → JSON scores | background | checks alignment, age-fit, duration, answer-key correctness, duplicates |
-| Variant maker | small model | on approval | 3 difficulty variants of the approved activity |
 
 Cost guardrail: with this routing + prompt caching, a 45-min session should cost well under $0.50.
 
