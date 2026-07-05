@@ -12,6 +12,7 @@ interface UserProfile {
   className?: string;
   joinCode?: string;
   id?: string;
+  displayName?: string;
 }
 
 interface TeacherAuthResult {
@@ -47,6 +48,7 @@ function teacherProfileFromSupabaseUser(user: User): UserProfile {
     role: "teacher",
     email: user.email ?? undefined,
     id: user.id,
+    displayName: user.user_metadata?.display_name ?? user.email?.split("@")[0] ?? "Docente",
   };
 }
 
@@ -102,6 +104,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (session?.user) {
         await ensureTeacherProfile(session.user);
+        useClassStore.setState({ classes: [], artefactos: [], submissions: [] });
       }
 
       set({
@@ -112,6 +115,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       supabase.auth.onAuthStateChange((_event, nextSession) => {
         if (nextSession?.user) {
           void ensureTeacherProfile(nextSession.user);
+          useClassStore.setState({ classes: [], artefactos: [], submissions: [] });
         }
 
         const localStudentAuth = readLocalStudentAuth();
@@ -139,6 +143,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     await ensureTeacherProfile(data.user);
     clearLocalStudentAuth();
+    useClassStore.setState({ classes: [], artefactos: [], submissions: [] });
     set({ status: "authenticated", user: teacherProfileFromSupabaseUser(data.user) });
     return {};
   },
@@ -159,6 +164,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     await ensureTeacherProfile(data.session.user);
     clearLocalStudentAuth();
+    useClassStore.setState({ classes: [], artefactos: [], submissions: [] });
     set({ status: "authenticated", user: teacherProfileFromSupabaseUser(data.session.user) });
     return {};
   },

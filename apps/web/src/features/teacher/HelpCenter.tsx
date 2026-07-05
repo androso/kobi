@@ -16,7 +16,6 @@ import {
   Mail,
 } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
-import { Header } from "./components/Header";
 
 type HelpContext = "dashboard" | "monitor" | "repositories" | "analytics";
 
@@ -272,7 +271,6 @@ export function HelpCenter() {
         <Sidebar onOpenHelp={() => navigate(`/teacher/ayuda?from=${context}`)} />
         <div className="flex flex-col p-3 sm:p-4 lg:p-5 h-screen">
           <div className="flex-1 flex flex-col bg-[#f8f9ff] rounded-[30px] border border-slate-200/50 overflow-hidden shadow-sm min-h-0">
-            <Header />
             <div className="flex-1 overflow-y-auto px-6 py-8 md:px-10">
               <div className="mx-auto max-w-6xl">
                 <div className="mb-6 flex items-center gap-2 text-sm text-slate-500">
