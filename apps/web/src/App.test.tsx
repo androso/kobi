@@ -22,6 +22,19 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /entrar a clase/i })).toBeInTheDocument();
   });
 
+  it("toggles password visibility", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    const passwordInput = screen.getByPlaceholderText(/contrasena/i);
+    expect(passwordInput).toHaveAttribute("type", "password");
+
+    await user.click(screen.getByRole("button", { name: /mostrar contrasena/i }));
+
+    expect(passwordInput).toHaveAttribute("type", "text");
+  });
+
   it("logs into the teacher dashboard with demo credentials", async () => {
     const user = userEvent.setup();
 

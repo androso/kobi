@@ -1,5 +1,17 @@
 import { useEffect, useState } from "react";
-import { BookOpen, CheckCircle2, GraduationCap, Lock, LogOut, Mail, Radio, User, Users } from "lucide-react";
+import {
+  BookOpen,
+  CheckCircle2,
+  Eye,
+  EyeOff,
+  GraduationCap,
+  Lock,
+  LogOut,
+  Mail,
+  User,
+  Users,
+  type LucideIcon
+} from "lucide-react";
 import { Button } from "./components/ui/button";
 
 const slides = [
@@ -36,6 +48,7 @@ export function App() {
   const [screen, setScreen] = useState<"login" | "teacher" | "student">("login");
   const [teacherEmail, setTeacherEmail] = useState("");
   const [teacherPassword, setTeacherPassword] = useState("");
+  const [showTeacherPassword, setShowTeacherPassword] = useState(false);
   const [classCode, setClassCode] = useState("");
   const [studentName, setStudentName] = useState("");
   const [error, setError] = useState("");
@@ -119,6 +132,7 @@ export function App() {
     setRole("teacher");
     setTeacherEmail("");
     setTeacherPassword("");
+    setShowTeacherPassword(false);
     setClassCode("");
     setStudentName("");
     setError("");
@@ -139,31 +153,32 @@ export function App() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#eef5fb] px-4 py-8 text-foreground sm:px-6">
+    <main className="font-login flex min-h-screen items-center justify-center bg-[#eef5fb] px-4 py-8 text-foreground sm:px-6">
       <div className="grid min-h-[42rem] w-full max-w-6xl overflow-hidden rounded-[2rem] bg-white shadow-2xl shadow-slate-200/80 lg:grid-cols-[1fr_0.9fr]">
-        <section className="relative flex min-h-[34rem] overflow-hidden bg-[#1077e5] px-7 py-8 text-white sm:px-10 lg:min-h-full lg:px-12">
-          <div className="pointer-events-none absolute -right-44 top-1/2 z-20 h-[115%] w-72 -translate-y-1/2 rounded-l-[100%] bg-white" />
-          <div className="absolute inset-0 opacity-60">
+        <section className="relative flex min-h-[34rem] overflow-hidden bg-[#2f8ef7] px-7 py-8 text-white sm:px-10 lg:min-h-full lg:px-12">
+          <div className="absolute inset-0 opacity-35">
             <div className="absolute left-[12%] top-[24%] h-4 w-28 rounded-full bg-white/20" />
-            <div className="absolute left-[56%] top-[30%] h-5 w-36 rounded-full bg-white/20" />
-            <div className="absolute left-[22%] top-[43%] h-4 w-60 rounded-full bg-white/15" />
-            <div className="absolute bottom-[30%] left-[54%] h-5 w-24 rounded-full bg-white/20" />
+            <div className="absolute left-[56%] top-[30%] h-5 w-36 rounded-full bg-white/15" />
+            <div className="absolute left-[22%] top-[43%] h-4 w-60 rounded-full bg-white/10" />
+            <div className="absolute bottom-[30%] left-[54%] h-5 w-24 rounded-full bg-white/15" />
           </div>
 
-          <div className="relative z-10 flex w-full flex-col">
+          <div className="pointer-events-none absolute -right-28 top-1/2 z-20 h-[115%] w-60 -translate-y-1/2 rounded-l-[100%] bg-white" />
+
+          <div className="relative z-10 flex w-full flex-col pr-16 sm:pr-20 lg:pr-24">
             <div className="flex flex-1 flex-col justify-center">
-              <div className="relative mx-auto mb-8 aspect-[1.38] w-full max-w-md">
+              <div className="relative mx-auto mb-8 flex aspect-[1.38] w-full max-w-sm items-center justify-center">
                 <img
                   alt=""
-                  className="absolute inset-0 h-full w-full object-contain transition-all duration-700 ease-out"
+                  className="h-[78%] w-[78%] object-contain transition-all duration-700 ease-out"
                   key={slide.image}
                   src={slide.image}
                 />
               </div>
 
-              <div className="min-h-36 max-w-xl transition-all duration-700" key={slide.title}>
+              <div className="min-h-36 max-w-sm transition-all duration-700" key={slide.title}>
                 <h1 className="text-3xl font-semibold tracking-normal sm:text-4xl">{slide.title}</h1>
-                <p className="mt-4 max-w-md text-base leading-7 text-white/85">{slide.body}</p>
+                <p className="mt-4 text-base leading-7 text-white/85">{slide.body}</p>
               </div>
 
               <div className="mt-8 flex gap-4" aria-label="Cambiar panel informativo">
@@ -184,11 +199,11 @@ export function App() {
           </div>
         </section>
 
-        <section className="flex items-center justify-center px-7 py-10 sm:px-10 lg:px-14">
+        <section className="flex items-center justify-center bg-white px-7 py-10 sm:px-10 lg:px-14">
           <div className="w-full max-w-md">
             <div className="mb-10">
               <p className="text-sm font-medium text-primary">Bienvenido a Kobi</p>
-              <h2 className="mt-2 text-4xl font-semibold tracking-normal text-[#1077e5]">Iniciar sesion</h2>
+              <h2 className="mt-2 text-4xl font-medium tracking-normal text-[#1077e5]">Iniciar sesion</h2>
               <p className="mt-4 text-sm leading-6 text-muted-foreground">
                 Entra con calma. Kobi se encarga de convertir los ultimos minutos de clase en una actividad clara,
                 rapida y lista para tus estudiantes.
@@ -243,14 +258,26 @@ export function App() {
                 </label>
                 <label className="group block">
                   <span className="sr-only">Contrasena</span>
-                  <div className="flex items-center rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                  <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
                     <input
                       className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
                       onChange={(event) => setTeacherPassword(event.target.value)}
                       placeholder="Contrasena"
-                      type="password"
+                      type={showTeacherPassword ? "text" : "password"}
                       value={teacherPassword}
                     />
+                    <button
+                      aria-label={showTeacherPassword ? "Ocultar contrasena" : "Mostrar contrasena"}
+                      className="shrink-0 text-slate-300 transition hover:text-sky-400 focus-visible:text-[#1077e5] focus-visible:outline-none"
+                      onClick={() => setShowTeacherPassword((current) => !current)}
+                      type="button"
+                    >
+                      {showTeacherPassword ? (
+                        <EyeOff className="h-5 w-5" />
+                      ) : (
+                        <Eye className="h-5 w-5" />
+                      )}
+                    </button>
                     <Lock className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                   </div>
                   {fieldErrors.password ? <p className="mt-2 text-xs text-[#1077e5]">{fieldErrors.password}</p> : null}
@@ -329,7 +356,7 @@ function TeacherDashboard({ onLogout }: { onLogout: () => void }) {
         </header>
 
         <section className="grid gap-4 md:grid-cols-3">
-          <DashboardCard icon={Radio} label="Estado" value="Escuchando clase" />
+          <DashboardCard icon={BookOpen} label="Estado" value="Escuchando clase" />
           <DashboardCard icon={BookOpen} label="Objetivo detectado" value="Comprension lectora" />
           <DashboardCard icon={Users} label="Estudiantes" value="24 conectados" />
         </section>
@@ -398,7 +425,7 @@ function DashboardCard({
   label,
   value
 }: {
-  icon: typeof Radio;
+  icon: LucideIcon;
   label: string;
   value: string;
 }) {
