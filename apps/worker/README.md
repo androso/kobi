@@ -16,4 +16,5 @@ Node/TS background worker (Railway/Fly). Queue: pg-boss on Postgres — no extra
 - Writes: `segments.lesson_state`, verified `activities`, `session_activity_candidates`, and later `assignments` variants after teacher approval
 - Uses: `packages/ai-core` for model routing, `packages/curriculum` for retrieval, `packages/activities` for manifest schema, verifier, and SDK contracts
 
-Status: placeholder only — no tooling installed yet.
+Status: transcription, lesson-state building, and curriculum retrieval jobs are wired.
+Pre-generation, verification, and variant making still need Area C/E implementation.

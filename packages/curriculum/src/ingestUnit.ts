@@ -11,6 +11,7 @@ export async function ingestUnit(
   source: TextbookUnitSource,
 ): Promise<{ inserted: number }> {
   const chunks = chunkTextbookUnit(source);
+  assertUniqueObjectiveCodes(chunks.map((chunk) => chunk.objective_code));
 
   const rows = await Promise.all(
     chunks.map(async (chunk) => ({
@@ -25,4 +26,16 @@ export async function ingestUnit(
   }
 
   return { inserted: rows.length };
+}
+
+function assertUniqueObjectiveCodes(objectiveCodes: string[]): void {
+  const seen = new Set<string>();
+
+  for (const objectiveCode of objectiveCodes) {
+    if (seen.has(objectiveCode)) {
+      throw new Error(`ingestUnit: duplicate objective_code ${objectiveCode}`);
+    }
+
+    seen.add(objectiveCode);
+  }
 }
