@@ -1,0 +1,7 @@
+interface:
+  display_name: "Plan Review"
+  short_description: "Critique a feature plan with specialist Codex reviewers before implementation."
+  default_prompt: "$plan-review docs/feature-plan.md"
+
+policy:
+  allow_implicit_invocation: false

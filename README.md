@@ -21,7 +21,7 @@ kobi/
 │  ├─ db/                    # Supabase schema/migrations + shared TS types (7-8 tables)
 │  ├─ ai-core/                # model routing: transcription/lesson-state/planner/verifier/variant models
 │  ├─ curriculum/            # ingestion, chunking, embedding, pgvector retrieval (Area B)
-│  ├─ activities/            # JSON schema + validator + generic player + verifier rubric (Area C — shared by web + worker)
+│  ├─ activities/            # artifact manifest schema + verifier + sandbox SDK (Area C — shared by web + worker)
 │  └─ evals/                 # eval harness/runner code
 ├─ prompts/                  # per-stage prompt/rubric text, tuned without redeploying ai-core
 ├─ content/                  # pre-ingested textbook unit + 5 hand-seeded activities
@@ -35,7 +35,7 @@ kobi/
 |---|---|---|
 | A. Listening & Understanding | Isaac | mic audio → rolling `lesson_state` |
 | B. Curriculum & Retrieval | Isaac | textbook + `lesson_state` → matching objectives/chunks |
-| C. Activity Generation & Quality | Androso | `lesson_state` + curriculum + repository → 3 verified candidate activities |
+| C. Activity Generation & Quality | Androso | `lesson_state` + curriculum + repository → 3 verified candidate `ActivityArtifact`s |
 | D. Teacher Experience | Mauricio | approval flow, evidence UI, session report |
 | E. Student Experience & Activity Engine | Mauricio | activity player, hints, results |
 | F. Platform & Data Backbone | Androso | auth, storage, realtime, background jobs |
@@ -52,8 +52,8 @@ pnpm dev
 
 ## Contracts
 
-Agree these three JSON shapes first, then build in parallel — see [`docs/contracts.md`](docs/contracts.md):
+Agree these shared contracts first, then build in parallel — see [`docs/contracts.md`](docs/contracts.md):
 
 1. `lesson_state`
-2. Activity (JSON, schema-validated)
+2. `ActivityArtifact` (verified HTML bundle + manifest)
 3. Telemetry event
