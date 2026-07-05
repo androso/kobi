@@ -24,11 +24,10 @@ The manual-fallback path (D6) produces this exact same shape via `lessonStateFro
 
 ## 2. Activity
 
-Produced by the planner/generator, checked by the verifier, stored in `activities` (the repository). **Owned by Androso (Area C)** — the shape, schema, and validator are his design call, not prescribed here. The example below is the reference shape from the original product spec, kept as a starting point only.
+Produced by the planner/generator, checked by the verifier, stored in `activities` (the repository). Per the revised D2, an activity is **a generated code artifact + a manifest**, not a plain JSON shape: `activities.bundle_ref` points at the code artifact (the mini-app students actually play, in a sandboxed iframe), and `activities.manifest` (jsonb) is the schema-validated contract — curriculum tags, answer key, hints, `est_minutes`, variants. **Owned by Androso (Area C)** — the manifest's internal shape, the validator, and the sandbox/SDK are his design call, not prescribed here. The example below (now read as one possible `manifest` shape, paired with whatever `bundle_ref` it validates) is the reference shape from the original product spec, kept as a starting point only.
 
 ```json
 {
-  "type": "vocab_cloze",
   "title": "Vocabulario en contexto: La noticia",
   "curriculum": { "grade": 7, "subject": "lenguaje", "unit": "U4", "objective": "L7.4.2" },
   "est_minutes": 6,
