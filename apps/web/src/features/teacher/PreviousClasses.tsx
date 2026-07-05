@@ -13,7 +13,7 @@ import {
   Pause,
   Volume2,
   VolumeX,
-  MoreHorizontal,
+  Sparkles,
   ChevronRight
 } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
@@ -108,6 +108,15 @@ export function PreviousClasses() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [playProgress, setPlayProgress] = useState(30);
+  const [playbackRate, setPlaybackRate] = useState(1);
+
+  const PLAYBACK_RATES = [1, 1.25, 1.5, 2, 0.5];
+  function cyclePlaybackRate() {
+    setPlaybackRate((rate) => {
+      const idx = PLAYBACK_RATES.indexOf(rate);
+      return PLAYBACK_RATES[(idx + 1) % PLAYBACK_RATES.length];
+    });
+  }
 
   const filteredSessions = PREVIOUS_SESSIONS.filter(
     (session) =>
@@ -320,83 +329,84 @@ export function PreviousClasses() {
 
             {/* Split content container */}
             <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
-              
-              {/* Left Column (Player Card & Summary) - ~45% width */}
-              <div className="w-full md:w-[45%] p-6 flex flex-col gap-5 overflow-y-auto custom-scrollbar border-r border-slate-200">
-                
-                {/* Audio Player Simulated Card */}
-                <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm flex flex-col gap-4">
-                  <div className="flex items-center gap-4">
-                    <div className="w-11 h-11 rounded-full bg-[#004ac6]/10 flex items-center justify-center text-[#004ac6] shrink-0">
-                      <Mic className="w-5 h-5 text-[#004ac6]" />
-                    </div>
+
+              {/* Left Column (Recording bubble & AI summary) - ~45% width */}
+              <div className="w-full md:w-[45%] p-6 md:p-8 flex flex-col gap-5 overflow-y-auto custom-scrollbar border-r border-slate-200">
+
+                {/* Recording "message bubble" with inline player */}
+                <div className="flex gap-3 items-start">
+                 
+                  <div className="flex-1 bg-slate-100 rounded-3xl rounded-tl-md p-5 flex flex-col gap-4">
                     <div>
                       <h4 className="font-bold text-slate-800 text-sm leading-tight">Clase finalizada</h4>
-                      <p className="text-[11px] text-slate-400 mt-0.5 font-semibold">Sra. Henderson • {selectedSession.duration}</p>
+                      <p className="text-xs text-slate-500 mt-0.5 font-medium">
+                        Sra. Henderson · {selectedSession.duration}
+                      </p>
                     </div>
-                  </div>
 
-                  {/* Player Controls */}
-                  <div className="bg-slate-50 rounded-2xl p-4 flex flex-col gap-3">
+                    {/* Inline player row */}
                     <div className="flex items-center gap-3">
-                      <button 
+                      <button
                         onClick={() => setIsPlaying(!isPlaying)}
-                        className="w-9 h-9 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-[#004ac6] hover:bg-slate-100 transition active:scale-90"
+                        className="text-violet-600 hover:text-violet-700 transition active:scale-90 shrink-0"
+                        title={isPlaying ? "Pausar" : "Reproducir"}
                       >
-                        {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
+                        {isPlaying ? <Pause className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current" />}
                       </button>
-                      <input 
-                        type="range" 
-                        className="flex-1 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#004ac6]"
-                        min="0" 
-                        max="100" 
+                      <input
+                        type="range"
+                        className="flex-1 h-1.5 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-white"
+                        min="0"
+                        max="100"
                         value={playProgress}
                         onChange={(e) => setPlayProgress(Number(e.target.value))}
                       />
-                      <span className="text-[11px] font-bold text-slate-500 tabular-nums">
-                        {isPlaying ? "0:18" : "0:00"}
+                      <span className="text-xs font-bold text-slate-500 tabular-nums shrink-0">
+                        {selectedSession.duration}
                       </span>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-1 text-slate-400 border-t border-slate-100">
-                      <button 
+                      <button
                         onClick={() => setIsMuted(!isMuted)}
-                        className="hover:text-slate-600 transition"
+                        className="text-slate-400 hover:text-slate-600 transition shrink-0"
+                        title={isMuted ? "Activar sonido" : "Silenciar"}
                       >
                         {isMuted ? <VolumeX className="w-4 h-4 text-red-500" /> : <Volume2 className="w-4 h-4" />}
                       </button>
-                      <span className="text-[11px] font-bold text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-lg">
-                        1x
-                      </span>
-                      <button className="hover:text-slate-600 transition">
-                        <MoreHorizontal className="w-4 h-4" />
+                      <button
+                        onClick={cyclePlaybackRate}
+                        className="text-xs font-bold text-slate-500 hover:text-slate-700 transition shrink-0 tabular-nums w-10 text-right"
+                        title="Cambiar velocidad"
+                      >
+                        {playbackRate}x
                       </button>
                     </div>
                   </div>
                 </div>
 
-                {/* Summary Card */}
-                <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col gap-4">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                {/* AI Summary Card */}
+                <div className="ml-[52px] bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col gap-4">
+                  <div className="flex items-center gap-2">
                     <span className="font-bold text-slate-800 text-sm">Resumen de clase</span>
-                    <span className="text-[10px] font-bold text-violet-600 uppercase tracking-wide">Potenciado por Kobi AI ✨</span>
+                    <span className="inline-flex items-center gap-1 font-semibold text-violet-600 text-sm">
+                      Potenciado por Kobi AI
+                      <Sparkles className="w-3.5 h-3.5 text-violet-600 fill-violet-600" />
+                    </span>
                   </div>
 
                   <ul className="space-y-3">
                     {selectedSession.summaryPoints.map((point, idx) => (
-                      <li key={idx} className="flex gap-2.5 text-xs text-slate-600 leading-relaxed font-medium">
-                        <span className="w-1.5 h-1.5 rounded-full bg-violet-500 mt-1.5 shrink-0" />
+                      <li key={idx} className="flex gap-2.5 text-[13px] text-slate-600 leading-relaxed">
+                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-2 shrink-0" />
                         <span>{point}</span>
                       </li>
                     ))}
                   </ul>
 
-                  <div className="mt-2 border-t border-slate-100 pt-4">
-                    <h5 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-3">Próximos pasos</h5>
+                  <div className="mt-1">
+                    <h5 className="font-bold text-slate-800 text-sm mb-3">Próximos pasos</h5>
                     <ul className="space-y-2.5">
                       {selectedSession.nextSteps.map((step, idx) => (
-                        <li key={idx} className="flex gap-2.5 text-xs text-slate-600 leading-relaxed font-medium">
-                          <span className="w-1.5 h-1.5 rounded-full bg-violet-400 mt-1.5 shrink-0" />
+                        <li key={idx} className="flex gap-2.5 text-[13px] text-slate-600 leading-relaxed">
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-2 shrink-0" />
                           <span>{step}</span>
                         </li>
                       ))}
@@ -406,35 +416,41 @@ export function PreviousClasses() {
 
               </div>
 
-              {/* Right Column (Transcript Details) - ~55% width */}
+              {/* Right Column (Transcript) - ~55% width */}
               <div className="w-full md:w-[55%] bg-white p-6 md:p-8 flex flex-col min-h-0">
-                
-                {/* Transcript Header Box */}
-                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4.5 mb-6 flex items-center justify-between shrink-0">
+
+                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 shrink-0">
+                  Transcripción de clase
+                </h4>
+
+                {/* Session header card */}
+                <div className="border border-slate-200 rounded-2xl p-4 mb-6 flex items-center justify-between shrink-0">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-[#004ac6]/10 flex items-center justify-center text-[#004ac6]">
-                      <Mic className="w-4.5 h-4.5" />
+                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 shrink-0">
+                      <Mic className="w-5 h-5" />
                     </div>
                     <div>
-                      <h5 className="font-bold text-slate-800 text-sm leading-tight">{selectedSession.title}</h5>
-                      <p className="text-[11px] text-slate-400 font-semibold mt-0.5">Grabación completa • {selectedSession.duration}</p>
+                      <h5 className="font-bold text-slate-900 text-sm leading-tight">{selectedSession.title}</h5>
+                      <p className="text-xs text-slate-400 font-medium mt-0.5">
+                        Sra. Henderson · {selectedSession.duration}
+                      </p>
                     </div>
                   </div>
-                  <span className="text-[11px] font-bold text-slate-500 tabular-nums">
+                  <span className="text-xs font-medium text-slate-400 tabular-nums shrink-0">
                     {selectedSession.date}
                   </span>
                 </div>
 
                 {/* Transcript dialogue listing */}
-                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-4">
+                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-5">
                   {selectedSession.transcript.map((line, idx) => (
                     <div key={idx} className="flex gap-4 items-start">
-                      <span className="text-xs font-semibold text-slate-400 tabular-nums shrink-0 mt-0.5 w-10">
+                      <span className="text-sm text-slate-400 tabular-nums shrink-0 mt-0.5 w-9">
                         {line.time}
                       </span>
-                      <p className="text-slate-700 text-[15px] leading-relaxed">
-                        <span className="font-bold text-slate-800 mr-2">{line.speaker}:</span>
-                        {line.text}
+                      <p className="text-[15px] leading-relaxed">
+                        <span className="font-bold text-slate-900">{line.speaker}:</span>{" "}
+                        <span className="text-slate-600">{line.text}</span>
                       </p>
                     </div>
                   ))}
