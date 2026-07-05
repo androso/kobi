@@ -331,12 +331,14 @@ export function PreviousClasses() {
               ) : (
                 <div className="space-y-4">
                   {selectedSession.transcript.map((line, idx) => (
-                    <div key={idx} className="flex gap-3 text-xs leading-relaxed">
-                      <span className="text-[10px] font-bold text-slate-400 tabular-nums shrink-0 mt-0.5">{line.time}</span>
-                      <div>
+                    <div key={idx} className="flex gap-4 items-start">
+                      <span className="text-xs font-semibold text-slate-400 tabular-nums shrink-0 mt-0.5 w-10">
+                        {line.time}
+                      </span>
+                      <p className="text-slate-700 text-[15px] leading-relaxed">
                         <span className="font-bold text-[#004ac6] mr-1.5">{line.speaker}:</span>
-                        <span className="text-slate-700 font-medium">{line.text}</span>
-                      </div>
+                        {line.text}
+                      </p>
                     </div>
                   ))}
                 </div>
