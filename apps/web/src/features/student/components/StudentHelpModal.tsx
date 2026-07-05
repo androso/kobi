@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { LifeBuoy, X } from "lucide-react";
+import { Check, GraduationCap } from "lucide-react";
 
 interface StudentHelpModalProps {
   open: boolean;
@@ -14,11 +14,11 @@ const tips = [
   },
   {
     title: "Responde el quiz",
-    body: "Selecciona una respuesta, avanza con Siguiente y entrega al final. Usa las pistas si te atoras.",
+    body: "Selecciona una respuesta, avanza con Siguiente y entrega al final.",
   },
   {
     title: "Revisa tu progreso",
-    body: "En la sección Progreso ves tu precisión, dominio y actividades completadas.",
+    body: "En Progreso ves tu precisión, dominio y actividades completadas.",
   },
 ];
 
@@ -42,54 +42,52 @@ export function StudentHelpModal({ open, onClose, classCode }: StudentHelpModalP
         onClick={onClose}
       />
 
-      <div
-        aria-labelledby="student-help-title"
-        aria-modal="true"
-        className="relative z-10 w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl duration-200 animate-in fade-in zoom-in-95"
-        role="dialog"
-      >
-        <button
-          aria-label="Cerrar ayuda"
-          className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-          onClick={onClose}
-          type="button"
+      {/* Gradient-bordered card */}
+      <div className="relative z-10 w-full max-w-sm rounded-[28px] bg-gradient-to-br from-amber-300 via-fuchsia-400 to-sky-400 p-[3px] shadow-2xl duration-200 animate-in fade-in zoom-in-95">
+        <div
+          aria-labelledby="student-help-title"
+          aria-modal="true"
+          className="rounded-[25px] bg-white p-6"
+          role="dialog"
         >
-          <X className="h-4 w-4" />
-        </button>
-
-        <div className="flex items-center gap-3">
-          <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#e3f3ee] text-[#2f9e8f]">
-            <LifeBuoy className="h-6 w-6" strokeWidth={1.75} />
+          <div className="flex items-start justify-between">
+            <GraduationCap className="h-7 w-7 text-[#2f9e8f]" strokeWidth={2} />
+            <span className="rounded-full bg-[#eef2ff] px-3 py-1 text-xs font-semibold text-[#5b5bd6]">
+              Ayuda
+            </span>
           </div>
-          <div>
-            <h2 className="text-lg font-bold text-[#2b2b2b]" id="student-help-title">
-              Centro de ayuda
-            </h2>
-            <p className="text-sm text-[#8a8f98]">Cómo usar tu panel de estudiante</p>
+
+          <h2 className="mt-4 text-lg font-bold text-[#2b2b2b]" id="student-help-title">
+            Centro de ayuda
+          </h2>
+          <p className="mt-1 text-sm text-[#8a8f98]">Cómo usar tu panel de estudiante.</p>
+
+          <div className="mt-6">
+            <p className="text-4xl font-bold tracking-tight text-[#2b2b2b]">
+              {classCode} <span className="text-sm font-normal text-[#8a8f98]">tu código de clase</span>
+            </p>
           </div>
+
+          <button
+            className="mt-5 w-full rounded-xl bg-[#1a1a1a] py-3 text-sm font-semibold text-white transition hover:bg-black"
+            onClick={onClose}
+            type="button"
+          >
+            Entendido
+          </button>
+
+          <ul className="mt-6 space-y-3 border-t border-[#f0ede7] pt-5">
+            {tips.map((tip) => (
+              <li className="flex items-start gap-2.5" key={tip.title}>
+                <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" strokeWidth={3} />
+                <div>
+                  <p className="text-sm font-medium text-[#5b6270]">{tip.title}</p>
+                  <p className="text-xs text-[#a2a7af]">{tip.body}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
         </div>
-
-        <ul className="mt-5 space-y-4">
-          {tips.map((tip) => (
-            <li key={tip.title}>
-              <p className="text-sm font-semibold text-[#2b2b2b]">{tip.title}</p>
-              <p className="text-sm text-[#8a8f98]">{tip.body}</p>
-            </li>
-          ))}
-        </ul>
-
-        <div className="mt-6 rounded-2xl bg-[#f7f5f0] px-4 py-3 text-sm text-[#5b6270]">
-          Tu código de clase es <span className="font-bold text-[#2b2b2b]">{classCode}</span>. Si tienes
-          problemas, avísale a tu profesor.
-        </div>
-
-        <button
-          className="mt-6 w-full rounded-xl bg-[#2f9e8f] py-2.5 text-sm font-semibold text-white transition hover:bg-[#278577]"
-          onClick={onClose}
-          type="button"
-        >
-          Entendido
-        </button>
       </div>
     </div>
   );
