@@ -135,6 +135,36 @@ describe("evaluateCheckpoint job", () => {
     });
   });
 
+  it("uses session class metadata for curriculum retrieval when job data omits it", async () => {
+    const supabase = fakeSupabase({
+      lastReadyCheckpointAt: null,
+      segments: [lessonState],
+      classContext: { grade: 7, subject: "matematicas", unit: "geometria-triangulos-cuadrilateros" },
+    });
+    const boss = fakeBoss();
+    const retrieverInputs: Array<{ queryText: string; grade: number; subject: string; unit?: string }> = [];
+
+    await runEvaluateCheckpointJob(
+      supabase.client,
+      boss.instance,
+      { sessionId: "session-1" },
+      {
+        evaluator: async () => ({ ready: true, reason: "Suficiente material.", summary: "Listo." }),
+        curriculumRetriever: async (_supabase, input) => {
+          retrieverInputs.push(input);
+          return curriculumMatches;
+        },
+      },
+    );
+
+    expect(retrieverInputs[0]).toMatchObject({
+      grade: 7,
+      subject: "matematicas",
+      unit: "geometria-triangulos-cuadrilateros",
+    });
+  });
+
+
   it("only loads segments created after the last ready checkpoint", async () => {
     const supabase = fakeSupabase({ lastReadyCheckpointAt: "2026-01-01T00:05:00Z", segments: [lessonState] });
     const boss = fakeBoss();
@@ -163,13 +193,15 @@ describe("evaluateCheckpoint job", () => {
       },
     );
 
-    expect(supabase.tablesRead).toEqual(["checkpoints", "segments", "checkpoints"]);
+    expect(supabase.tablesRead).toEqual(["checkpoints", "segments", "checkpoints", "sessions"]);
+    expect(supabase.tablesRead).not.toContain("audio_chunks");
   });
 });
 
 interface FakeSupabaseOptions {
   lastReadyCheckpointAt: string | null;
   segments: LessonState[];
+  classContext?: { grade: number; subject: string; unit: string } | null;
 }
 
 function fakeSupabase(options: FakeSupabaseOptions) {
@@ -185,6 +217,9 @@ function fakeSupabase(options: FakeSupabaseOptions) {
       if (table === "segments") {
         return new SegmentsQuery(options.segments, state);
       }
+      if (table === "sessions") {
+        return new SessionsQuery(options.classContext ?? null);
+      }
       throw new Error(`fakeSupabase: unexpected table ${table}`);
     },
   } as unknown as SupabaseClient;
@@ -199,6 +234,25 @@ function fakeSupabase(options: FakeSupabaseOptions) {
       return state.tablesRead;
     },
   };
+}
+
+class SessionsQuery {
+  constructor(private readonly classContext: FakeSupabaseOptions["classContext"]) {}
+
+  select() {
+    return this;
+  }
+
+  eq() {
+    return this;
+  }
+
+  maybeSingle() {
+    return Promise.resolve({
+      data: { classes: this.classContext },
+      error: null,
+    });
+  }
 }
 
 class CheckpointsQuery {
