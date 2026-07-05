@@ -7,8 +7,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "db:generate": "cross-env NODE_OPTIONS=--require=tsx/cjs drizzle-kit generate",
-    "db:migrate": "tsx src/migrate.ts",
-    "db:test-connection": "tsx scripts/test-connection.ts"
+    "db:migrate": "tsx src/migrate.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.36.4",
