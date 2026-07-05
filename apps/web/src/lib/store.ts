@@ -21,6 +21,14 @@ interface StudentJoinResult {
   error?: string;
 }
 
+interface JoinedClassRow {
+  student_id: string;
+  class_id: string;
+  class_name: string;
+  join_code: string;
+  display_name: string;
+}
+
 interface AuthState {
   status: "initializing" | "authenticated" | "unauthenticated";
   user: UserProfile | null;
@@ -161,33 +169,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const normalizedCode = code.trim().toUpperCase();
     const normalizedName = studentName.trim();
 
-    const { data: classRow, error: classError } = await supabase
-      .from("classes")
-      .select("id,name,join_code")
-      .eq("join_code", normalizedCode)
-      .maybeSingle();
-
-    if (classError) return { error: classError.message };
-    if (!classRow) return { error: "No encontramos una clase con ese codigo." };
-
-    const { data: studentRow, error: studentError } = await supabase
-      .from("students")
-      .insert({
-        class_id: classRow.id,
-        display_name: normalizedName,
+    const { data: joinedClass, error: joinError } = await supabase
+      .rpc("join_class_by_code", {
+        input_code: normalizedCode,
+        input_display_name: normalizedName,
       })
-      .select("id,class_id,display_name")
       .single();
 
-    if (studentError) return { error: studentError.message };
+    if (joinError) {
+      if (joinError.code === "P0002") return { error: "No encontramos una clase con ese codigo." };
+      return { error: joinError.message };
+    }
+
+    const joined = joinedClass as JoinedClassRow;
 
     const profile: UserProfile = {
       role: "student",
-      studentId: studentRow.id,
-      classId: studentRow.class_id,
-      className: classRow.name,
-      joinCode: classRow.join_code,
-      studentName: studentRow.display_name,
+      studentId: joined.student_id,
+      classId: joined.class_id,
+      className: joined.class_name,
+      joinCode: joined.join_code,
+      studentName: joined.display_name,
     };
 
     await supabase.auth.signOut();
