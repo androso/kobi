@@ -1,18 +1,13 @@
-import { ChevronRight, Users, Leaf, Sigma, BookOpen, PenLine } from "lucide-react";
+import { useState, type MouseEvent } from "react";
+import { Check, ChevronRight, Copy, Users, Leaf, Sigma, BookOpen, PenLine } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { useClassStore } from "../../../lib/store";
+import { useClassStore, type ClassItem } from "../../../lib/store";
 
-interface ClassItem {
-  id?: string;
-  title: string;
-  focus: string;
-  students: string;
-  topics: readonly string[];
-  accent: string;
-  tone: string;
-  badge?: string;
-  icon: "leaf" | "sigma" | "book" | "pen";
-  image?: string;
+interface ClassCardProps {
+  item: ClassItem;
+  viewMode: "grid" | "list";
+  index?: number;
+  onShareCode?: (item: ClassItem) => void;
 }
 
 const iconMap = {
@@ -61,7 +56,8 @@ const themeMap = {
   }
 };
 
-export function ClassCard({ item, viewMode, index = 0 }: { item: ClassItem; viewMode: "grid" | "list"; index?: number }) {
+export function ClassCard({ item, viewMode, index = 0, onShareCode }: ClassCardProps) {
+  const [copied, setCopied] = useState(false);
   const Icon = iconMap[item.icon] || PenLine;
   const isList = viewMode === "list";
   const theme = themeMap[item.icon] || themeMap.pen;
@@ -71,6 +67,13 @@ export function ClassCard({ item, viewMode, index = 0 }: { item: ClassItem; view
   function handleOpenMonitor() {
     if (item.id) startMonitoring(item.id);
     navigate("/teacher/monitor");
+  }
+
+  async function handleCopyCode(event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    await navigator.clipboard?.writeText(item.joinCode);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1400);
   }
 
   // Stagger animation delay classes
@@ -120,10 +123,32 @@ export function ClassCard({ item, viewMode, index = 0 }: { item: ClassItem; view
         <div>
           <h4 className="text-lg font-bold tracking-tight text-slate-900 group-hover:text-[#004ac6] transition-colors">{item.title}</h4>
           
-          <div className="mt-1 flex items-center gap-1.5">
-            <span className={`w-1.5 h-1.5 rounded-full ${theme.dot}`} />
-            <p className={`text-[11px] font-bold uppercase tracking-wider ${item.accent}`}>{item.focus}</p>
-          </div>
+        <div className="mt-1 flex items-center gap-1.5">
+          <span className={`w-1.5 h-1.5 rounded-full ${theme.dot}`} />
+          <p className={`text-[11px] font-bold uppercase tracking-wider ${item.accent}`}>{item.focus}</p>
+        </div>
+
+          <button
+            aria-label={`Copiar codigo ${item.joinCode}`}
+            className="mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold uppercase tracking-wider text-slate-600 transition hover:border-[#004ac6]/30 hover:bg-blue-50 hover:text-[#004ac6]"
+            onClick={handleCopyCode}
+            type="button"
+          >
+            <span>Codigo {item.joinCode}</span>
+            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+          </button>
+          {onShareCode ? (
+            <button
+              className="ml-2 mt-4 inline-flex items-center gap-2 rounded-lg border border-[#004ac6]/20 bg-blue-50 px-3 py-2 text-xs font-bold uppercase tracking-wider text-[#004ac6] transition hover:bg-blue-100"
+              onClick={(event) => {
+                event.stopPropagation();
+                onShareCode(item);
+              }}
+              type="button"
+            >
+              Compartir
+            </button>
+          ) : null}
         </div>
 
         {/* Topics List */}

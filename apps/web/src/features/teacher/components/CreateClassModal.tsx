@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { X } from "lucide-react";
-import { useClassStore } from "../../../lib/store";
+import { useAuthStore, useClassStore } from "../../../lib/store";
 
 interface CreateClassModalProps {
   isOpen: boolean;
@@ -9,45 +9,54 @@ interface CreateClassModalProps {
 
 export function CreateClassModal({ isOpen, onClose }: CreateClassModalProps) {
   const addClass = useClassStore((state) => state.addClass);
+  const teacherId = useAuthStore((state) => state.user?.id);
 
   const [title, setTitle] = useState("");
-  const [focus, setFocus] = useState("");
-  const [studentCount, setStudentCount] = useState<number>(20);
-  const [topicsInput, setTopicsInput] = useState("");
-  const [subjectType, setSubjectType] = useState<"ciencias" | "matematicas" | "lengua" | "otro">("ciencias");
+  const [unit, setUnit] = useState("");
+  const [grade, setGrade] = useState<number>(7);
+  const [subject, setSubject] = useState<"lenguaje" | "ciencias" | "matematicas" | "sociales">("lenguaje");
+  const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
   const subjectOptions = [
+    { value: "lenguaje", label: "Lenguaje" },
     { value: "ciencias", label: "Ciencias" },
     { value: "matematicas", label: "Matemáticas" },
-    { value: "lengua", label: "Lengua" },
-    { value: "otro", label: "Otro" }
+    { value: "sociales", label: "Sociales" }
   ] as const;
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim() || !focus.trim()) return;
+    if (!title.trim() || !unit.trim() || !grade) return;
+    if (!teacherId) {
+      setError("Inicia sesion como docente antes de crear una clase.");
+      return;
+    }
 
-    const topics = topicsInput
-      .split(",")
-      .map((t) => t.trim())
-      .filter((t) => t.length > 0);
+    setIsSubmitting(true);
+    setError("");
 
-    addClass({
+    const result = await addClass({
       title,
-      focus,
-      studentCount,
-      topics: topics.length > 0 ? topics : ["General"],
-      subjectType,
-    });
+      unit,
+      grade,
+      subject,
+    }, teacherId);
+    setIsSubmitting(false);
+
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
 
     // Reset form and close
     setTitle("");
-    setFocus("");
-    setStudentCount(20);
-    setTopicsInput("");
-    setSubjectType("ciencias");
+    setUnit("");
+    setGrade(7);
+    setSubject("lenguaje");
+    setError("");
     onClose();
   }
 
@@ -105,6 +114,8 @@ export function CreateClassModal({ isOpen, onClose }: CreateClassModalProps) {
         {/* Right Column (Form Body) */}
         <div className="bg-[#f8f9fc] p-10 flex flex-col justify-center">
           <form onSubmit={handleSubmit} className="space-y-6">
+            {error ? <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">{error}</p> : null}
+
             {/* Nombre de la clase */}
             <div className="relative border-b border-slate-200 focus-within:border-[#004ac6] transition-colors pb-1">
               <label htmlFor="class-title" className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">
@@ -121,35 +132,52 @@ export function CreateClassModal({ isOpen, onClose }: CreateClassModalProps) {
               />
             </div>
 
-            {/* Enfoque principal */}
+            {/* Unidad */}
             <div className="relative border-b border-slate-200 focus-within:border-[#004ac6] transition-colors pb-1">
-              <label htmlFor="class-focus" className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">
-                Enfoque o tema principal *
+              <label htmlFor="class-unit" className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">
+                Unidad o tema principal *
               </label>
               <input
-                id="class-focus"
+                id="class-unit"
                 type="text"
                 required
                 className="w-full bg-transparent border-none outline-none py-1.5 text-base text-slate-800 placeholder:text-slate-400 placeholder:italic font-serif italic"
-                placeholder="Ej. Ecosistemas y energía"
-                value={focus}
-                onChange={(e) => setFocus(e.target.value)}
+                placeholder="Ej. La noticia y sus partes"
+                value={unit}
+                onChange={(e) => setUnit(e.target.value)}
               />
             </div>
 
-            {/* Materia / Categoría Chips */}
+            {/* Grado */}
+            <div className="relative border-b border-slate-200 focus-within:border-[#004ac6] transition-colors pb-1">
+              <label htmlFor="class-grade" className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">
+                Grado *
+              </label>
+              <input
+                id="class-grade"
+                type="number"
+                min={1}
+                max={12}
+                required
+                className="w-full bg-transparent border-none outline-none py-1.5 text-base text-slate-800 font-serif italic"
+                value={grade}
+                onChange={(e) => setGrade(Number(e.target.value))}
+              />
+            </div>
+
+            {/* Materia */}
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2.5">
-                Materia / Categoría *
+                Materia *
               </label>
               <div className="flex flex-wrap gap-2">
                 {subjectOptions.map((opt) => (
                   <button
                     key={opt.value}
                     type="button"
-                    onClick={() => setSubjectType(opt.value)}
+                    onClick={() => setSubject(opt.value)}
                     className={`px-4 py-2 text-xs font-semibold rounded-lg border transition active:scale-95 ${
-                      subjectType === opt.value
+                      subject === opt.value
                         ? "bg-slate-900 text-white border-slate-900"
                         : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
                     }`}
@@ -158,39 +186,6 @@ export function CreateClassModal({ isOpen, onClose }: CreateClassModalProps) {
                   </button>
                 ))}
               </div>
-            </div>
-
-            {/* Cantidad de Estudiantes */}
-            <div className="relative border-b border-slate-200 focus-within:border-[#004ac6] transition-colors pb-1">
-              <label htmlFor="class-students" className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">
-                N° de Estudiantes *
-              </label>
-              <input
-                id="class-students"
-                type="number"
-                min={1}
-                max={100}
-                required
-                className="w-full bg-transparent border-none outline-none py-1.5 text-base text-slate-800 font-serif italic"
-                value={studentCount}
-                onChange={(e) => setStudentCount(Number(e.target.value))}
-              />
-            </div>
-
-            {/* Temas (Separados por coma) */}
-            <div className="relative border-b border-slate-200 focus-within:border-[#004ac6] transition-colors pb-1">
-              <label htmlFor="class-topics" className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5 flex items-center justify-between">
-                <span>Temas clave</span>
-                <span className="text-[9px] lowercase font-normal text-slate-400">Separados por coma</span>
-              </label>
-              <textarea
-                id="class-topics"
-                rows={2}
-                className="w-full bg-transparent border-none outline-none py-1.5 text-base text-slate-800 placeholder:text-slate-400 placeholder:italic font-serif italic resize-none"
-                placeholder="Ej. Cadenas alimenticias, Fotosintesis"
-                value={topicsInput}
-                onChange={(e) => setTopicsInput(e.target.value)}
-              />
             </div>
 
             {/* Footer Actions */}
@@ -204,9 +199,10 @@ export function CreateClassModal({ isOpen, onClose }: CreateClassModalProps) {
               </button>
               <button
                 type="submit"
+                disabled={isSubmitting}
                 className="px-6 py-2.5 text-sm font-semibold text-white bg-[#10b981] hover:bg-[#059669] rounded-xl transition shadow-md shadow-emerald-500/10 flex items-center gap-1.5 active:scale-95"
               >
-                <span>Crear clase</span>
+                <span>{isSubmitting ? "Creando..." : "Crear clase"}</span>
                 <span className="text-base font-semibold">↗</span>
               </button>
             </div>

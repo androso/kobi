@@ -75,7 +75,7 @@ const contextMeta: Record<
 const helpTopics: HelpTopic[] = [
   {
     title: "Crear una clase",
-    description: "Abre el flujo de nueva clase para definir grado, enfoque y temas clave.",
+    description: "Abre el flujo de nueva clase para definir nombre, grado, materia y unidad.",
     icon: Sparkles,
     tags: ["clase", "crear", "sesión", "nueva"],
     contexts: ["dashboard", "repositories", "analytics"],
@@ -150,7 +150,7 @@ const helpTopics: HelpTopic[] = [
 const faqs: HelpFAQ[] = [
   {
     question: "¿Cómo inicio una nueva clase?",
-    answer: "Desde el panel docente, toca Nueva clase y completa el nombre, enfoque y temas clave. Kobi prepara el resto.",
+    answer: "Desde el panel docente, toca Nueva clase y completa el nombre, grado, materia y unidad. Kobi prepara el resto.",
     tags: ["clase", "crear", "nueva"],
   },
   {
