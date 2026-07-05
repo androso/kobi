@@ -3,7 +3,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type PgBoss from "pg-boss";
 import type { LessonState } from "@kobi/ai-core";
 import type { CurriculumMatch } from "@kobi/curriculum";
-import { runEvaluateCheckpointJob } from "./evaluateCheckpoint.job.js";
+import {
+  buildGenerateActivityArtifactsJobData,
+  runEvaluateCheckpointJob,
+} from "./evaluateCheckpoint.job.js";
 import { JOB_GENERATE_ACTIVITY_ARTIFACTS } from "../queue.js";
 
 const lessonState: LessonState = {
@@ -30,6 +33,20 @@ const curriculumMatches: CurriculumMatch[] = [
 ];
 
 describe("evaluateCheckpoint job", () => {
+  it("builds the Area C job payload from structured lesson state and curriculum matches only", () => {
+    expect(
+      buildGenerateActivityArtifactsJobData({
+        sessionId: "session-1",
+        lessonState,
+        curriculumMatches,
+      }),
+    ).toEqual({
+      sessionId: "session-1",
+      lessonState,
+      curriculumMatches,
+    });
+  });
+
   it("does nothing when there are no new segments since the last ready checkpoint", async () => {
     const supabase = fakeSupabase({ lastReadyCheckpointAt: "2026-01-01T00:00:00Z", segments: [] });
     const boss = fakeBoss();
@@ -81,6 +98,7 @@ describe("evaluateCheckpoint job", () => {
     const supabase = fakeSupabase({ lastReadyCheckpointAt: null, segments: [lessonState] });
     const boss = fakeBoss();
     let retrieverCalls = 0;
+    const retrieverInputs: Array<{ queryText: string; grade: number; subject: string; unit?: string }> = [];
 
     const result = await runEvaluateCheckpointJob(
       supabase.client,
@@ -88,8 +106,9 @@ describe("evaluateCheckpoint job", () => {
       { sessionId: "session-1" },
       {
         evaluator: async () => ({ ready: true, reason: "Suficiente material.", summary: "Se enseno la noticia." }),
-        curriculumRetriever: async () => {
+        curriculumRetriever: async (_supabase, input) => {
           retrieverCalls += 1;
+          retrieverInputs.push(input);
           return curriculumMatches;
         },
       },
@@ -97,6 +116,15 @@ describe("evaluateCheckpoint job", () => {
 
     expect(result).toEqual({ evaluated: true, ready: true, skippedReason: null });
     expect(retrieverCalls).toBe(1);
+    const retrieverInput = retrieverInputs[0];
+    expect(retrieverInput).toMatchObject({
+      grade: 7,
+      subject: "lenguaje",
+    });
+    expect(retrieverInput.queryText).toContain(lessonState.objective_guess);
+    expect(retrieverInput.queryText).toContain(lessonState.topic);
+    expect(retrieverInput.queryText).toContain("titular");
+    expect(retrieverInput.queryText).toContain(lessonState.transcript_summary);
     expect(supabase.insertedCheckpoints[0]).toMatchObject({ session_id: "session-1", ready: true });
     expect(boss.sent).toHaveLength(1);
     expect(boss.sent[0].name).toBe(JOB_GENERATE_ACTIVITY_ARTIFACTS);
@@ -106,6 +134,36 @@ describe("evaluateCheckpoint job", () => {
       curriculumMatches,
     });
   });
+
+  it("uses session class metadata for curriculum retrieval when job data omits it", async () => {
+    const supabase = fakeSupabase({
+      lastReadyCheckpointAt: null,
+      segments: [lessonState],
+      classContext: { grade: 7, subject: "matematicas", unit: "geometria-triangulos-cuadrilateros" },
+    });
+    const boss = fakeBoss();
+    const retrieverInputs: Array<{ queryText: string; grade: number; subject: string; unit?: string }> = [];
+
+    await runEvaluateCheckpointJob(
+      supabase.client,
+      boss.instance,
+      { sessionId: "session-1" },
+      {
+        evaluator: async () => ({ ready: true, reason: "Suficiente material.", summary: "Listo." }),
+        curriculumRetriever: async (_supabase, input) => {
+          retrieverInputs.push(input);
+          return curriculumMatches;
+        },
+      },
+    );
+
+    expect(retrieverInputs[0]).toMatchObject({
+      grade: 7,
+      subject: "matematicas",
+      unit: "geometria-triangulos-cuadrilateros",
+    });
+  });
+
 
   it("only loads segments created after the last ready checkpoint", async () => {
     const supabase = fakeSupabase({ lastReadyCheckpointAt: "2026-01-01T00:05:00Z", segments: [lessonState] });
@@ -120,24 +178,47 @@ describe("evaluateCheckpoint job", () => {
 
     expect(supabase.segmentsGtValue).toBe("2026-01-01T00:05:00Z");
   });
+
+  it("never queries raw audio chunks while evaluating the checkpoint handoff", async () => {
+    const supabase = fakeSupabase({ lastReadyCheckpointAt: null, segments: [lessonState] });
+    const boss = fakeBoss();
+
+    await runEvaluateCheckpointJob(
+      supabase.client,
+      boss.instance,
+      { sessionId: "session-1" },
+      {
+        evaluator: async () => ({ ready: true, reason: "Suficiente material.", summary: "Se enseno la noticia." }),
+        curriculumRetriever: async () => curriculumMatches,
+      },
+    );
+
+    expect(supabase.tablesRead).toEqual(["checkpoints", "segments", "checkpoints", "sessions"]);
+    expect(supabase.tablesRead).not.toContain("audio_chunks");
+  });
 });
 
 interface FakeSupabaseOptions {
   lastReadyCheckpointAt: string | null;
   segments: LessonState[];
+  classContext?: { grade: number; subject: string; unit: string } | null;
 }
 
 function fakeSupabase(options: FakeSupabaseOptions) {
   const insertedCheckpoints: unknown[] = [];
-  const state = { segmentsGtValue: null as string | null };
+  const state = { segmentsGtValue: null as string | null, tablesRead: [] as string[] };
 
   const client = {
     from(table: string) {
+      state.tablesRead.push(table);
       if (table === "checkpoints") {
         return new CheckpointsQuery(options.lastReadyCheckpointAt, insertedCheckpoints);
       }
       if (table === "segments") {
         return new SegmentsQuery(options.segments, state);
+      }
+      if (table === "sessions") {
+        return new SessionsQuery(options.classContext ?? null);
       }
       throw new Error(`fakeSupabase: unexpected table ${table}`);
     },
@@ -149,7 +230,29 @@ function fakeSupabase(options: FakeSupabaseOptions) {
     get segmentsGtValue() {
       return state.segmentsGtValue;
     },
+    get tablesRead() {
+      return state.tablesRead;
+    },
   };
+}
+
+class SessionsQuery {
+  constructor(private readonly classContext: FakeSupabaseOptions["classContext"]) {}
+
+  select() {
+    return this;
+  }
+
+  eq() {
+    return this;
+  }
+
+  maybeSingle() {
+    return Promise.resolve({
+      data: { classes: this.classContext },
+      error: null,
+    });
+  }
 }
 
 class CheckpointsQuery {

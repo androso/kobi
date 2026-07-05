@@ -1,6 +1,7 @@
 const rawApiUrl = import.meta.env.VITE_KOBI_API_URL?.replace(/\/$/, "") ?? "";
 const API_URL = rawApiUrl || (import.meta.env.DEV ? "http://localhost:8787" : "");
 const DEMO_CLASS_ID = import.meta.env.VITE_KOBI_DEMO_CLASS_ID ?? "";
+const PROJECT_MODE = import.meta.env.VITE_KOBI_PROJECT_MODE ?? "live";
 
 function logAudioApi(message: string, details?: Record<string, unknown>) {
   if (!import.meta.env.DEV) return;
@@ -29,6 +30,15 @@ export interface SubmitManualLessonStateInput {
   objective?: string;
 }
 
+export interface SubmitDemoTranscriptChunkInput {
+  sessionId: string;
+  chunkIndex: number;
+}
+
+export interface SubmitDemoTranscriptInput {
+  sessionId: string;
+}
+
 async function parseApiResponse<T>(response: Response): Promise<T> {
   const body = (await response.json().catch(() => ({}))) as { error?: string };
   if (!response.ok) {
@@ -39,6 +49,10 @@ async function parseApiResponse<T>(response: Response): Promise<T> {
 
 export function isAudioApiConfigured() {
   return API_URL.length > 0;
+}
+
+export function isDemoProjectMode() {
+  return PROJECT_MODE === "demo";
 }
 
 export function resolveBackendClassId(classId: string) {
@@ -111,6 +125,51 @@ export async function uploadAudioChunk({
     audioChunkId: payload.audioChunkId,
   });
   return payload;
+}
+
+export async function submitDemoTranscriptChunk({
+  sessionId,
+  chunkIndex,
+}: SubmitDemoTranscriptChunkInput) {
+  if (!isAudioApiConfigured()) {
+    throw new Error("VITE_KOBI_API_URL is not configured");
+  }
+
+  logAudioApi("submitting demo transcript chunk", {
+    url: `${API_URL}/api/sessions/${sessionId}/demo-transcript-chunks`,
+    sessionId,
+    chunkIndex,
+  });
+
+  const response = await fetch(`${API_URL}/api/sessions/${sessionId}/demo-transcript-chunks`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ chunk_index: chunkIndex }),
+  });
+
+  const payload = await parseApiResponse<{
+    audioChunkId: string;
+    chunkIndex: number;
+    totalChunks: number;
+    done: boolean;
+  }>(response);
+  logAudioApi("demo transcript chunk accepted", payload);
+  return payload;
+}
+
+export async function submitDemoTranscript({ sessionId }: SubmitDemoTranscriptInput) {
+  const accepted: Array<{
+    audioChunkId: string;
+    chunkIndex: number;
+    totalChunks: number;
+    done: boolean;
+  }> = [];
+
+  for (let chunkIndex = 0; ; chunkIndex += 1) {
+    const result = await submitDemoTranscriptChunk({ sessionId, chunkIndex });
+    accepted.push(result);
+    if (result.done) return accepted;
+  }
 }
 
 export async function submitManualLessonState({

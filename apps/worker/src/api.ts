@@ -2,8 +2,10 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { Readable } from "node:stream";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { lessonStateFromManualEntry } from "@kobi/ai-core";
+import { embedText } from "@kobi/curriculum";
 import type PgBoss from "pg-boss";
-import { JOB_TRANSCRIBE_CHUNK } from "./queue.js";
+import { demoTranscriptChunks, DEMO_TRANSCRIPT_TICK_MS } from "./demoTranscript.js";
+import { JOB_BUILD_LESSON_STATE, JOB_TRANSCRIBE_CHUNK } from "./queue.js";
 
 interface ApiServerOptions {
   supabase: SupabaseClient;
@@ -11,6 +13,15 @@ interface ApiServerOptions {
 }
 
 const DEFAULT_AUDIO_BUCKET = "audio-chunks";
+const DEMO_MODE = "demo";
+const DEMO_CURRICULUM = {
+  grade: 7,
+  subject: "matematicas",
+  unit: "geometria-triangulos-cuadrilateros",
+  objective_code: "M7.GEO.1",
+  text:
+    "Conozcamos los triangulos y cuadrilateros: identifica segmentos, lados, vertices y angulos en figuras planas. Clasifica figuras con tres lados como triangulos y figuras con cuatro lados como cuadrilateros, usando el conteo de lados, vertices y angulos.",
+};
 
 function logApi(message: string, details?: Record<string, unknown>) {
   console.info(`[Kobi API] ${message}`, details ?? {});
@@ -86,6 +97,10 @@ function sanitizeMs(value: unknown, field: string) {
   return parsed;
 }
 
+function isDemoMode() {
+  return process.env.KOBI_PROJECT_MODE === DEMO_MODE;
+}
+
 function extensionForMimeType(mimeType: string) {
   if (mimeType.includes("webm")) return "webm";
   if (mimeType.includes("mp4")) return "mp4";
@@ -105,6 +120,9 @@ async function createSession(req: IncomingMessage, res: ServerResponse, supabase
   }
 
   logApi("creating session", { classId });
+  if (isDemoMode()) {
+    await configureDemoClass(supabase, classId);
+  }
 
   const { data, error } = await supabase
     .from("sessions")
@@ -120,6 +138,21 @@ async function createSession(req: IncomingMessage, res: ServerResponse, supabase
   console.log(`[api] session created: sessionId=${data.id} classId=${classId}`);
   logApi("session created", { sessionId: data.id, classId });
   writeJson(res, 201, { sessionId: data.id });
+}
+
+async function configureDemoClass(supabase: SupabaseClient, classId: string) {
+  const { error } = await supabase
+    .from("classes")
+    .update({
+      grade: DEMO_CURRICULUM.grade,
+      subject: DEMO_CURRICULUM.subject,
+      unit: DEMO_CURRICULUM.unit,
+    })
+    .eq("id", classId);
+
+  if (error) {
+    logApi("demo class metadata update failed", { classId, error: error.message });
+  }
 }
 
 async function createManualLessonState(
@@ -166,6 +199,125 @@ async function createManualLessonState(
 
   logApi("manual lesson_state created", { sessionId, segmentId: data.id });
   writeJson(res, 201, { segmentId: data.id, lessonState });
+}
+
+async function ensureDemoCurriculumSeed(supabase: SupabaseClient) {
+  const { data: existing, error: selectError } = await supabase
+    .from("curriculum_chunks")
+    .select("id")
+    .eq("grade", DEMO_CURRICULUM.grade)
+    .eq("subject", DEMO_CURRICULUM.subject)
+    .eq("unit", DEMO_CURRICULUM.unit)
+    .limit(1);
+
+  if (selectError) {
+    logApi("demo curriculum seed check failed", { error: selectError.message });
+    return;
+  }
+
+  if ((existing ?? []).length > 0) return;
+
+  try {
+    const embedding = await embedText(DEMO_CURRICULUM.text, "RETRIEVAL_DOCUMENT");
+    const { error: insertError } = await supabase.from("curriculum_chunks").insert({
+      ...DEMO_CURRICULUM,
+      embedding,
+    });
+
+    if (insertError) {
+      logApi("demo curriculum seed insert failed", { error: insertError.message });
+    } else {
+      logApi("demo curriculum seed inserted", {
+        grade: DEMO_CURRICULUM.grade,
+        subject: DEMO_CURRICULUM.subject,
+        unit: DEMO_CURRICULUM.unit,
+      });
+    }
+  } catch (error) {
+    logApi("demo curriculum seed skipped", {
+      error: error instanceof Error ? error.message : "Embedding failed",
+    });
+  }
+}
+
+async function createDemoTranscriptChunk(
+  req: IncomingMessage,
+  res: ServerResponse,
+  sessionId: string,
+  supabase: SupabaseClient,
+  boss: PgBoss,
+) {
+  if (!isDemoMode()) {
+    writeJson(res, 403, { error: "Demo transcript chunks are only available when KOBI_PROJECT_MODE=demo." });
+    return;
+  }
+
+  const body = await readJsonBody(req);
+  let chunkIndex: number;
+  try {
+    chunkIndex = sanitizeChunkIndex(body.chunk_index);
+  } catch (error) {
+    writeJson(res, 400, { error: error instanceof Error ? error.message : "Invalid chunk_index" });
+    return;
+  }
+
+  const transcriptText = demoTranscriptChunks[chunkIndex];
+  if (!transcriptText) {
+    writeJson(res, 400, { error: `chunk_index must be between 0 and ${demoTranscriptChunks.length - 1}` });
+    return;
+  }
+
+  await ensureDemoCurriculumSeed(supabase);
+
+  const { data: existing, error: existingError } = await supabase
+    .from("audio_chunks")
+    .select("id")
+    .eq("session_id", sessionId)
+    .eq("chunk_index", chunkIndex)
+    .maybeSingle();
+
+  if (existingError) {
+    writeJson(res, 400, { error: existingError.message });
+    return;
+  }
+
+  if (existing?.id) {
+    writeJson(res, 200, {
+      audioChunkId: existing.id,
+      chunkIndex,
+      totalChunks: demoTranscriptChunks.length,
+      done: chunkIndex === demoTranscriptChunks.length - 1,
+    });
+    return;
+  }
+
+  const { data: chunk, error: insertError } = await supabase
+    .from("audio_chunks")
+    .insert({
+      session_id: sessionId,
+      chunk_index: chunkIndex,
+      storage_path: `demo-transcript/${sessionId}/${chunkIndex}.txt`,
+      start_ms: chunkIndex * DEMO_TRANSCRIPT_TICK_MS,
+      end_ms: (chunkIndex + 1) * DEMO_TRANSCRIPT_TICK_MS,
+      status: "transcribed",
+      transcript_text: transcriptText,
+    })
+    .select("id")
+    .single();
+
+  if (insertError) {
+    writeJson(res, 400, { error: insertError.message });
+    return;
+  }
+
+  await boss.send(JOB_BUILD_LESSON_STATE, { sessionId });
+
+  writeJson(res, 201, {
+    audioChunkId: chunk.id,
+    chunkIndex,
+    totalChunks: demoTranscriptChunks.length,
+    done: chunkIndex === demoTranscriptChunks.length - 1,
+  });
 }
 
 async function uploadAudioChunk(
@@ -280,7 +432,7 @@ async function uploadAudioChunk(
   writeJson(res, 201, { audioChunkId: chunk.id });
 }
 
-async function routeRequest(
+export async function routeRequest(
   req: IncomingMessage,
   res: ServerResponse,
   supabase: SupabaseClient,
@@ -307,6 +459,12 @@ async function routeRequest(
   const audioChunkMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/audio-chunks$/);
   if (req.method === "POST" && audioChunkMatch?.[1]) {
     await uploadAudioChunk(req, res, url, audioChunkMatch[1], supabase, boss);
+    return;
+  }
+
+  const demoTranscriptChunkMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/demo-transcript-chunks$/);
+  if (req.method === "POST" && demoTranscriptChunkMatch?.[1]) {
+    await createDemoTranscriptChunk(req, res, demoTranscriptChunkMatch[1], supabase, boss);
     return;
   }
 
