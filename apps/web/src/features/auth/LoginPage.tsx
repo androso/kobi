@@ -183,6 +183,8 @@ export function LoginPage() {
             <div className="absolute -bottom-20 left-1/3 h-52 w-52 rounded-full bg-white/10 blur-xl" />
           </div>
 
+          <div className="pointer-events-none absolute -right-28 top-1/2 z-20 h-[115%] w-60 -translate-y-1/2 rounded-l-[100%] bg-white" />
+
           <div className="relative z-10 flex w-full flex-col pr-16 sm:pr-20 lg:pr-24">
             <div className="flex flex-1 flex-col justify-center">
               <div className="relative mx-auto mb-8 flex aspect-[1.38] w-full max-w-sm items-center justify-center">
