@@ -12,11 +12,20 @@ interface StudentSidebarProps {
   classCode: string;
   progressLabel: string;
   onLogout: () => void;
+  onHelp: () => void;
   className?: string;
   navItems: readonly StudentSidebarNavItem[];
 }
 
-export function StudentSidebar({ studentName, classCode, progressLabel, onLogout, className, navItems }: StudentSidebarProps) {
+export function StudentSidebar({
+  studentName,
+  classCode,
+  progressLabel,
+  onLogout,
+  onHelp,
+  className,
+  navItems,
+}: StudentSidebarProps) {
   return (
     <aside
       aria-label="Navegación estudiante"
@@ -68,6 +77,7 @@ export function StudentSidebar({ studentName, classCode, progressLabel, onLogout
         <button
           aria-label="Ayuda"
           className="flex h-11 w-11 items-center justify-center rounded-full bg-[#2f9e8f] text-white shadow-sm transition hover:bg-[#278577]"
+          onClick={onHelp}
           type="button"
         >
           <CircleHelp className="h-5 w-5" strokeWidth={2} />

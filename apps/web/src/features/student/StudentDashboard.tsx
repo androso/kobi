@@ -6,6 +6,7 @@ import { StudentSidebar, type StudentSidebarNavItem } from "./components/Student
 import { LessonList } from "./components/LessonList";
 import { ArtifactRenderer } from "./components/ArtifactRenderer";
 import { ProgressDashboard } from "./components/ProgressDashboard";
+import { StudentHelpModal } from "./components/StudentHelpModal";
 
 const studentNavItems: readonly StudentSidebarNavItem[] = [
   {
@@ -36,6 +37,7 @@ export function StudentDashboard() {
   const submissions = useClassStore((state) => state.submissions);
 
   const [selectedArtefactoId, setSelectedArtefactoId] = useState<string | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   useEffect(() => {
     if (!user || user.role !== "student") {
@@ -88,6 +90,7 @@ export function StudentDashboard() {
             className="sticky top-0"
             classCode={classCode}
             navItems={studentNavItems}
+            onHelp={() => setHelpOpen(true)}
             onLogout={handleLogout}
             progressLabel={progressSummary}
             studentName={studentName}
@@ -133,6 +136,8 @@ export function StudentDashboard() {
           </div>
         )}
       </div>
+
+      <StudentHelpModal classCode={classCode} onClose={() => setHelpOpen(false)} open={helpOpen} />
     </main>
   );
 }
