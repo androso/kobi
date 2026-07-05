@@ -10,7 +10,7 @@
 ## Key Interfaces
 
 - Update contracts/docs from the stale JSON-player model to: `ActivityArtifact = manifest + bundle_ref + verifier_scores + evidence`.
-- Manifest includes: family, title, difficulty_band, curriculum, est_minutes, content.items, answer key, hints, entry: `index.html`, sdk_version, and allowed_capabilities.
+- Manifest includes: family, title, difficulty_band, curriculum, est_minutes, content, entry: `index.html`, sdk_version, and allowed_capabilities. `content.items` with answer keys/hints is supported for exercise-shaped artifacts; custom/exploratory artifacts may instead use `description`, `learning_goal`, `success_criteria`, and `telemetry_events`.
 - Bundle format: one self-contained `index.html` with inline CSS/JS, no external imports/assets/network. Game-like activities may use DOM, CSS animations, SVG, or canvas.
 - Activity SDK lives in `packages/activities` and is exposed to the iframe via `postMessage`: `getManifest()`, `getBand()`, `reportAttempt()`, `reportHint()`, `reportComplete()`.
 - Area B contract: `retrieveCurriculumMatches(supabase, { queryText, grade, subject, unit })` returns top-3 `CurriculumMatch[]` results from `@kobi/curriculum`: `objective_code`, `unit`, `grade`, `subject`, `text`, and `similarity`. Area C should use those structured fields directly for grounding and derive teacher-visible artifact evidence from them.
@@ -105,6 +105,7 @@ flowchart TD
 - Store activity generation and rubric prompt templates under `prompts/`; the worker generator loads them and composes them with minimized `lessonState`, bounded `sessionContext`, and `CurriculumMatch[]`.
   - Require Spanish student-facing text.
   - Require one self-contained `index.html` per band.
+  - Allow `custom_interactive` and `exploratory_tool` when a broader mini-app better teaches the objective than a prompt/answer-key exercise.
   - Forbid external imports/assets/network/storage.
   - Require SDK names: `getManifest`, `getBand`, `reportAttempt`, `reportHint`, `reportComplete`.
   - Explicitly state: consume only `lessonState`, bounded `sessionContext`, and `CurriculumMatch[]`; never raw transcript.

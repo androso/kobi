@@ -8,9 +8,9 @@ Kobi v0 turns the last 10 minutes of any class into a personalized, curriculum-g
 
 ## In / out of scope (v0)
 
-**In:** one class/grade/subject, 3 activity template families, difficulty-banded personalization (support/core/challenge artifacts), plain student experience (activity + hints + results), repository reuse within own content, teacher approval as a hard gate, session report (completion + correctness).
+**In:** one class/grade/subject, 3 exercise activity families plus bounded custom/exploratory HTML artifacts, difficulty-banded personalization (support/core/challenge artifacts), plain student experience (activity + hints + results), repository reuse within own content, teacher approval as a hard gate, session report (completion + correctness).
 
-**Out:** multi-school/admin portals, arbitrary generative game mechanics, deep learner modeling, pet companion, cross-school repositories, auto-delivery without review, longitudinal analytics.
+**Out:** multi-school/admin portals, unbounded generative game mechanics outside the verified artifact contract, deep learner modeling, pet companion, cross-school repositories, auto-delivery without review, longitudinal analytics.
 
 ## Decision Log
 
@@ -83,10 +83,12 @@ Put one name on each area (one person can own two small ones). Agree the shared 
 
 HTML activity artifacts are v0, not post-MVP. Each candidate activity is a single self-contained `index.html` bundle plus a structured manifest. The bundle runs only inside the sandboxed student iframe, uses no external imports/assets/network, and reports attempts, hints, and completion through the parent-owned SDK over `postMessage`.
 
-The three v0 families are:
+The v0 families are:
 
 1. **Match/classify** — vocabulary or concept grouping.
 2. **Sequence/order** — process, story, or argument steps.
 3. **Guided practice/checkpoint** — short applied questions with hints and feedback.
+4. **Custom interactive** — bespoke mini-apps, game-like practice, manipulatives, or visual interactions that still fit the curriculum evidence and SDK contract.
+5. **Exploratory tool** — student-controlled simulations, organizers, or concept tools for exploring the objective.
 
 Seeded runnable artifacts use the same contract and verifier path as generated artifacts. If generation or verification fails, the D6 fallback is a pre-seeded verified artifact, not a manifest-only renderer.

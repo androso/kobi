@@ -14,11 +14,13 @@ Gate 0 decision on 2026-07-04: v0 uses self-contained HTML/CSS/JS mini-app artif
 
 **Expected usage flow:** ground a planner call in `lesson_state` + `CurriculumMatch[]`, check the repository for a reusable match first, generate new candidates only when nothing fits, verify each candidate, and produce 3 ranked candidates for the teacher shortlist.
 
-Three artifact families ship in v0:
+Five artifact families ship in v0:
 
 1. **Match/classify** — vocabulary or concept grouping
 2. **Sequence/order** — process, story, or argument steps
 3. **Guided practice/checkpoint** — short applied questions with hints and feedback
+4. **Custom interactive** — bespoke mini-apps, game-like practice, manipulatives, or visual interactions
+5. **Exploratory tool** — student-controlled simulations, organizers, or concept tools
 
 Each artifact is a single self-contained `index.html` bundle plus a manifest:
 
@@ -26,8 +28,8 @@ Each artifact is a single self-contained `index.html` bundle plus a manifest:
 {
   "contract_version": "activity-artifact/v1",
   "manifest": {
-    "family": "match_classify",
-    "title": "Vocabulario en contexto: La noticia",
+    "family": "custom_interactive",
+    "title": "Explora la piramide de la noticia",
     "difficulty_band": "core",
     "curriculum": { "grade": 7, "subject": "lenguaje", "unit": "U4", "objective": "L7.4.2" },
     "est_minutes": 6,
@@ -35,13 +37,13 @@ Each artifact is a single self-contained `index.html` bundle plus a manifest:
     "sdk_version": "activity-sdk/v1",
     "allowed_capabilities": ["dom", "css", "svg"],
     "content": {
-      "items": [
-        {
-          "prompt": "Clasifica cada palabra según su función en una noticia.",
-          "answer_key": ["titular", "entradilla", "fuente"],
-          "hints": ["Busca palabras que presentan el hecho principal."]
-        }
-      ]
+      "description": "Manipula las partes de una noticia para ver como cambia la claridad del texto.",
+      "learning_goal": "Identificar como titular, entradilla, cuerpo y fuente organizan una noticia.",
+      "success_criteria": [
+        "Reconoce cada parte de la noticia.",
+        "Completa una version organizada con evidencia del texto."
+      ],
+      "telemetry_events": ["attempt", "hint", "complete"]
     }
   },
   "bundle_ref": "artifact-bundles/...",
@@ -56,7 +58,7 @@ Implemented exports:
 - manifest, artifact, evidence, verifier-score, and SDK `postMessage` validators
 - `buildActivitySessionContext()` for bounded context from structured `lesson_state` rows only
 - `createActivityArtifactCandidates()` for deterministic support/core/challenge HTML fallback artifacts
-- `verifyActivityArtifact()` for schema, static bundle, SDK hook, and manifest/code consistency checks
+- `verifyActivityArtifact()` for schema, static bundle, SDK hook, and manifest/code consistency checks across both exercise-shaped and broader interactive content
 - repository ranking helpers that bias objective match, verifier score, usage, outcomes, and topic overlap
 
 The verifier currently performs deterministic checks plus local rubric scoring. Browser sandbox boot remains Area E-owned and should call these same schemas before teacher display.

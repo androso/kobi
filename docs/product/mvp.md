@@ -12,7 +12,7 @@ Validate that Kobi can turn the last 10 minutes of a real class into a personali
 - Teacher approves each band before it reaches students (hard gate); if support/challenge is not approved, that band receives the approved core artifact.
 - Teacher sees a live monitor (who's done, who's stuck) and a session report (completion + correctness) after the session.
 - Student joins via code + display name, waits, plays the assigned activity, gets a hint after wrong attempts, sees results.
-- 3 activity artifact families only: match/classify, sequence/order, guided practice/checkpoint — verified HTML bundles plus structured manifests, rendered in the sandboxed artifact iframe.
+- 3 exercise artifact families plus bounded custom/exploratory HTML artifacts — verified HTML bundles plus structured manifests, rendered in the sandboxed artifact iframe.
 - Difficulty-banded personalization: support/core/challenge artifacts, approved per band.
 - Manual fallback at every AI stage: transcription fails → teacher types a topic summary; generation is slow → pull from the pre-seeded activity repository.
 - Basic auth: teachers via magic link, students via join code + display name.
@@ -21,7 +21,7 @@ Validate that Kobi can turn the last 10 minutes of a real class into a personali
 ## Out of scope before MVP validation
 
 - Multi-school or admin portals.
-- Arbitrary generative game mechanics beyond the three ratified HTML artifact families.
+- Unbounded generative game mechanics outside the verified artifact contract.
 - Deep learner modeling or mastery estimation.
 - Pet companion (hatching, personality, celebrations).
 - Cross-school shared repositories.
@@ -36,7 +36,7 @@ Validate that Kobi can turn the last 10 minutes of a real class into a personali
 - Do not change the core teacher/student flow (Listen → Understand → Propose → Approve → Deliver → Measure) without explaining why in the PR description.
 - Never remove or weaken the teacher approval gate, verified artifact delivery, or curriculum grounding with visible evidence — these three *are* the product.
 - Do not ship unverified free-form generated code. Every HTML artifact must pass manifest schema checks, sandbox/static checks, SDK telemetry assertions, manifest/code consistency checks, and rubric validation before teacher display.
-- Do not add "nice-to-have" features (pet, deep personalization, arbitrary activity families, cross-school repositories) unless explicitly promoted from the out-of-scope list above.
+- Do not add "nice-to-have" features (pet, deep personalization, unverified activity families, cross-school repositories) unless explicitly promoted from the out-of-scope list above.
 
 ## MVP review rule
 

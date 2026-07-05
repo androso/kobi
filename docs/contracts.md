@@ -32,8 +32,8 @@ Produced by the planner/generator, checked by the verifier, stored in `activitie
 {
   "contract_version": "activity-artifact/v1",
   "manifest": {
-    "family": "match_classify",
-    "title": "Vocabulario en contexto: La noticia",
+    "family": "custom_interactive",
+    "title": "Explora la piramide de la noticia",
     "difficulty_band": "core",
     "curriculum": { "grade": 7, "subject": "lenguaje", "unit": "U4", "objective": "L7.4.2" },
     "est_minutes": 6,
@@ -41,13 +41,13 @@ Produced by the planner/generator, checked by the verifier, stored in `activitie
     "sdk_version": "activity-sdk/v1",
     "allowed_capabilities": ["dom", "css", "svg"],
     "content": {
-      "items": [
-        {
-          "prompt": "Clasifica cada palabra según su función en una noticia.",
-          "answer_key": ["titular", "entradilla", "fuente"],
-          "hints": ["Busca palabras que presentan el hecho principal."]
-        }
-      ]
+      "description": "Manipula las partes de una noticia para ver como cambia la claridad del texto.",
+      "learning_goal": "Identificar como titular, entradilla, cuerpo y fuente organizan una noticia.",
+      "success_criteria": [
+        "Reconoce cada parte de la noticia.",
+        "Completa una version organizada con evidencia del texto."
+      ],
+      "telemetry_events": ["attempt", "hint", "complete"]
     }
   },
   "bundle_ref": "artifact-bundles/...",
@@ -75,6 +75,8 @@ Produced by the planner/generator, checked by the verifier, stored in `activitie
 
 - Bundle format is one self-contained `index.html` with inline CSS/JS.
 - No external imports, assets, network calls, credentialed requests, storage APIs, top navigation, popups, or same-origin assumptions.
+- Allowed families are `match_classify`, `sequence_order`, `guided_practice`, `custom_interactive`, and `exploratory_tool`.
+- `content.items[]` is optional for custom/exploratory artifacts; those artifacts must instead provide enough `description`, `learning_goal`, `success_criteria`, and/or `telemetry_events` for teacher review and verifier consistency checks.
 - `bundle_ref` must be unguessable and authorized by assignment/class before iframe delivery.
 - The parent injects only manifest, assignment id, and difficulty band. It must not inject Supabase credentials, student PII, raw transcript, or broader class/session context.
 - The iframe communicates only through the Activity SDK over `postMessage`: `getManifest()`, `getBand()`, `reportAttempt()`, `reportHint()`, and `reportComplete()`.
