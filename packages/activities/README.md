@@ -12,7 +12,7 @@ Gate 0 decision on 2026-07-04: v0 uses self-contained HTML/CSS/JS mini-app artif
 - `CurriculumMatch[]` (from `@kobi/curriculum`'s `retrieveCurriculumMatches()`) — top-3 curriculum chunks grounding the current lesson segment.
 - The activity repository (`activities` table) — for the reuse-vs-generate decision.
 
-**Expected usage flow:** ground a planner call in `lesson_state` + `CurriculumMatch[]`, check the repository for a reusable match first, generate new candidates only when nothing fits, verify each candidate, and produce 3 ranked candidates for the teacher shortlist.
+**Expected usage flow:** ground a planner call in `lesson_state` + `CurriculumMatch[]`, check the repository for a reusable match first, generate new candidates only when nothing fits, verify each candidate, and produce 3 ranked candidates for the teacher shortlist. The teacher can assign selected students to support/challenge; unselected students receive core by default.
 
 Three artifact families ship in v0:
 
@@ -53,4 +53,4 @@ Each artifact is a single self-contained `index.html` bundle plus a manifest:
 
 The verifier checks manifest schema, forbidden APIs, sandbox boot, SDK telemetry assertions, manifest/code consistency, curriculum alignment, answer correctness, hint leakage, and Spanish suitability.
 
-Status: placeholder — manifest schema, verifier, SDK, and sandbox fixtures not yet implemented.
+Status: initial manifest schema, deterministic verifier, repository ranking helpers, candidate generator, assignment helper, and contract tests are implemented. Full sandbox/browser verification and LLM-backed generation are still future work behind the same contract.
