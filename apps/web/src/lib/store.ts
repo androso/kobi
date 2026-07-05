@@ -4,24 +4,26 @@ interface UserProfile {
   role: "teacher" | "student" | null;
   email?: string;
   studentName?: string;
+  classCode?: string;
 }
 
 interface AuthState {
   user: UserProfile | null;
   loginTeacher: (email: string) => void;
-  loginStudent: (studentName: string) => void;
+  loginStudent: (studentName: string, classCode: string) => void;
   logout: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   loginTeacher: (email) => set({ user: { role: "teacher", email } }),
-  loginStudent: (studentName) => set({ user: { role: "student", studentName } }),
+  loginStudent: (studentName, classCode) => set({ user: { role: "student", studentName, classCode } }),
   logout: () => set({ user: null }),
 }));
 
 export interface ClassItem {
   id: string;
+  code: string;
   title: string;
   focus: string;
   students: string;
@@ -31,6 +33,53 @@ export interface ClassItem {
   badge?: string;
   icon: "leaf" | "sigma" | "book" | "pen";
   image?: string;
+}
+
+/**
+ * Difficulty variant of an artefacto. Mirrors the three bands promised on the
+ * login slide: apoyo (support), base (core) and reto (challenge).
+ */
+export type ArtefactoBand = "support" | "core" | "challenge";
+
+/**
+ * An "artefacto" is the student-facing activity the teacher publishes to a
+ * class. It is the shared contract between the teacher flow (which authors and
+ * assigns it) and the student dashboard (which renders and answers it).
+ */
+export interface Artefacto {
+  id: string;
+  classId: string;
+  title: string;
+  section: string;
+  objective: string;
+  family: string;
+  band: ArtefactoBand;
+  prompt: string;
+  options: string[];
+  correctAnswer: string;
+  hints: string[];
+  source: string;
+  status: "draft" | "assigned";
+  due: string;
+  createdAt: number;
+}
+
+/**
+ * A student's answer to an artefacto. Flows back from the student dashboard so
+ * the teacher analytics can report real progress. Keyed uniquely by
+ * (artefactoId, studentName).
+ */
+export interface ArtefactoSubmission {
+  id: string;
+  artefactoId: string;
+  classId: string;
+  studentName: string;
+  selectedAnswer: string;
+  isCorrect: boolean;
+  attempts: number;
+  hintsUsed: number;
+  status: "submitted" | "completed";
+  submittedAt: number;
 }
 
 export interface SessionTranscriptLine {
@@ -58,6 +107,8 @@ interface ClassState {
   classes: ClassItem[];
   monitoringClassId: string | null;
   sessions: SavedSession[];
+  artefactos: Artefacto[];
+  submissions: ArtefactoSubmission[];
   startMonitoring: (id: string) => void;
   stopMonitoring: () => void;
   endSession: (session: SavedSession) => void;
@@ -68,12 +119,21 @@ interface ClassState {
     topics: string[];
     subjectType: "ciencias" | "matematicas" | "lengua" | "otro";
   }) => void;
+  /** Teacher publishes an artefacto to a class. */
+  assignArtefacto: (
+    artefacto: Omit<Artefacto, "id" | "status" | "createdAt"> & Partial<Pick<Artefacto, "status">>,
+  ) => void;
+  /** Student submits an answer; upserts by (artefactoId, studentName). */
+  submitArtefacto: (
+    submission: Omit<ArtefactoSubmission, "id" | "submittedAt" | "status">,
+  ) => void;
   resetClasses: () => void;
 }
 
 const defaultClasses: ClassItem[] = [
   {
     id: "class-1",
+    code: "KOBI7",
     title: "Ciencia 4to - Sección A",
     focus: "Ecosistemas y energía",
     students: "24 estudiantes activos",
@@ -86,6 +146,7 @@ const defaultClasses: ClassItem[] = [
   },
   {
     id: "class-2",
+    code: "KOBI5",
     title: "Matemáticas 5to - Álgebra básica",
     focus: "Matemáticas",
     students: "22 estudiantes activos",
@@ -97,6 +158,7 @@ const defaultClasses: ClassItem[] = [
   },
   {
     id: "class-3",
+    code: "KOBI8",
     title: "Lengua 8vo - Escritura creativa",
     focus: "Lengua y artes",
     students: "28 estudiantes activos",
@@ -108,10 +170,104 @@ const defaultClasses: ClassItem[] = [
   }
 ];
 
+// Seeded artefactos for the demo class (KOBI7 / class-1). These stand in for
+// activities the teacher would publish, and keep the student dashboard working
+// end-to-end until the teacher "publish" UI is wired to assignArtefacto.
+const defaultArtefactos: Artefacto[] = [
+  {
+    id: "artefacto-1",
+    classId: "class-1",
+    title: "Vocabulario en contexto: La noticia",
+    section: "Unidad 4 / La noticia",
+    objective: "L7.4.2",
+    family: "guided_practice",
+    band: "core",
+    prompt: "El periodista redacto la ___ antes del mediodia.",
+    options: ["noticia", "novela", "receta"],
+    correctAnswer: "noticia",
+    hints: [
+      "Piensa en la palabra que nombra lo que escribio el periodista.",
+      "La frase habla de un texto informativo, no de una historia o una comida.",
+    ],
+    source: "Reused from seeded repository",
+    status: "assigned",
+    due: "Hoy",
+    createdAt: 0,
+  },
+  {
+    id: "artefacto-2",
+    classId: "class-1",
+    title: "Lectura rápida",
+    section: "Unidad 4 / La noticia",
+    objective: "L7.4.1",
+    family: "guided_practice",
+    band: "support",
+    prompt: "Una noticia responde principalmente a la pregunta ___.",
+    options: ["qué pasó", "cómo cocinar", "quién ganó ayer"],
+    correctAnswer: "qué pasó",
+    hints: ["Una noticia informa sobre un hecho.", "Busca la opción más general."],
+    source: "Reused from seeded repository",
+    status: "assigned",
+    due: "Mañana",
+    createdAt: 0,
+  },
+  {
+    id: "artefacto-3",
+    classId: "class-1",
+    title: "Reto extra",
+    section: "Unidad 4 / La noticia",
+    objective: "L7.4.3",
+    family: "challenge",
+    band: "challenge",
+    prompt: "La parte de la noticia que resume lo esencial se llama ___.",
+    options: ["entradilla", "epílogo", "moraleja"],
+    correctAnswer: "entradilla",
+    hints: ["Va justo después del titular.", "Resume el qué, quién y cuándo."],
+    source: "Reused from seeded repository",
+    status: "assigned",
+    due: "Opcional",
+    createdAt: 0,
+  },
+];
+
+/** Resolve a class by its join code (case-insensitive). */
+export function findClassByCode(classes: ClassItem[], code: string): ClassItem | undefined {
+  const normalized = code.trim().toUpperCase();
+  return classes.find((item) => item.code.toUpperCase() === normalized);
+}
+
+/** Artefactos assigned to a class, oldest first. */
+export function selectClassArtefactos(
+  state: Pick<ClassState, "artefactos">,
+  classId: string,
+): Artefacto[] {
+  return state.artefactos
+    .filter((item) => item.classId === classId && item.status === "assigned")
+    .sort((a, b) => a.createdAt - b.createdAt);
+}
+
+/** A student's submission for a given artefacto, if any. */
+export function selectSubmission(
+  state: Pick<ClassState, "submissions">,
+  artefactoId: string,
+  studentName: string,
+): ArtefactoSubmission | undefined {
+  return state.submissions.find(
+    (item) => item.artefactoId === artefactoId && item.studentName === studentName,
+  );
+}
+
+// Generate a short, human-readable class join code (e.g. "KOBI-4821").
+function generateClassCode(): string {
+  return `KOBI-${Math.floor(1000 + Math.random() * 9000)}`;
+}
+
 export const useClassStore = create<ClassState>((set) => ({
   classes: defaultClasses,
   monitoringClassId: null,
   sessions: [],
+  artefactos: defaultArtefactos,
+  submissions: [],
   startMonitoring: (id) => set({ monitoringClassId: id }),
   stopMonitoring: () => set({ monitoringClassId: null }),
   // Ending a session saves it to history and clears the active monitor
@@ -145,6 +301,7 @@ export const useClassStore = create<ClassState>((set) => ({
 
     const createdClass: ClassItem = {
       id: `class-${Date.now()}`,
+      code: generateClassCode(),
       title: newClass.title,
       focus: newClass.focus,
       students: `${newClass.studentCount} estudiantes activos`,
@@ -157,5 +314,38 @@ export const useClassStore = create<ClassState>((set) => ({
 
     set((state) => ({ classes: [...state.classes, createdClass] }));
   },
-  resetClasses: () => set({ classes: defaultClasses }),
+  assignArtefacto: (artefacto) =>
+    set((state) => ({
+      artefactos: [
+        ...state.artefactos,
+        {
+          ...artefacto,
+          id: `artefacto-${Date.now()}`,
+          status: artefacto.status ?? "assigned",
+          createdAt: Date.now(),
+        },
+      ],
+    })),
+  submitArtefacto: (submission) =>
+    set((state) => {
+      const status: ArtefactoSubmission["status"] = submission.isCorrect ? "completed" : "submitted";
+      const existing = state.submissions.find(
+        (item) =>
+          item.artefactoId === submission.artefactoId && item.studentName === submission.studentName,
+      );
+
+      const record: ArtefactoSubmission = {
+        ...submission,
+        id: existing?.id ?? `submission-${Date.now()}`,
+        status,
+        submittedAt: Date.now(),
+      };
+
+      return {
+        submissions: existing
+          ? state.submissions.map((item) => (item.id === existing.id ? record : item))
+          : [...state.submissions, record],
+      };
+    }),
+  resetClasses: () => set({ classes: defaultClasses, artefactos: defaultArtefactos, submissions: [] }),
 }));
