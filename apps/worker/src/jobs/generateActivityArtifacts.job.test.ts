@@ -15,6 +15,32 @@ import {
 } from "./generateActivityArtifacts.job.js";
 
 describe("generateActivityArtifacts job planning", () => {
+  it("skips generation when retrieval returns no curriculum matches", async () => {
+    const supabase = fakeSupabase();
+
+    const result = await runGenerateActivityArtifactsJob(
+      supabase.client,
+      {
+        sessionId: "session-1",
+        lessonState,
+        curriculumMatches: [],
+      },
+      {
+        openAiGenerator: async () => {
+          throw new Error("generator should not be called without curriculum matches");
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      inserted: 0,
+      reused: 0,
+      generated: 0,
+      skippedReason: "no curriculum matches",
+    });
+    expect(supabase.insertedCandidates).toHaveLength(0);
+  });
+
   it("uses reusable activities first, OpenAI candidates for missing bands, then static fallback", () => {
     const reusableSupport = repositoryRow("support", 0.92);
     const openAiCore = candidate("core", "openai-core");
@@ -63,6 +89,53 @@ describe("generateActivityArtifacts job planning", () => {
     });
     expect(supabase.insertedCandidates).toHaveLength(3);
     expect(supabase.bundleRefs.every((ref) => ref.startsWith("artifact-bundles/static/"))).toBe(true);
+  });
+
+  it("persists context snapshots from session lesson_state rows and evidence from curriculum matches", async () => {
+    const earlierLessonState: LessonState = {
+      ...lessonState,
+      topic: "El titular de la noticia",
+      objective_guess: "Reconocer titulares",
+      key_terms: ["periodico", "titular"],
+      confidence: 0.72,
+      evidence: {
+        quoted_phrases: ["titular corto"],
+        reason: "La clase inicio con titulares.",
+      },
+    };
+    const supabase = fakeSupabase({ segments: [earlierLessonState, lessonState] });
+
+    const result = await runGenerateActivityArtifactsJob(
+      supabase.client,
+      {
+        sessionId: "session-1",
+        lessonState,
+        curriculumMatches,
+      },
+      {
+        openAiGenerator: null,
+      },
+    );
+
+    expect(result.inserted).toBe(3);
+    expect(supabase.insertedCandidates).toHaveLength(3);
+    for (const insertedCandidate of supabase.insertedCandidates) {
+      expect(insertedCandidate.context_snapshot).toMatchObject({
+        latest_topic: lessonState.topic,
+        segment_count: 2,
+      });
+      expect(insertedCandidate.context_snapshot.vocabulary).toEqual(
+        expect.arrayContaining(["periodico", "titular", "entradilla", "fuente"]),
+      );
+      expect(insertedCandidate.evidence).toEqual([
+        {
+          objective_code: "L7.4.2",
+          section: "U4 / L7.4.2",
+          text: "Reconoce la estructura de la noticia: titular, entradilla, cuerpo y fuente.",
+          similarity: 0.91,
+        },
+      ]);
+    }
   });
 
   it("counts only OpenAI bundle refs against the per-session OpenAI quota", async () => {
@@ -198,8 +271,11 @@ function manifest(band: "support" | "core" | "challenge", title: string): Activi
   };
 }
 
-function fakeSupabase(options: { openAiGenerationCount?: number } = {}) {
-  const insertedCandidates: unknown[] = [];
+function fakeSupabase(options: { openAiGenerationCount?: number; segments?: LessonState[] } = {}) {
+  const insertedCandidates: Array<{
+    context_snapshot: { latest_topic: string; vocabulary: string[]; segment_count: number };
+    evidence: unknown;
+  }> = [];
   const bundleRefs: string[] = [];
   const likeFilters: string[] = [];
   let nextActivityId = 0;
@@ -215,6 +291,7 @@ function fakeSupabase(options: { openAiGenerationCount?: number } = {}) {
           return `activity-${nextActivityId}`;
         },
         openAiGenerationCount: options.openAiGenerationCount ?? 0,
+        segments: options.segments ?? [],
       });
     },
   } as unknown as SupabaseClient;
@@ -228,6 +305,7 @@ interface FakeQueryState {
   likeFilters: string[];
   nextActivityId: () => string;
   openAiGenerationCount: number;
+  segments: LessonState[];
 }
 
 class FakeQuery {
@@ -305,7 +383,10 @@ class FakeQuery {
 
   private result() {
     if (this.table === "segments") {
-      return { data: [], error: null };
+      return {
+        data: this.state.segments.map((lessonState) => ({ lesson_state: lessonState })),
+        error: null,
+      };
     }
 
     if (this.table === "activities" && this.operation === "select") {
@@ -327,7 +408,12 @@ class FakeQuery {
     }
 
     if (this.table === "session_activity_candidates" && this.operation === "insert") {
-      this.state.insertedCandidates.push(this.insertedValue);
+      this.state.insertedCandidates.push(
+        this.insertedValue as {
+          context_snapshot: { latest_topic: string; vocabulary: string[]; segment_count: number };
+          evidence: unknown;
+        },
+      );
       return { data: null, error: null };
     }
 
