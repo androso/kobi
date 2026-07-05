@@ -60,8 +60,8 @@ export function Sidebar() {
         </nav>
       </div>
 
-      <div className="space-y-4">
-        <button className="w-full py-3.5 px-4 bg-[#004ac6] text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-blue-600/10 hover:bg-[#003ea8] transition active:scale-95" type="button">
+      <div className="space-y-4 px-2">
+        <button className="mx-auto w-fit py-2.5 px-5 bg-[#004ac6] text-white rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-blue-600/10 hover:bg-[#003ea8] transition active:scale-95" type="button">
           <Plus className="h-4 w-4" />
           <span>Nueva clase</span>
         </button>
