@@ -195,7 +195,6 @@ function renderActivityHtml(manifest: ActivityManifest): string {
   <script>
     const SDK_VERSION = "${ACTIVITY_SDK_VERSION}";
     const manifest = ${manifestJson};
-    const assignmentId = "preview-assignment";
     let selected = new Set();
     let hintIndex = 0;
 
@@ -227,7 +226,7 @@ function renderActivityHtml(manifest: ActivityManifest): string {
         button.setAttribute("aria-pressed", String(!pressed));
         if (pressed) selected.delete(answer); else selected.add(answer);
         const correct = selected.size > 0;
-        reportAttempt({ assignment_id: assignmentId, item_index: 0, correct, answer: Array.from(selected) });
+        reportAttempt({ item_index: 0, correct, answer: Array.from(selected) });
         document.getElementById("feedback").textContent = correct ? "Respuesta registrada." : "Elige una respuesta.";
       });
     });
@@ -235,12 +234,12 @@ function renderActivityHtml(manifest: ActivityManifest): string {
     document.getElementById("hint").addEventListener("click", () => {
       const hints = manifest.content.items[0].hints;
       document.getElementById("feedback").textContent = hints[hintIndex] || "Ya usaste todas las pistas.";
-      reportHint({ assignment_id: assignmentId, item_index: 0, hint_index: hintIndex });
+      reportHint({ item_index: 0, hint_index: hintIndex });
       hintIndex += 1;
     });
 
     document.getElementById("complete").addEventListener("click", () => {
-      reportComplete({ assignment_id: assignmentId, score: selected.size, total: manifest.content.items[0].answer_key.length, completed_at: new Date().toISOString() });
+      reportComplete({ score: selected.size, total: manifest.content.items[0].answer_key.length, completed_at: new Date().toISOString() });
       document.getElementById("feedback").textContent = "Actividad completada. Gracias.";
     });
   </script>
