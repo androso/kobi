@@ -27,16 +27,16 @@ students                        sessions
   class_id (FK -> classes.id)     class_id (FK -> classes.id)
   display_name                    status (active|ended)
   joined_at                       started_at, ended_at
-      │                              │              │
-      │ 1—1                          │ 1—N           │ 1—N
-      ▼                              ▼               ▼
-student_profiles                audio_chunks     segments
-  student_id (PK, FK)             id (PK)          id (PK)
-  modality_pref, notes            session_id (FK)  session_id (FK)
-  updated_at                      chunk_index      lesson_state (jsonb)
-                                   storage_path     confidence
-                                   start_ms/end_ms  transcript_summary
-                                   status           created_at
+      │                              │              │           │
+      │ 1—1                          │ 1—N           │ 1—N       │ 1—N
+      ▼                              ▼               ▼           ▼
+student_profiles                audio_chunks     segments    checkpoints
+  student_id (PK, FK)             id (PK)          id (PK)      id (PK)
+  modality_pref, notes            session_id (FK)  session_id (FK) session_id (FK)
+  updated_at                      chunk_index      lesson_state (jsonb) ready (bool)
+                                   storage_path     confidence   reason, summary
+                                   start_ms/end_ms  transcript_summary  session_context (jsonb)
+                                   status           created_at   created_at
                                    transcript_text
                                    unique(session_id, chunk_index)
 
@@ -111,6 +111,7 @@ events
 | `sessions` | A (Listening) | One row per class period; drives `audio_chunks`/`segments`. |
 | `audio_chunks` | A (Listening) | Implemented — see `packages/ai-core`, `apps/worker`. |
 | `segments` | A (Listening) | Implemented — rolling `lesson_state` snapshots (see `docs/contracts.md`). |
+| `checkpoints` | A/B boundary (Understand -> Propose gate) | Implemented — one row per checkpoint evaluation (`ready`, `reason`, `summary`, `session_context` snapshot). Runs on its own timer, decoupled from `segments`' per-chunk cadence; see `docs/contracts.md` §2 and `docs/area-bc-contract.md`. |
 | `curriculum_chunks` | B (Curriculum) | Implemented — see `packages/curriculum`, `docs/area-bc-contract.md`. |
 | `activity_bundles` | C (Activity Generation) | Stores verified self-contained `index.html` bundles by `bundle_ref`. |
 | `activities` | C (Activity Generation) | Verified artifact repository. `manifest` internals are owned by `packages/activities`; evidence/status/source are queryable for shortlist and reuse. |
@@ -120,7 +121,7 @@ events
 
 ## Relation to the four memory tiers (product spec §21)
 
-- Active lesson → `segments`
+- Active lesson → `segments` + `checkpoints`
 - Teacher/class → `classes` + `session_activity_candidates` approval history
 - Student pedagogical → `assignments.variant` per session + `student_profiles` notes/preferences
 - Repository → `activities`

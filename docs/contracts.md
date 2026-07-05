@@ -22,7 +22,23 @@ Emitted by the lesson-state builder (`apps/worker` / `packages/ai-core`, see `bu
 
 The manual-fallback path (D6) produces the same `lesson_state` shape via `lessonStateFromManualEntry()` — downstream consumers never need a second code path.
 
-## 2. `ActivityArtifact`
+## 2. Checkpoint decision (Understand -> Propose gate)
+
+Produced by the checkpoint agent (`apps/worker/src/checkpoint/evaluateCheckpoint.ts`, OpenAI structured output) and consumed by `apps/worker/src/jobs/evaluateCheckpoint.job.ts`. This replaces the old static `confidence >= 0.5` threshold that used to live inline in `buildLessonState.job.ts`. It runs on an independent timer (`checkpointScheduler.job.ts`, default every `CHECKPOINT_INTERVAL_MINUTES` = 10 min), not on every `lesson_state` tick.
+
+Input is the same bounded `SessionContext` (`@kobi/activities`) built from `lesson_state` rows accumulated since the last `ready` checkpoint — never raw transcript.
+
+```json
+{
+  "ready": true,
+  "reason": "Hay un tema claro y vocabulario suficiente para generar una actividad.",
+  "summary": "La docente enseñó la estructura de la noticia: titular, entradilla y fuente."
+}
+```
+
+Every evaluation (pass or fail) is persisted as a row in the `checkpoints` table (`session_id`, `ready`, `reason`, `summary`, `session_context` snapshot, `created_at`) — see `docs/data-model.md`. When `ready` is `false`, the worker does nothing else and waits for the next scheduler tick with more accumulated segments. When `ready` is `true`, the job calls `retrieveCurriculumMatches()` and hands off to Area C's `generate-activity-artifacts` job exactly as before — that job's contract is unchanged.
+
+## 3. `ActivityArtifact`
 
 Produced by the planner/generator, checked by the verifier, stored in `activities` (the repository), and delivered through the sandbox host. Per the revised D2, an activity is one of the three verified HTML artifact families plus a manifest: `activities.bundle_ref` points at the self-contained HTML bundle, and `activities.manifest` (jsonb) is the schema-validated contract for curriculum tags, answer key, hints, `est_minutes`, variants, and family. Gate 0 decision on 2026-07-04: v0 activities are verified HTML artifacts within the three MVP families, not JSON-rendered activities. There are no legacy JSON activities or consumers, so no migration or compatibility adapter is required. Schema and SDK contracts are owned by `packages/activities`.
 
@@ -84,7 +100,7 @@ For the teacher approval flow, Area C writes support/core/challenge rows to `ses
 - The parent validates message source, schema, assignment authorization, method allowlist, payload size, and telemetry rate limits.
 - Teacher edits are manifest-only and must pass schema validation, escaped rendering, forbidden field checks, and manifest/code consistency smoke validation.
 
-## 3. Telemetry event
+## 4. Telemetry event
 
 Written to the `events` table on every student interaction; read back for the live monitor and session report.
 
@@ -96,7 +112,7 @@ Written to the `events` table on every student interaction; read back for the li
 }
 ```
 
-## 4. `curriculum_match` (Area B -> Area C)
+## 5. `curriculum_match` (Area B -> Area C)
 
 See [`docs/area-bc-contract.md`](area-bc-contract.md) for the full write-up shared with Androso. Returned by `retrieveCurriculumMatches()` in `packages/curriculum`.
 
