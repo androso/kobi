@@ -136,6 +136,36 @@ describe("activity artifact contracts", () => {
     });
   });
 
+  it("stamps missing telemetry assignment ids from parent context", () => {
+    const result = authorizeActivityTelemetryMessage(
+      {
+        sdk: "activity-sdk/v1",
+        type: "event",
+        method: "reportHint",
+        payload: {
+          item_index: 0,
+          hint_index: 0,
+        },
+      },
+      {
+        assignmentId: "assignment-1",
+        sourceMatches: true,
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.event).toMatchObject({
+      assignment_id: "assignment-1",
+      type: "hint",
+      payload: {
+        assignment_id: "assignment-1",
+        item_index: 0,
+        hint_index: 0,
+      },
+    });
+  });
+
   it("rejects telemetry with spoofed assignment ids or rate-limit violations", () => {
     const spoofed = authorizeActivityTelemetryMessage(
       {
@@ -174,5 +204,21 @@ describe("activity artifact contracts", () => {
 
     expect(spoofed.ok).toBe(false);
     expect(rateLimited.ok).toBe(false);
+  });
+
+  it("rejects artifacts that fail rubric thresholds", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+    });
+    candidate.manifest.content.items[0].hints = ["La respuesta es titular"];
+
+    const result = verifyActivityArtifact(candidate);
+
+    expect(result.ok).toBe(false);
+    expect(result.artifact.status).toBe("rejected");
+    expect(result.errors).toContain("rubric: hint_leakage 0.35 is below 0.80");
   });
 });

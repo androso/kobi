@@ -43,7 +43,9 @@ export function authorizeActivityTelemetryMessage(
     return { ok: false, error: "telemetry rate limit exceeded" };
   }
 
-  const parsed = validateActivitySdkMessage(message);
+  const parsed = validateActivitySdkMessage(
+    messageWithParentAssignmentId(message, context.assignmentId),
+  );
   if (!parsed.success) {
     return { ok: false, error: "message does not match the Activity SDK schema" };
   }
@@ -52,7 +54,7 @@ export function authorizeActivityTelemetryMessage(
     return { ok: false, error: "SDK requests are not telemetry events" };
   }
 
-  const payloadBytes = Buffer.byteLength(JSON.stringify(parsed.data.payload), "utf8");
+  const payloadBytes = byteLengthUtf8(JSON.stringify(parsed.data.payload));
   if (payloadBytes > (context.maxPayloadBytes ?? defaultMaxPayloadBytes)) {
     return { ok: false, error: "telemetry payload is too large" };
   }
@@ -75,6 +77,32 @@ function eventTypeFromSdkMethod(method: ActivitySdkEvent["method"]) {
   if (method === "reportAttempt") return "attempt";
   if (method === "reportHint") return "hint";
   return "complete";
+}
+
+function messageWithParentAssignmentId(message: unknown, assignmentId: string): unknown {
+  if (!isRecord(message) || message.type !== "event" || !isRecord(message.payload)) {
+    return message;
+  }
+
+  if ("assignment_id" in message.payload) {
+    return message;
+  }
+
+  return {
+    ...message,
+    payload: {
+      ...message.payload,
+      assignment_id: assignmentId,
+    },
+  };
+}
+
+function byteLengthUtf8(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function payloadFromSdkEvent(event: ActivitySdkEvent, assignmentId: string): Record<string, unknown> {
