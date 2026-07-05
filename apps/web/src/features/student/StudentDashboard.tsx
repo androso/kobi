@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  BookOpen,
-  Calculator,
   CheckCircle2,
   Clock,
-  FlaskConical,
   Globe,
   GraduationCap,
   HelpCircle,
   Laptop,
   Lock,
-  Palette,
+  Microscope,
+  NotebookPen,
+  Paintbrush,
+  PencilRuler,
   PlayCircle,
   RotateCcw,
   Search,
@@ -52,7 +52,9 @@ const cardStyles = [
   { bg: "bg-[#faf1d6]", ring: "ring-[#eee0b4]", icon: "text-[#c6a02e]", title: "text-[#9c7d1e]" },
 ] as const;
 
-const cardIcons: LucideIcon[] = [FlaskConical, Globe, Calculator, Laptop, Palette, BookOpen];
+// Subject line-art mirroring the reference cards:
+// microscope, globe, ruler, laptop, paint brush, notebook.
+const cardIcons: LucideIcon[] = [Microscope, Globe, PencilRuler, Laptop, Paintbrush, NotebookPen];
 
 const bandLabels: Record<string, string> = {
   support: "Apoyo",
