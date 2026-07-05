@@ -1,0 +1,347 @@
+<!DOCTYPE html><html class="light" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Teacher Portal - Kobi Learning Labs</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&amp;family=Geist:wght@400;600;700;800&amp;family=Quicksand:wght@500;700&amp;family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@100..900&amp;family=Inter:wght@100..900&amp;family=Quicksand:wght@100..900&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-tertiary-fixed-variant": "#005236",
+                    "tertiary-container": "#007d55",
+                    "secondary-container": "#8455ef",
+                    "surface": "#f8f9ff",
+                    "inverse-primary": "#b4c5ff",
+                    "tertiary": "#006242",
+                    "primary-container": "#2563eb",
+                    "surface-container-high": "#dce9ff",
+                    "secondary": "#6b38d4",
+                    "secondary-fixed-dim": "#d0bcff",
+                    "surface-container": "#e5eeff",
+                    "surface-bright": "#f8f9ff",
+                    "on-tertiary-fixed": "#002113",
+                    "on-tertiary": "#ffffff",
+                    "error-container": "#ffdad6",
+                    "inverse-surface": "#213145",
+                    "on-primary-fixed": "#00174b",
+                    "tertiary-fixed-dim": "#4edea3",
+                    "on-background": "#0b1c30",
+                    "primary-fixed-dim": "#b4c5ff",
+                    "primary": "#004ac6",
+                    "on-secondary-fixed-variant": "#5516be",
+                    "surface-tint": "#0053db",
+                    "surface-container-lowest": "#ffffff",
+                    "on-surface": "#0b1c30",
+                    "on-error": "#ffffff",
+                    "error": "#ba1a1a",
+                    "secondary-fixed": "#e9ddff",
+                    "on-secondary-fixed": "#23005c",
+                    "tertiary-fixed": "#6ffbbe",
+                    "surface-container-low": "#eff4ff",
+                    "on-secondary-container": "#fffbff",
+                    "on-primary": "#ffffff",
+                    "background": "#f8f9ff",
+                    "on-tertiary-container": "#bdffdb",
+                    "outline": "#737686",
+                    "surface-container-highest": "#d3e4fe",
+                    "surface-dim": "#cbdbf5",
+                    "primary-fixed": "#dbe1ff",
+                    "on-primary-container": "#eeefff",
+                    "surface-variant": "#d3e4fe",
+                    "outline-variant": "#c3c6d7",
+                    "on-error-container": "#93000a",
+                    "on-surface-variant": "#434655",
+                    "on-secondary": "#ffffff",
+                    "inverse-on-surface": "#eaf1ff",
+                    "on-primary-fixed-variant": "#003ea8"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "base": "4px",
+                    "margin-mobile": "16px",
+                    "lg": "24px",
+                    "margin-desktop": "32px",
+                    "md": "16px",
+                    "gutter": "24px",
+                    "sm": "8px",
+                    "xl": "40px",
+                    "xs": "4px"
+            },
+            "fontFamily": {
+                    "student-card-title": ["Quicksand"],
+                    "headline-lg-mobile": ["Geist"],
+                    "body-sm": ["Inter"],
+                    "display-student": ["Quicksand"],
+                    "label-caps": ["Geist"],
+                    "body-md": ["Inter"],
+                    "headline-lg": ["Geist"],
+                    "display-teacher": ["Geist"]
+            },
+            "fontSize": {
+                    "student-card-title": ["20px", {"lineHeight": "28px", "fontWeight": "700"}],
+                    "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+                    "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}],
+                    "display-student": ["48px", {"lineHeight": "1.2", "fontWeight": "700"}],
+                    "label-caps": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "600"}],
+                    "display-teacher": ["48px", {"lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .scale-98:active { transform: scale(0.98); }
+        .glass-effect { backdrop-filter: blur(8px); }
+        body { background-color: #f8f9ff; }
+    </style>
+</head>
+<body class="min-h-screen text-on-surface font-body-md overflow-x-hidden">
+<!-- SideNavBar (Execution from JSON) -->
+<aside class="fixed left-0 top-0 h-full w-[240px] bg-surface-container-low dark:bg-inverse-surface border-r border-outline-variant dark:border-outline flex flex-col p-md space-y-md z-50">
+<div class="flex items-center space-x-3 mb-xl px-2">
+<div class="w-10 h-10 rounded-xl bg-primary-container flex items-center justify-center text-on-primary-container shadow-sm">
+<span class="material-symbols-outlined">school</span>
+</div>
+<div>
+<h1 class="text-label-caps font-label-caps text-primary uppercase tracking-widest">Teacher Portal</h1>
+<p class="text-xs text-on-surface-variant">Classroom Logistics</p>
+</div>
+</div>
+<nav class="flex-1 space-y-2">
+<!-- Active Tab -->
+<a class="flex items-center space-x-3 p-3 bg-primary-container dark:bg-primary text-on-primary-container dark:text-on-primary rounded-xl font-bold transition-all" href="#">
+<span class="material-symbols-outlined">school</span>
+<span class="text-label-caps font-label-caps">Classes</span>
+</a>
+<!-- Inactive Tabs -->
+<a class="flex items-center space-x-3 p-3 text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-high rounded-xl transition-all" href="#">
+<span class="material-symbols-outlined">folder_open</span>
+<span class="text-label-caps font-label-caps">Repositories</span>
+</a>
+<a class="flex items-center space-x-3 p-3 text-on-surface-variant dark:text-surface-variant hover:bg-surface-container dark:hover:bg-surface-container-high rounded-xl transition-all" href="#">
+<span class="material-symbols-outlined">insert_chart</span>
+<span class="text-label-caps font-label-caps">Analytics</span>
+</a>
+</nav>
+<button class="w-full py-4 px-4 bg-primary text-on-primary rounded-xl font-bold text-label-caps font-label-caps flex items-center justify-center space-x-2 shadow-lg shadow-primary/20 scale-98 transition-transform">
+<span class="material-symbols-outlined">add</span>
+<span class="">Add New Class</span>
+</button>
+<footer class="pt-md mt-auto border-t border-outline-variant/30">
+<div class="space-y-1">
+<a class="flex items-center space-x-3 p-3 text-on-surface-variant hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined">help_outline</span>
+<span class="text-label-caps font-label-caps">Help</span>
+</a>
+<a class="flex items-center space-x-3 p-3 text-on-surface-variant hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined">contact_support</span>
+<span class="text-label-caps font-label-caps">Support</span>
+</a>
+</div>
+</footer>
+</aside>
+<!-- Main Content Canvas -->
+<main class="ml-[240px] relative min-h-screen">
+<!-- TopAppBar (Execution from JSON) -->
+<header class="flex justify-between items-center w-full px-margin-desktop py-base z-50 sticky top-0 bg-surface dark:bg-inverse-surface border-b border-outline-variant dark:border-outline backdrop-blur-md bg-opacity-90">
+<div class="flex items-center space-x-8">
+<span class="text-headline-lg font-headline-lg font-bold text-on-surface dark:text-inverse-on-surface">Kobi Learning Labs</span>
+<!-- NotebookLM-style Search Bar Integration -->
+<div class="relative w-96 group">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant group-focus-within:text-primary transition-colors">search</span>
+<input class="w-full bg-surface-container-low border border-outline-variant rounded-full py-2.5 pl-10 pr-4 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all text-body-md font-body-md" placeholder="Search lessons, students, or resources..." type="text">
+</div>
+</div>
+<div class="flex items-center space-x-4">
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low dark:hover:bg-surface-variant/10 rounded-full transition-colors active:opacity-80 active:scale-95">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<button class="p-2 text-on-surface-variant hover:bg-surface-container-low dark:hover:bg-surface-variant/10 rounded-full transition-colors active:opacity-80 active:scale-95">
+<span class="material-symbols-outlined">apps</span>
+</button>
+<div class="w-10 h-10 rounded-full bg-secondary-container/20 border-2 border-secondary overflow-hidden ml-2 cursor-pointer transition-transform hover:scale-105">
+<img class="w-full h-full object-cover" data-alt="A professional headshot of a friendly female teacher in her late 30s with a warm smile. She is wearing a modern teal blazer and has soft glasses. The background is a brightly lit, blurred classroom with colorful educational posters. High-end photography with soft lighting and a crisp focus on the face, embodying the modern corporate yet approachable aesthetic of the Kobi Learning Labs platform." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDs478ot0CpNGzEtWurcO2ZF2eh8pmHnVpqMQ_Xs4901jkWVT_FEvUpFP6zSBHK6q4uYu2wEROfWipc9ZQYgejkJFJ5SM-9qPaua4CWlHsEnXOT5v-KfC9WsOaQsEUutF8GJmx9ZttjbwZnMuhQMYkzqg4sJ42OWyHyttQvuhE4ba_PvBPJrFnYr59lBGeGpxIuRD0gjpZpSuraalatHzVWJjbg9HOr-X36bBf59MDRmnJdjtnWU07jLcTx69pBS_1kfb1fE-c-HaU">
+</div>
+</div>
+</header>
+<!-- Dashboard Content -->
+<div class="p-margin-desktop max-w-7xl mx-auto">
+<!-- Greeting Hero (Inspired by NotebookLM) -->
+<section class="mb-12 py-8">
+<h2 class="text-display-teacher font-display-teacher text-on-surface tracking-tight leading-none mb-2">Welcome back, Mrs. Henderson</h2>
+<p class="text-on-surface-variant text-lg">You have 2 upcoming lessons today and 46 active students to engage with.</p>
+</section>
+<!-- Dashboard Grid Section -->
+<section>
+<div class="flex justify-between items-center mb-6">
+<h3 class="text-headline-lg font-headline-lg text-on-surface">Your Classes</h3>
+<div class="flex items-center space-x-2 bg-surface-container rounded-lg p-1">
+<button class="px-3 py-1 bg-surface-container-lowest shadow-sm rounded font-bold text-primary text-body-sm flex items-center">
+<span class="material-symbols-outlined text-sm mr-1">grid_view</span> Grid
+                        </button>
+<button class="px-3 py-1 text-on-surface-variant hover:bg-surface-container-low rounded font-medium text-body-sm flex items-center">
+<span class="material-symbols-outlined text-sm mr-1">view_list</span> List
+                        </button>
+</div>
+</div>
+<!-- Bento-style Grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-gutter"><div class="group relative border-2 border-dashed border-outline-variant bg-surface-container-low rounded-3xl flex flex-col items-center justify-center cursor-pointer transition-all hover:bg-surface-container-high hover:border-primary/40 hover:shadow-xl hover:shadow-primary/5 active:scale-95 md:col-span-2 lg:col-span-3 h-40">
+<div class="w-16 h-16 rounded-full bg-secondary-fixed text-on-secondary-fixed flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-3xl font-bold">add</span>
+</div>
+<span class="text-student-card-title font-student-card-title text-on-surface-variant group-hover:text-primary transition-colors">Create new class</span>
+</div>
+<!-- Create New Class Card -->
+
+<!-- Class Card 1 -->
+<div class="bg-surface-container-lowest rounded-3xl border border-outline-variant/30 overflow-hidden shadow-sm hover:shadow-lg transition-all flex flex-col group">
+<div class="h-40 relative bg-gradient-to-br from-primary-container to-secondary overflow-hidden">
+<img class="w-full h-full object-cover mix-blend-overlay opacity-60 group-hover:scale-110 transition-transform duration-500" data-alt="A vibrant digital illustration of a lush rainforest ecosystem with various layers of vegetation, featuring a small animated jaguar sprite peeking from the leaves. The style is soft-playful minimalism with rounded shapes and a vibrant color palette of emerald greens, deep teals, and soft purples. Ambient lighting creates a sense of depth and curiosity, perfectly suited for a Grade 4 science curriculum background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBCAwPsVw47e0Nv2o8f8sBJM_d_mY5O81AtCriMIujynK1Z4qFVr-U_1_BOLZz-c9WnkGdFLcIxY-pCddOH7FNrl4Nz3RJSepvcldBk9Hn-unZmUUahnjRaxJUfGgcqzcrtMmlDFp3i945BScZwFB8FpFCiY7l7hpZt_9Ac6FLAoZZcrdpnH05aRWNP5a3NlMK0drZNLJ05ejf9BogvXk_G02ZR5Gq8nCFjvbqq7-deOlmo_kbRavVCO0AbBkNsIOBOJN1NGhVDmOM">
+<div class="absolute top-4 left-4">
+<span class="px-3 py-1 bg-white/20 glass-effect rounded-full text-white text-[10px] font-bold uppercase tracking-widest">Active Lesson</span>
+</div>
+</div>
+<div class="p-lg flex-1 flex flex-col">
+<h4 class="text-student-card-title font-student-card-title text-on-surface mb-1">Grade 4 Science - Section A</h4>
+<p class="text-body-sm font-body-sm text-tertiary font-semibold mb-4">Ecosystems &amp; Energy</p>
+<div class="flex items-center space-x-2 text-on-surface-variant text-sm mb-6">
+<span class="material-symbols-outlined text-sm">groups</span>
+<span class="">24 Students Active</span>
+</div>
+<div class="mt-auto">
+<p class="text-label-caps font-label-caps text-on-surface-variant mb-2 opacity-60">TOPICS</p>
+<div class="flex flex-wrap gap-2">
+<span class="px-2 py-1 bg-surface-container text-[11px] font-bold rounded-lg text-on-surface-variant">Photosynthesis</span>
+<span class="px-2 py-1 bg-surface-container text-[11px] font-bold rounded-lg text-on-surface-variant">Food Webs</span>
+<span class="px-2 py-1 bg-surface-container text-[11px] font-bold rounded-lg text-on-surface-variant">Trophic Levels</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Class Card 2 -->
+<div class="bg-surface-container-lowest rounded-3xl border border-outline-variant/30 overflow-hidden shadow-sm hover:shadow-lg transition-all flex flex-col group">
+<div class="h-40 relative bg-gradient-to-br from-tertiary-container to-on-tertiary-fixed-variant overflow-hidden">
+<img class="w-full h-full object-cover mix-blend-overlay opacity-60 group-hover:scale-110 transition-transform duration-500" data-alt="A minimalist and geometric digital art piece representing algebra. It features glowing white floating variables, clean mathematical symbols, and 3D architectural shapes in a structured yet playful arrangement. The color scheme is dominated by cool teals and deep navy with highlights of neon cyan. The lighting is crisp and modern, creating a professional and focused atmosphere for learning mathematics." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA932KhbIrFuy-YeSLoezsXY1m5ssXcWSCC6nKu52j9iVzwAW0nbMgsKdzmvGZ-x1ZGA4YLqNnsEUuf0YbOjW3QTAaVw7AeJSd_HlaLZEYO49CWgi58UglcAAkhr5-GeZxDYNYJqtLwLnL2xl8gvQpmNmluT-yrr4iOuyjeJSoGn0jgZG5Y4gQjl0kaq9cxGKhtuOToJYeEkDpLt8KG6AeUI7yRUTLfqyF6MB4w0o2AGtWFJOCeN6Wh_eTS3RPoN6ml2gq0Y37Tr9w">
+</div>
+<div class="p-lg flex-1 flex flex-col">
+<h4 class="text-student-card-title font-student-card-title text-on-surface mb-1">Grade 5 Math - Algebra Basics</h4>
+<p class="text-body-sm font-body-sm text-primary font-semibold mb-4">Mathematics</p>
+<div class="flex items-center space-x-2 text-on-surface-variant text-sm mb-6">
+<span class="material-symbols-outlined text-sm">groups</span>
+<span class="">22 Students Active</span>
+</div>
+<div class="mt-auto">
+<p class="text-label-caps font-label-caps text-on-surface-variant mb-2 opacity-60">TOPICS</p>
+<div class="flex flex-wrap gap-2">
+<span class="px-2 py-1 bg-surface-container text-[11px] font-bold rounded-lg text-on-surface-variant">Variables</span>
+<span class="px-2 py-1 bg-surface-container text-[11px] font-bold rounded-lg text-on-surface-variant">Equations</span>
+<span class="px-2 py-1 bg-surface-container text-[11px] font-bold rounded-lg text-on-surface-variant">Order of Ops</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Class Card 3 (Visual Placeholder for more data) -->
+<div class="bg-surface-container-lowest rounded-3xl border border-outline-variant/30 overflow-hidden shadow-sm hover:shadow-lg transition-all flex flex-col group">
+<div class="h-40 relative bg-gradient-to-br from-secondary-fixed-dim to-secondary overflow-hidden">
+<img class="w-full h-full object-cover mix-blend-overlay opacity-60 group-hover:scale-110 transition-transform duration-500" data-alt="A clean, high-contrast digital illustration of ancient parchment scrolls and a golden compass on a desk, representing history and literature. The style is contemporary with soft, diffuse shadows and a warm color palette of ocher, sepia, and deep violets. The aesthetic is sophisticated and educational, with sharp details and an inviting, scholarly atmosphere." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCpycvw0OTR6LZbzoWOMk7z3c-p9wMvTQoYyHII1w-4g5rUbzvB_0p33ESghjGNCfseRdj5ouhEUbTrXj52sIfJ9RMFn5JMtRfNXZ-v-KXEWkKpr1lMH23hOqgtEYhMsBcX4JD-tKQdkAq1X93KbzOX4BGFAvHo8O9E9_8IYAluDRxNGs-niCbr2pMnBUC3cFbqF6wlnSubrpUUrKu2hTKD8mzsjSdQRgJilvuO9f_lM7l_NZR1J3YxBJAprOGHte9ecoWntu4mMVY">
+</div>
+<div class="p-lg flex-1 flex flex-col">
+<h4 class="text-student-card-title font-student-card-title text-on-surface mb-1">Grade 6 Lit - Creative Writing</h4>
+<p class="text-body-sm font-body-sm text-secondary font-semibold mb-4">English &amp; Arts</p>
+<div class="flex items-center space-x-2 text-on-surface-variant text-sm mb-6">
+<span class="material-symbols-outlined text-sm">groups</span>
+<span class="">28 Students Active</span>
+</div>
+<div class="mt-auto">
+<p class="text-label-caps font-label-caps text-on-surface-variant mb-2 opacity-60">TOPICS</p>
+<div class="flex flex-wrap gap-2">
+<span class="px-2 py-1 bg-surface-container text-[11px] font-bold rounded-lg text-on-surface-variant">Metaphors</span>
+<span class="px-2 py-1 bg-surface-container text-[11px] font-bold rounded-lg text-on-surface-variant">Story Arch</span>
+<span class="px-2 py-1 bg-surface-container text-[11px] font-bold rounded-lg text-on-surface-variant">Voice</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Bottom Quick Stats / Activity (Asymmetric Detail) -->
+<section class="mt-16 grid grid-cols-1 md:grid-cols-3 gap-gutter">
+<div class="md:col-span-2 bg-white/50 border border-outline-variant rounded-3xl p-lg flex items-center space-x-6">
+<div class="w-16 h-16 rounded-full bg-on-tertiary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-tertiary-container text-3xl">bolt</span>
+</div>
+<div>
+<h5 class="text-student-card-title font-student-card-title text-on-surface">Weekly Engagement is up 12%</h5>
+<p class="text-on-surface-variant text-body-sm">Your students are spending more time on the 'Food Webs' activity than expected. Would you like to add more resources?</p>
+</div>
+</div>
+<div class="bg-primary-container text-on-primary-container rounded-3xl p-lg flex flex-col justify-center">
+<span class="text-label-caps font-label-caps mb-1 opacity-80">NEXT SESSION</span>
+<h5 class="text-xl font-bold leading-tight">10:30 AM <br>Science - Sec A</h5>
+<div class="mt-4 flex -space-x-2">
+<div class="w-8 h-8 rounded-full border-2 border-primary-container bg-surface overflow-hidden">
+<img class="w-full h-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB2qFKoH54IyhZCFdjoIRSChvpUzEa_vrsh5NAv-DyIijb7VD0D3Ts0tkKuP2mH_cO9GLR7KfzZHuGKRUJ8Wh-3T5TuiCnBg2aHxKaUlFn-BnHz33uGetUa_hlSV3YGcfp7chx_L7PW2KHqYb9IRB6tWEpQil0SJTWpFLiO_5Dc0WDVP045Nimgm2MmVuTtA_WwE4cL-3OGefElcQymaB9BG3_F488z_R_M5ydtkfY1sN72R4ra4WEO5J9CMdei-Uk2pI0IE7sYsoA">
+</div>
+<div class="w-8 h-8 rounded-full border-2 border-primary-container bg-surface overflow-hidden">
+<img class="w-full h-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDGPE9JjM4R0tsUzBo15GtbRB5rIOIkHgvTh9Kfy5gWTduE0VO329LroiLyCLzBYcbhPanU7a2FFp6mmQYKH9XNd1OaGRVbAViLSZIG85RkwslRmiGgx4LgcE5i5_SB4434YoD-ZlrzWBGDdPdf0hIRlyrJJkZfSM7vFHEUPKGiRsW6DrnOcgINZ6qu-_wE1zW_vahGv_R8hUT6-f7z1gvGfgzlzU1f9x3Wslg_0l2lwd0RBId9q4u-sx0jkCKZ99gJr_Jv_G9W-sE">
+</div>
+<div class="w-8 h-8 rounded-full border-2 border-primary-container bg-surface overflow-hidden">
+<img class="w-full h-full" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBfY6NT0pkS-JKNNZptzFMV5Jq52lVumxB5CA5ALhMzcAEa-afk0aw05IJHWxv2BRp2Se165IMtu5jT6OYuLAW3AvH1xi_wyqK2dJiGknHtBrvN5RXlFTmW_WYgRGOClbS8hbXdWpjcvAFtfjNDFbSE1iSXZVRlvW1p1ooy7Nhe6niCbDjfT9nbTvYuBZxWGvyQm1ZhANgD1VzB9Sk-6cYtTpVZLD11GVuHKieqnGI-3K13SliHZYX2QIdXkHmo0218cVLrhUi66Xs">
+</div>
+<div class="w-8 h-8 rounded-full bg-on-primary text-[10px] font-bold flex items-center justify-center border-2 border-primary-container">
+                            +21
+                        </div>
+</div>
+</div>
+</section>
+</div>
+<!-- Floating Action Interaction Element (Micro-interaction) -->
+<div class="fixed bottom-8 right-8 flex flex-col items-end space-y-4 pointer-events-none" id="quick-actions">
+<button class="pointer-events-auto w-14 h-14 bg-primary text-on-primary rounded-full shadow-xl flex items-center justify-center hover:rotate-90 transition-transform active:scale-90" id="fab-main">
+<span class="material-symbols-outlined">add</span>
+</button>
+</div>
+</main>
+<script>
+        // Simple FAB interaction for visual polish
+        const fab = document.getElementById('fab-main');
+        fab.addEventListener('click', () => {
+            alert('Opening classroom creation wizard...');
+        });
+
+        // Search bar focus effect
+        const searchInput = document.querySelector('input[type="text"]');
+        searchInput.addEventListener('focus', () => {
+            searchInput.parentElement.classList.add('w-[500px]');
+        });
+        searchInput.addEventListener('blur', () => {
+            searchInput.parentElement.classList.remove('w-[500px]');
+        });
+
+        // Hover effects on cards for high-end feel
+        document.querySelectorAll('.group').forEach(card => {
+            card.addEventListener('mouseenter', () => {
+                // Potential JS based animation here
+            });
+        });
+    </script>
+
+
+
+
+</body></html>
