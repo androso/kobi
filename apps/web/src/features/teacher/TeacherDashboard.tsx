@@ -45,10 +45,10 @@ export function TeacherDashboard() {
     <main className="min-h-screen bg-[#eef3fb] text-foreground overflow-hidden">
       <div className="grid min-h-screen w-full lg:grid-cols-[240px_minmax(0,1fr)] bg-[#eef3fb]">
         <Sidebar />
-        <div className="flex flex-col p-3 pl-0 sm:p-4 sm:pl-0 lg:p-5 lg:pl-0 h-screen">
-          <div className="flex-1 flex flex-col bg-[#f8f9ff] rounded-r-[30px] border border-slate-200/50 overflow-hidden shadow-sm">
-          <Header />
-          <div className="flex-1 px-6 py-8 md:px-10 max-w-7xl w-full mx-auto">
+        <div className="flex flex-col p-3 sm:p-4 lg:p-5 h-screen">
+          <div className="flex-1 flex flex-col bg-[#f8f9ff] rounded-[30px] border border-slate-200/50 overflow-hidden shadow-sm">
+            <Header />
+            <div className="flex-1 px-6 py-8 md:px-10 max-w-7xl w-full mx-auto overflow-y-auto">
             {/* Greeting Hero */}
             <section className="mb-10">
               <h2 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl lg:text-[40px] leading-tight">
