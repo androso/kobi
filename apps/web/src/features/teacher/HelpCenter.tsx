@@ -1,4 +1,5 @@
-import { useNavigate } from "react-router-dom";
+import { useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   BookOpen,
   CircleHelp,
@@ -11,106 +12,264 @@ import {
   Users2,
   Volume2,
   ChevronRight,
+  PlayCircle,
+  Mail,
 } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { Header } from "./components/Header";
 
-type HelpLink = {
+type HelpContext = "dashboard" | "monitor" | "repositories" | "analytics";
+
+type HelpAction = {
   label: string;
-  active?: boolean;
+  kind: "navigate" | "mailto";
+  to?: string;
+  href?: string;
 };
 
-type HelpGroup = {
+type HelpTopic = {
   title: string;
-  links: HelpLink[];
+  description: string;
+  icon: typeof Search;
+  tags: string[];
+  contexts: HelpContext[];
+  action: HelpAction;
 };
 
-const helpGroups: HelpGroup[] = [
-  {
-    title: "Para empezar",
-    links: [
-      { label: "Qué es Kobi" },
-      { label: "Entender las clases" },
-      { label: "Crear tu primera sesión" },
-      { label: "Actividades y variantes" },
-    ],
-  },
-  {
-    title: "Referencia de Kobi",
-    links: [
-      { label: "Portal de Kobi", active: true },
-      { label: "Búsqueda rápida" },
-      { label: "Vistas" },
-      { label: "Sesiones" },
-      { label: "Estudiantes" },
-      { label: "Reportes" },
-    ],
-  },
-  {
-    title: "Soporte",
-    links: [
-      { label: "Contactar soporte" },
-      { label: "Videos de apoyo" },
-      { label: "Problemas comunes" },
-    ],
-  },
-];
+type HelpFAQ = {
+  question: string;
+  answer: string;
+  tags: string[];
+};
 
-const featureCards = [
+const contextMeta: Record<
+  HelpContext,
   {
-    title: "Búsqueda rápida",
-    description: "Encuentra clases, estudiantes o sesiones recientes en segundos.",
-    icon: Search,
+    eyebrow: string;
+    title: string;
+    description: string;
+  }
+> = {
+  dashboard: {
+    eyebrow: "Panel docente",
+    title: "Empieza desde el panel",
+    description: "Atajos para crear clases, revisar estado y preparar la siguiente sesión.",
   },
-  {
-    title: "Vistas",
-    description: "Cambia entre resumen, monitoreo en vivo e historial.",
-    icon: LayoutGrid,
+  monitor: {
+    eyebrow: "Monitoreo en vivo",
+    title: "Ayuda para la clase en curso",
+    description: "Resuelve dudas sobre transcripción, participación y señales de fricción.",
   },
-  {
-    title: "Registros",
-    description: "Consulta sesiones, prompts y evidencias asociadas a cada clase.",
-    icon: BookOpen,
+  repositories: {
+    eyebrow: "Clases anteriores",
+    title: "Revisión de sesiones pasadas",
+    description: "Encuentra resúmenes, transcripciones y detalles históricos más rápido.",
   },
+  analytics: {
+    eyebrow: "Analíticas",
+    title: "Lectura de resultados",
+    description: "Interpreta métricas, progreso y señales para tomar decisiones con Kobi.",
+  },
+};
+
+const helpTopics: HelpTopic[] = [
   {
-    title: "Sesiones de clase",
-    description: "Crea, ejecuta y revisa sesiones desde un solo lugar.",
+    title: "Crear una clase",
+    description: "Abre el flujo de nueva clase para definir grado, enfoque y temas clave.",
     icon: Sparkles,
+    tags: ["clase", "crear", "sesión", "nueva"],
+    contexts: ["dashboard", "repositories", "analytics"],
+    action: { label: "Abrir panel", kind: "navigate", to: "/teacher" },
   },
   {
-    title: "Estudiantes",
-    description: "Ve quién está activo, atascado o listo para la siguiente actividad.",
+    title: "Ver monitoreo en vivo",
+    description: "Revisa la sesión activa, la transcripción y los puntos de fricción.",
+    icon: PlayCircle,
+    tags: ["monitor", "vivo", "transcripción", "fricción"],
+    contexts: ["dashboard", "monitor", "analytics"],
+    action: { label: "Ir al monitoreo", kind: "navigate", to: "/teacher/monitor" },
+  },
+  {
+    title: "Revisar clases anteriores",
+    description: "Consulta resúmenes, transcripciones y detalles de sesiones previas.",
+    icon: BookOpen,
+    tags: ["historial", "clases", "sesiones", "resúmenes"],
+    contexts: ["dashboard", "repositories", "analytics"],
+    action: { label: "Abrir historial", kind: "navigate", to: "/teacher/repositories" },
+  },
+  {
+    title: "Analizar resultados",
+    description: "Interpreta participación, progreso y puntos de fricción por estudiante.",
+    icon: LayoutGrid,
+    tags: ["analíticas", "progreso", "participación", "resultados"],
+    contexts: ["dashboard", "monitor", "analytics"],
+    action: { label: "Ver analíticas", kind: "navigate", to: "/teacher/analytics" },
+  },
+  {
+    title: "Actividades y variantes",
+    description: "Revisa apoyo, base y reto para ajustar dificultad sin cambiar el objetivo.",
     icon: Users2,
+    tags: ["variantes", "apoyo", "reto", "actividad"],
+    contexts: ["dashboard", "monitor", "repositories"],
+    action: { label: "Volver al panel", kind: "navigate", to: "/teacher" },
   },
   {
-    title: "Notas",
-    description: "Guarda recordatorios, seguimientos y observaciones de clase.",
-    icon: MessageSquare,
+    title: "Consejos docentes",
+    description: "Encuentra orientación práctica para ritmo, retroalimentación y aprobación.",
+    icon: Lightbulb,
+    tags: ["consejos", "aprobación", "feedback", "ritmo"],
+    contexts: ["dashboard", "analytics", "repositories"],
+    action: { label: "Abrir historial", kind: "navigate", to: "/teacher/repositories" },
   },
   {
-    title: "Ayuda",
-    description: "Abre el canal de contacto si necesitas ayuda con Kobi o tu clase.",
+    title: "Contactar soporte",
+    description: "Escribe al equipo si algo bloquea tu clase, acceso o configuración.",
     icon: CircleHelp,
+    tags: ["soporte", "ayuda", "correo", "bloqueo"],
+    contexts: ["dashboard", "monitor", "repositories", "analytics"],
+    action: { label: "Enviar correo", kind: "mailto", href: "mailto:soporte@kobi.ai" },
   },
   {
     title: "Configuración",
     description: "Ajusta preferencias del portal y del espacio docente.",
     icon: Settings2,
+    tags: ["configuración", "portal", "preferencias"],
+    contexts: ["dashboard", "analytics"],
+    action: { label: "Abrir panel", kind: "navigate", to: "/teacher" },
   },
   {
-    title: "Consejos docentes",
-    description: "Usa recomendaciones prácticas para ritmo, retroalimentación y aprobación.",
-    icon: Lightbulb,
+    title: "Notas y evidencias",
+    description: "Guarda observaciones, seguimientos y evidencia de clase.",
+    icon: MessageSquare,
+    tags: ["notas", "evidencia", "observaciones", "seguimiento"],
+    contexts: ["repositories", "analytics"],
+    action: { label: "Ver clases anteriores", kind: "navigate", to: "/teacher/repositories" },
   },
 ];
 
+const faqs: HelpFAQ[] = [
+  {
+    question: "¿Cómo inicio una nueva clase?",
+    answer: "Desde el panel docente, toca Nueva clase y completa el nombre, enfoque y temas clave. Kobi prepara el resto.",
+    tags: ["clase", "crear", "nueva"],
+  },
+  {
+    question: "¿Dónde veo el monitoreo en vivo?",
+    answer: "Abre Monitoreo en vivo en el menú lateral para revisar participación, progreso y señales de fricción.",
+    tags: ["monitor", "vivo", "transcripción"],
+  },
+  {
+    question: "¿Cómo contacto soporte?",
+    answer: "Escribe a soporte@kobi.ai. Si el caso es sobre una clase específica, incluye el nombre de la sesión.",
+    tags: ["soporte", "correo", "ayuda"],
+  },
+  {
+    question: "¿Cómo reviso una sesión pasada?",
+    answer: "En Clases anteriores puedes abrir cada sesión, leer el resumen y revisar la transcripción completa.",
+    tags: ["historial", "sesión", "resumen"],
+  },
+  {
+    question: "¿Qué hago si no aparece una actividad?",
+    answer: "Revisa si la clase fue aprobada y si la variante correcta está disponible en el panel de actividades.",
+    tags: ["actividad", "aprobación", "variantes"],
+  },
+];
+
+function normalize(value: string) {
+  return value.toLowerCase().trim();
+}
+
+function matchesQuery(text: string, query: string) {
+  return normalize(text).includes(normalize(query));
+}
+
+function hashString(input: string) {
+  let hash = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash * 31 + input.charCodeAt(index)) >>> 0;
+  }
+  return hash;
+}
+
 export function HelpCenter() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [query, setQuery] = useState("");
+  const context = (searchParams.get("from") as HelpContext) || "dashboard";
+  const meta = contextMeta[context] ?? contextMeta.dashboard;
+
+  const results = useMemo(() => {
+    const q = query.trim();
+    const filteredTopics = helpTopics
+      .filter((topic) => {
+        if (!q) return true;
+        return (
+          matchesQuery(topic.title, q) ||
+          matchesQuery(topic.description, q) ||
+          topic.tags.some((tag) => matchesQuery(tag, q))
+        );
+      })
+      .sort((a, b) => Number(b.contexts.includes(context)) - Number(a.contexts.includes(context)));
+
+    const filteredFaqs = faqs.filter((faq) => {
+      if (!q) return true;
+      return (
+        matchesQuery(faq.question, q) ||
+        matchesQuery(faq.answer, q) ||
+        faq.tags.some((tag) => matchesQuery(tag, q))
+      );
+    });
+
+    return { filteredTopics, filteredFaqs };
+  }, [context, query]);
+
+  const featuredTopicIndexes = useMemo(() => {
+    const total = results.filteredTopics.length;
+    if (total === 0) return new Set<number>();
+
+    const firstRowSize = Math.min(3, total);
+    const seed = hashString(`${context}|${query.trim() || "default"}`);
+    const firstPick = seed % firstRowSize;
+
+    const secondRowStart = 3;
+    const secondRowEnd = Math.min(6, total);
+    const secondRowCandidates = Array.from(
+      { length: Math.max(0, secondRowEnd - secondRowStart) },
+      (_, index) => secondRowStart + index
+    );
+
+    let secondPick =
+      secondRowCandidates.length > 0
+        ? secondRowCandidates[seed % secondRowCandidates.length]
+        : firstPick;
+
+    const supportIndex = results.filteredTopics.findIndex((topic) => topic.title === "Contactar soporte");
+    if (supportIndex >= 0 && supportIndex + 1 < total) {
+      secondPick = supportIndex + 1;
+    }
+
+    if (secondPick === firstPick) {
+      secondPick = (firstPick + 1) % total;
+    }
+
+    return new Set([firstPick, secondPick]);
+  }, [results.filteredTopics]);
+
+  function handleAction(action: HelpAction) {
+    if (action.kind === "mailto" && action.href) {
+      window.location.href = action.href;
+      return;
+    }
+
+    if (action.kind === "navigate" && action.to) {
+      navigate(action.to);
+    }
+  }
 
   return (
     <main className="min-h-screen bg-[#eef3fb] overflow-hidden">
       <div className="grid min-h-screen w-full lg:grid-cols-[240px_minmax(0,1fr)] bg-[#eef3fb]">
-        <Sidebar onOpenHelp={() => navigate("/teacher/ayuda")} />
+        <Sidebar onOpenHelp={() => navigate(`/teacher/ayuda?from=${context}`)} />
         <div className="flex flex-col p-3 sm:p-4 lg:p-5 h-screen">
           <div className="flex-1 flex flex-col bg-[#f8f9ff] rounded-[30px] border border-slate-200/50 overflow-hidden shadow-sm min-h-0">
             <Header />
@@ -128,14 +287,14 @@ export function HelpCenter() {
                   <span>Referencia</span>
                 </div>
 
-                <section className="mb-10 overflow-hidden rounded-[2rem] bg-[#9f75f6] px-7 py-10 text-white shadow-[0_20px_60px_rgba(159,117,246,0.18)] sm:px-10 lg:px-12 lg:py-14">
+                <section className="mb-6 overflow-hidden rounded-[2rem] bg-[#9f75f6] px-7 py-10 text-white shadow-[0_20px_60px_rgba(159,117,246,0.18)] sm:px-10 lg:px-12 lg:py-14">
                   <div className="grid items-center gap-10 lg:grid-cols-[1.1fr_0.9fr]">
                     <div>
-                      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-white/75">Centro de ayuda</p>
-                      <h1 className="mt-4 text-4xl font-semibold tracking-tight sm:text-5xl">Kobi</h1>
-                      <p className="mt-4 max-w-xl text-lg leading-8 text-white/85">
-                        Ve la misma información de clase en distintas formas, según lo que necesites revisar.
+                      <p className="text-sm font-semibold uppercase tracking-[0.2em] text-white/75">
+                        {meta.eyebrow}
                       </p>
+                      <h1 className="mt-4 text-4xl font-semibold tracking-tight sm:text-5xl">Kobi</h1>
+                      <p className="mt-4 max-w-xl text-lg leading-8 text-white/85">{meta.description}</p>
                     </div>
 
                     <div className="relative min-h-[170px]">
@@ -149,10 +308,35 @@ export function HelpCenter() {
                   </div>
                 </section>
 
+                <div className="mb-8 rounded-[1.6rem] border border-slate-200/80 bg-white p-4 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <Search className="h-5 w-5 text-slate-400" />
+                    <input
+                      aria-label="Buscar ayuda"
+                      className="w-full bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="Buscar en Kobi: monitoreo, clases, soporte..."
+                      value={query}
+                    />
+                  </div>
+                </div>
+
+                <div className="mb-4 flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
+                      Recomendado para esta sección
+                    </p>
+                    <h2 className="mt-2 text-2xl font-semibold text-slate-950">{meta.title}</h2>
+                  </div>
+                  <div className="rounded-full bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700">
+                    {results.filteredTopics.length} temas
+                  </div>
+                </div>
+
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {featureCards.map((card, index) => {
+                  {results.filteredTopics.map((card, index) => {
                     const Icon = card.icon;
-                    const featured = index === 0 || index === 6;
+                    const featured = featuredTopicIndexes.has(index);
 
                     return (
                       <button
@@ -162,6 +346,7 @@ export function HelpCenter() {
                             : "border-slate-200/80 bg-white"
                         }`}
                         key={card.title}
+                        onClick={() => handleAction(card.action)}
                         type="button"
                       >
                         <div
@@ -177,6 +362,10 @@ export function HelpCenter() {
                         <p className={`mt-2 text-sm leading-6 ${featured ? "text-white/85" : "text-slate-600"}`}>
                           {card.description}
                         </p>
+                        <div className={`mt-5 inline-flex items-center gap-2 text-sm font-bold ${featured ? "text-white" : "text-[#004ac6]"}`}>
+                          {card.action.label}
+                          <ChevronRight className="h-4 w-4" />
+                        </div>
                       </button>
                     );
                   })}
@@ -242,10 +431,10 @@ export function HelpCenter() {
                     <div className="mt-6 space-y-3">
                       <button
                         className="flex w-full items-center justify-between rounded-2xl bg-white/8 px-4 py-3 text-left text-sm font-semibold text-white transition hover:bg-white/12"
-                        onClick={() => navigate("/teacher")}
+                        onClick={() => navigate("/teacher/monitor")}
                         type="button"
                       >
-                        <span>Volver al portal docente</span>
+                        <span>Ir al monitoreo</span>
                         <ChevronRight className="h-4 w-4" />
                       </button>
                       <a
@@ -253,11 +442,36 @@ export function HelpCenter() {
                         href="mailto:soporte@kobi.ai"
                       >
                         <span>soporte@kobi.ai</span>
-                        <MessageSquare className="h-4 w-4" />
+                        <Mail className="h-4 w-4" />
                       </a>
                     </div>
                   </aside>
                 </div>
+
+                <section className="mt-14">
+                  <div className="mb-4 flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">Preguntas frecuentes</p>
+                      <h2 className="mt-2 text-2xl font-semibold text-slate-950">Respuestas rápidas para Kobi</h2>
+                    </div>
+                    <div className="rounded-full bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-700">
+                      {results.filteredFaqs.length} respuestas
+                    </div>
+                  </div>
+
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    {results.filteredFaqs.map((faq) => (
+                      <button
+                        className="rounded-[1.5rem] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                        key={faq.question}
+                        type="button"
+                      >
+                        <p className="text-base font-semibold text-slate-950">{faq.question}</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-600">{faq.answer}</p>
+                      </button>
+                    ))}
+                  </div>
+                </section>
               </div>
             </div>
           </div>

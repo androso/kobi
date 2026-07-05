@@ -184,6 +184,26 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: /ayuda/i }));
 
     expect(screen.getByRole("heading", { name: /^kobi$/i })).toBeInTheDocument();
-    expect(screen.getByText(/ve la misma información de clase en distintas formas/i)).toBeInTheDocument();
+    expect(screen.getByText(/atajos para crear clases, revisar estado y preparar la siguiente sesión/i)).toBeInTheDocument();
+  });
+
+  it("filters help topics and opens the relevant teacher section", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+    await user.type(screen.getByPlaceholderText(/correo electronico/i), "maestra@kobi.demo");
+    await user.type(screen.getByPlaceholderText(/contrasena/i), "kobi123");
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
+    await user.click(screen.getByRole("button", { name: /ayuda/i }));
+
+    const search = screen.getByLabelText(/buscar ayuda/i);
+    await user.clear(search);
+    await user.type(search, "monitoreo");
+
+    expect(screen.getByRole("button", { name: /ver monitoreo en vivo/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /crear una clase/i })).not.toBeInTheDocument();
+
+    await user.click(screen.getAllByRole("button", { name: /ir al monitoreo/i })[0]);
+    expect(screen.getByRole("heading", { name: /monitoreo en vivo/i })).toBeInTheDocument();
   });
 });

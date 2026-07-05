@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { TrendingUp, CircleAlert, WifiOff } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { Header } from "./components/Header";
@@ -244,7 +243,6 @@ function StudentRow({ student }: { student: (typeof STUDENTS)[number] }) {
 // -- Página ------------------------------------------------------------------
 
 export function SessionAnalytics() {
-  const navigate = useNavigate();
   const [elapsed, setElapsed] = useState(25 * 60 + 59);
 
   useEffect(() => {
@@ -255,7 +253,7 @@ export function SessionAnalytics() {
   return (
     <main className="min-h-screen bg-[#eef3fb] overflow-hidden">
       <div className="grid min-h-screen w-full lg:grid-cols-[240px_minmax(0,1fr)] bg-[#eef3fb]">
-        <Sidebar onOpenHelp={() => navigate("/teacher/ayuda")} />
+        <Sidebar />
         <div className="flex flex-col p-3 sm:p-4 lg:p-5 h-screen">
           <div className="flex-1 flex flex-col bg-[#f8f9ff] rounded-[30px] border border-slate-200/50 overflow-hidden shadow-sm min-h-0">
             <Header />
