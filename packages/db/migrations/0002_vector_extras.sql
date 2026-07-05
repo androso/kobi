@@ -6,6 +6,13 @@ create index if not exists curriculum_chunks_embedding_idx
   on curriculum_chunks using ivfflat (embedding vector_cosine_ops)
   with (lists = 100);
 
+create index if not exists activities_embedding_idx
+  on activities using ivfflat (embedding vector_cosine_ops)
+  with (lists = 100);
+
+create index if not exists activities_curriculum_tags_idx
+  on activities using gin (curriculum_tags);
+
 -- RPC used by packages/curriculum's retrieveCurriculumMatches(): top-k by cosine
 -- similarity, scoped to grade/subject/unit. Called via supabase.rpc(...).
 create or replace function match_curriculum_chunks(

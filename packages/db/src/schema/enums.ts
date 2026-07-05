@@ -8,7 +8,19 @@ export const audioChunkStatusEnum = pgEnum("audio_chunk_status", [
   "failed",
 ]);
 export const bandEnum = pgEnum("band", ["support", "core", "challenge"]);
-export const activitySourceEnum = pgEnum("activity_source", ["reused", "new"]);
+export const activitySourceEnum = pgEnum("activity_source", ["seeded", "reused", "new"]);
+export const activityStatusEnum = pgEnum("activity_status", [
+  "candidate",
+  "verified",
+  "rejected",
+  "superseded",
+]);
+export const sessionActivityCandidateStatusEnum = pgEnum("session_activity_candidate_status", [
+  "ready",
+  "approved",
+  "rejected",
+  "superseded",
+]);
 export const assignmentStatusEnum = pgEnum("assignment_status", [
   "assigned",
   "in_progress",

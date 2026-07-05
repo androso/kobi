@@ -7,7 +7,9 @@ import type {
   audioChunks,
   segments,
   curriculumChunks,
+  activityBundles,
   activities,
+  sessionActivityCandidates,
   assignments,
   events,
 } from "./schema/index.js";
@@ -26,6 +28,8 @@ export type Segment = typeof segments.$inferSelect;
 export type CurriculumChunkRow = typeof curriculumChunks.$inferSelect;
 export type CurriculumChunk = typeof curriculumChunks.$inferSelect;
 
+export type ActivityBundle = typeof activityBundles.$inferSelect;
 export type Activity = typeof activities.$inferSelect;
+export type SessionActivityCandidate = typeof sessionActivityCandidates.$inferSelect;
 export type Assignment = typeof assignments.$inferSelect;
 export type Event = typeof events.$inferSelect;
