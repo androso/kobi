@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { BookOpen, ListChecks, LifeBuoy, TrendingUp, X } from "lucide-react";
+import { LifeBuoy, X } from "lucide-react";
 
 interface StudentHelpModalProps {
   open: boolean;
@@ -9,17 +9,14 @@ interface StudentHelpModalProps {
 
 const tips = [
   {
-    icon: BookOpen,
     title: "Abre una actividad",
     body: "Elige una lección de la lista de la izquierda para ver su contenido.",
   },
   {
-    icon: ListChecks,
     title: "Responde el quiz",
     body: "Selecciona una respuesta, avanza con Siguiente y entrega al final. Usa las pistas si te atoras.",
   },
   {
-    icon: TrendingUp,
     title: "Revisa tu progreso",
     body: "En la sección Progreso ves tu precisión, dominio y actividades completadas.",
   },
@@ -73,20 +70,12 @@ export function StudentHelpModal({ open, onClose, classCode }: StudentHelpModalP
         </div>
 
         <ul className="mt-5 space-y-4">
-          {tips.map((tip) => {
-            const Icon = tip.icon;
-            return (
-              <li className="flex items-start gap-3" key={tip.title}>
-                <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#f4f2ec] text-[#2f9e8f]">
-                  <Icon className="h-4 w-4" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-[#2b2b2b]">{tip.title}</p>
-                  <p className="text-sm text-[#8a8f98]">{tip.body}</p>
-                </div>
-              </li>
-            );
-          })}
+          {tips.map((tip) => (
+            <li key={tip.title}>
+              <p className="text-sm font-semibold text-[#2b2b2b]">{tip.title}</p>
+              <p className="text-sm text-[#8a8f98]">{tip.body}</p>
+            </li>
+          ))}
         </ul>
 
         <div className="mt-6 rounded-2xl bg-[#f7f5f0] px-4 py-3 text-sm text-[#5b6270]">
