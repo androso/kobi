@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getQueue } from "./queue.js";
 import { registerTranscribeChunkJob } from "./jobs/transcribeChunk.job.js";
 import { registerBuildLessonStateJob } from "./jobs/buildLessonState.job.js";
+import { registerGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
 
 async function main() {
   const supabase = createClient(
@@ -14,8 +15,9 @@ async function main() {
 
   await registerTranscribeChunkJob(boss, supabase);
   await registerBuildLessonStateJob(boss, supabase);
+  await registerGenerateActivityArtifactsJob(boss, supabase);
 
-  console.log("Kobi worker running: transcribe-chunk, build-lesson-state");
+  console.log("Kobi worker running: transcribe-chunk, build-lesson-state, generate-activity-artifacts");
 }
 
 main().catch((error) => {

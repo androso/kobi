@@ -17,3 +17,4 @@ export async function getQueue(): Promise<PgBoss> {
 
 export const JOB_TRANSCRIBE_CHUNK = "transcribe-chunk";
 export const JOB_BUILD_LESSON_STATE = "build-lesson-state";
+export const JOB_GENERATE_ACTIVITY_ARTIFACTS = "generate-activity-artifacts";

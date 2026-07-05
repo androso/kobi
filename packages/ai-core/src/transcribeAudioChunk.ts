@@ -1,5 +1,6 @@
 import { google } from "@ai-sdk/google";
 import { generateText } from "ai";
+import { URL } from "node:url";
 
 export interface TranscribeAudioChunkInput {
   /** Publicly-fetchable or signed Supabase Storage URL for the audio chunk. */

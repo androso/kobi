@@ -51,6 +51,12 @@ Each artifact is a single self-contained `index.html` bundle plus a manifest:
 }
 ```
 
-The verifier checks manifest schema, forbidden APIs, sandbox boot, SDK telemetry assertions, manifest/code consistency, curriculum alignment, answer correctness, hint leakage, and Spanish suitability.
+Implemented exports:
 
-Status: placeholder — manifest schema, verifier, SDK, and sandbox fixtures not yet implemented.
+- manifest, artifact, evidence, verifier-score, and SDK `postMessage` validators
+- `buildActivitySessionContext()` for bounded context from structured `lesson_state` rows only
+- `createActivityArtifactCandidates()` for deterministic support/core/challenge HTML fallback artifacts
+- `verifyActivityArtifact()` for schema, static bundle, SDK hook, and manifest/code consistency checks
+- repository ranking helpers that bias objective match, verifier score, usage, outcomes, and topic overlap
+
+The verifier currently performs deterministic checks plus local rubric scoring. Browser sandbox boot remains Area E-owned and should call these same schemas before teacher display.

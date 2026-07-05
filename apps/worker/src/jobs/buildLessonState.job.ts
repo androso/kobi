@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildLessonState, type LessonState } from "@kobi/ai-core";
 import { retrieveCurriculumMatches } from "@kobi/curriculum";
 import type PgBoss from "pg-boss";
+import { JOB_GENERATE_ACTIVITY_ARTIFACTS } from "../queue.js";
 
 export interface BuildLessonStateJobData {
   sessionId: string;
@@ -76,8 +77,12 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
         .filter(Boolean)
         .join(" ");
 
-      await retrieveCurriculumMatches(supabase, { queryText, grade, subject, unit });
-      // TODO: hand these matches to Area C's planner (packages/activities) once it exists.
+      const curriculumMatches = await retrieveCurriculumMatches(supabase, { queryText, grade, subject, unit });
+      await boss.send(JOB_GENERATE_ACTIVITY_ARTIFACTS, {
+        sessionId,
+        lessonState,
+        curriculumMatches,
+      });
     },
   );
 }
