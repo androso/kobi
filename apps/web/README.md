@@ -14,13 +14,13 @@ Vite + React + TypeScript app: teacher portal + student portal.
 **Student**
 6. Join — code entry, display name
 7. Waiting room — idle state until activity drops
-8. Activity player — generic renderer + hints
+8. Activity player — sandboxed artifact iframe + hints/results
 9. Results — score + light celebration
 
 ## Contracts consumed
 
 - `lesson_state` (from `packages/ai-core` via worker, delivered through Supabase Realtime)
-- activity JSON (from `packages/activities`, validated + rendered by the generic player)
+- `ActivityArtifact` manifest + authorized `bundle_ref` (from `packages/activities`, verified before display and rendered in a sandboxed iframe)
 - telemetry events (written to `events` table, read back for live monitor / session report)
 
 Status: scaffolded with Vite, React, TypeScript, Tailwind CSS, shadcn-compatible UI utilities, React Router, TanStack Query, Zustand, React Hook Form, Zod, Supabase JS, Vitest, and Playwright.

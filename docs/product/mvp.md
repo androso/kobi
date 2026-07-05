@@ -12,7 +12,7 @@ Validate that Kobi can turn the last 10 minutes of a real class into a personali
 - Teacher approves one candidate, optionally edits it, before it reaches students (hard gate).
 - Teacher sees a live monitor (who's done, who's stuck) and a session report (completion + correctness) after the session.
 - Student joins via code + display name, waits, plays the assigned activity, gets a hint after wrong attempts, sees results.
-- 3 activity template families only: quiz, cloze/vocabulary-in-context, match & order — schema-validated JSON, rendered by one generic player.
+- 3 activity artifact families only: match/classify, sequence/order, guided practice/checkpoint — verified HTML bundles plus structured manifests, rendered in the sandboxed artifact iframe.
 - Difficulty-banded personalization: 3 variants (support/core/challenge) per approved activity.
 - Manual fallback at every AI stage: transcription fails → teacher types a topic summary; generation is slow → pull from the pre-seeded activity repository.
 - Basic auth: teachers via magic link, students via join code + display name.
@@ -21,7 +21,7 @@ Validate that Kobi can turn the last 10 minutes of a real class into a personali
 ## Out of scope before MVP validation
 
 - Multi-school or admin portals.
-- Arbitrary generative game mechanics — including generative HTML/JS "artifact" activities (logged as a post-MVP idea in `docs/product-spec.md`).
+- Arbitrary generative game mechanics beyond the three ratified HTML artifact families.
 - Deep learner modeling or mastery estimation.
 - Pet companion (hatching, personality, celebrations).
 - Cross-school shared repositories.
@@ -32,11 +32,11 @@ Validate that Kobi can turn the last 10 minutes of a real class into a personali
 ## Non-negotiables
 
 - Do not introduce features that require significant new domain models (new core tables beyond the 8 already defined in `packages/db`) unless they directly support the six-stage MVP loop.
-- Do not add infrastructure complexity — new deploy targets, new languages, new package managers — beyond Next.js/Vercel (`apps/web`), Node/Railway-Fly (`apps/worker`), and Supabase. This includes not adding a Python/FastAPI service.
+- Do not add infrastructure complexity — new deploy targets, new languages, new package managers — beyond Vite + React (`apps/web`), Node/Railway-Fly (`apps/worker`), and Supabase. This includes not adding a Python/FastAPI service.
 - Do not change the core teacher/student flow (Listen → Understand → Propose → Approve → Deliver → Measure) without explaining why in the PR description.
-- Never remove or weaken the teacher approval gate, the generic activity player, or curriculum grounding with visible evidence — these three *are* the product.
-- Do not replace schema-validated JSON activities with free-form generated code (HTML/JS artifacts, etc.) — every activity must stay mechanically verifiable (answer key present, exactly one correct option, hints that don't leak answers) until that's explicitly promoted out of the post-MVP backlog.
-- Do not add "nice-to-have" features (pet, deep personalization, arbitrary generative activities, cross-school repositories) unless explicitly promoted from the out-of-scope list above.
+- Never remove or weaken the teacher approval gate, verified artifact delivery, or curriculum grounding with visible evidence — these three *are* the product.
+- Do not ship unverified free-form generated code. Every HTML artifact must pass manifest schema checks, sandbox/static checks, SDK telemetry assertions, manifest/code consistency checks, and rubric validation before teacher display.
+- Do not add "nice-to-have" features (pet, deep personalization, arbitrary activity families, cross-school repositories) unless explicitly promoted from the out-of-scope list above.
 
 ## MVP review rule
 

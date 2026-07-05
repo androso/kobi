@@ -1,6 +1,6 @@
 # Contracts
 
-The team's first agreement — build in parallel against these three JSON shapes.
+The team's first agreement — build in parallel against these shared contracts.
 
 ## 1. `lesson_state`
 
@@ -20,9 +20,9 @@ Emitted by the lesson-state builder (`apps/worker` / `packages/ai-core`, see `bu
 }
 ```
 
-The manual-fallback path (D6) produces this exact same shape via `lessonStateFromManualEntry()` — downstream consumers never need a second code path.
+The manual-fallback path (D6) produces the same `lesson_state` shape via `lessonStateFromManualEntry()` — downstream consumers never need a second code path.
 
-## 2. Activity
+## 2. `ActivityArtifact`
 
 Produced by the planner/generator, checked by the verifier, stored in `activities` (the repository). Per the revised D2, an activity is **a generated code artifact + a manifest**, not a plain JSON shape: `activities.bundle_ref` points at the code artifact (the mini-app students actually play, in a sandboxed iframe), and `activities.manifest` (jsonb) is the schema-validated contract — curriculum tags, answer key, hints, `est_minutes`, variants. **Owned by Androso (Area C)** — the manifest's internal shape, the validator, and the sandbox/SDK are his design call, not prescribed here. The example below (now read as one possible `manifest` shape, paired with whatever `bundle_ref` it validates) is the reference shape from the original product spec, kept as a starting point only.
 
@@ -33,15 +33,62 @@ Produced by the planner/generator, checked by the verifier, stored in `activitie
   "est_minutes": 6,
   "variants": ["support", "core", "challenge"],
   "items": [
-    {
-      "prompt": "El periodista redactó la ___ antes del mediodía.",
-      "options": ["noticia", "novela", "receta"],
-      "answer": 0,
-      "hint": "Es un texto informativo sobre un hecho reciente."
+Gate 0 decision on 2026-07-04: v0 activities are verified HTML artifacts, not JSON-rendered activities. There are no legacy JSON activities or consumers, so no migration or compatibility adapter is required.
+
+Produced by the planner/generator, checked by the verifier, stored in `activities` (the repository), and delivered through the sandbox host. Schema and SDK contracts are owned by `packages/activities`.
+
+```json
+{
+  "contract_version": "activity-artifact/v1",
+  "manifest": {
+    "family": "match_classify",
+    "title": "Vocabulario en contexto: La noticia",
+    "difficulty_band": "core",
+    "curriculum": { "grade": 7, "subject": "lenguaje", "unit": "U4", "objective": "L7.4.2" },
+    "est_minutes": 6,
+    "entry": "index.html",
+    "sdk_version": "activity-sdk/v1",
+    "allowed_capabilities": ["dom", "css", "svg"],
+    "content": {
+      "items": [
+        {
+          "prompt": "Clasifica cada palabra según su función en una noticia.",
+          "answer_key": ["titular", "entradilla", "fuente"],
+          "hints": ["Busca palabras que presentan el hecho principal."]
+        }
+      ]
     }
-  ]
+  },
+  "bundle_ref": "artifact-bundles/...",
+  "verifier_scores": {
+    "deterministic": "pass",
+    "rubric": {
+      "curriculum_alignment": 0.9,
+      "age_fit": 0.9,
+      "spanish_suitability": 0.95
+    }
+  },
+  "evidence": [
+    {
+      "objective_code": "L7.4.2",
+      "section": "Unidad 4 / La noticia",
+      "text": "Verbatim Area B evidence string"
+    }
+  ],
+  "parent_id": null,
+  "status": "verified"
 }
 ```
+
+### Artifact bundle rules
+
+- Bundle format is one self-contained `index.html` with inline CSS/JS.
+- No external imports, assets, network calls, credentialed requests, storage APIs, top navigation, popups, or same-origin assumptions.
+- `bundle_ref` must be unguessable and authorized by assignment/class before iframe delivery.
+- The parent injects only manifest, assignment id, and difficulty band. It must not inject Supabase credentials, student PII, raw transcript, or broader class/session context.
+- The iframe communicates only through the Activity SDK over `postMessage`: `getManifest()`, `getBand()`, `reportAttempt()`, `reportHint()`, and `reportComplete()`.
+- The parent validates message source, schema, assignment/student authorization, method allowlist, payload size, and telemetry rate limits.
+- Teacher edits are manifest-only and must pass schema validation, escaped rendering, forbidden field checks, and manifest/code consistency smoke validation.
 
 ## 3. Telemetry event
 
@@ -59,4 +106,4 @@ Written to the `events` table on every student interaction; read back for the li
 
 See [`docs/area-bc-contract.md`](area-bc-contract.md) for the full write-up shared with Androso. Returned by `retrieveCurriculumMatches()` in `packages/curriculum`.
 
-Status: `lesson_state` and `curriculum_match` are implemented (see `packages/ai-core`, `packages/curriculum`) — these are the two contracts Isaac (Areas A/B) is responsible for. Activity and telemetry-event shapes are Androso/Area D-E's to define and freeze.
+Status: `lesson_state` and `curriculum_match` are implemented (see `packages/ai-core`, `packages/curriculum`) — these are the two contracts Isaac (Areas A/B) is responsible for. Gate 0 for `ActivityArtifact` is recorded here. Area C/E/F should freeze the exact TypeScript schemas, fixtures, telemetry shape, and sandbox contract before parallel implementation starts.
