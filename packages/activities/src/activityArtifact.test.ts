@@ -3,6 +3,7 @@ import type { LessonState } from "@kobi/ai-core";
 import type { CurriculumMatch } from "@kobi/curriculum";
 import {
   activitySdkMessageSchema,
+  authorizeActivityTelemetryMessage,
   buildActivitySessionContext,
   createActivityArtifactCandidates,
   resolveApprovedActivityForBand,
@@ -88,5 +89,82 @@ describe("activity artifact contracts", () => {
 
     expect(resolveApprovedActivityForBand(approvals, "challenge")?.activity_id).toBe("activity-core");
     expect(resolveApprovedActivityForBand(approvals, "support")?.activity_id).toBe("activity-core");
+    expect(resolveApprovedActivityForBand(approvals, "unknown")?.activity_id).toBe("activity-core");
+  });
+
+  it("authorizes telemetry from parent-owned assignment context", () => {
+    const result = authorizeActivityTelemetryMessage(
+      {
+        sdk: "activity-sdk/v1",
+        type: "event",
+        method: "reportAttempt",
+        payload: {
+          assignment_id: "assignment-1",
+          item_index: 0,
+          correct: true,
+        },
+      },
+      {
+        assignmentId: "assignment-1",
+        studentId: "student-1",
+        sessionId: "session-1",
+        sourceMatches: true,
+        eventOrigin: "https://kobi.test",
+        allowedOrigin: "https://kobi.test",
+      },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.event).toMatchObject({
+      assignment_id: "assignment-1",
+      student_id: "student-1",
+      session_id: "session-1",
+      type: "attempt",
+    });
+  });
+
+  it("rejects telemetry with spoofed assignment ids or rate-limit violations", () => {
+    const spoofed = authorizeActivityTelemetryMessage(
+      {
+        sdk: "activity-sdk/v1",
+        type: "event",
+        method: "reportComplete",
+        payload: {
+          assignment_id: "other-assignment",
+          score: 1,
+          total: 1,
+        },
+      },
+      {
+        assignmentId: "assignment-1",
+        studentId: "student-1",
+        sessionId: "session-1",
+        sourceMatches: true,
+      },
+    );
+
+    const rateLimited = authorizeActivityTelemetryMessage(
+      {
+        sdk: "activity-sdk/v1",
+        type: "event",
+        method: "reportHint",
+        payload: {
+          assignment_id: "assignment-1",
+          item_index: 0,
+          hint_index: 0,
+        },
+      },
+      {
+        assignmentId: "assignment-1",
+        studentId: "student-1",
+        sessionId: "session-1",
+        sourceMatches: true,
+        eventsInRateWindow: 30,
+      },
+    );
+
+    expect(spoofed.ok).toBe(false);
+    expect(rateLimited.ok).toBe(false);
   });
 });

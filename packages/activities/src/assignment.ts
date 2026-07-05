@@ -8,9 +8,9 @@ export interface ApprovedBandActivity {
 
 export function resolveApprovedActivityForBand(
   approvals: ApprovedBandActivity[],
-  studentBand: DifficultyBand | null | undefined,
+  studentBand: DifficultyBand | string | null | undefined,
 ): ApprovedBandActivity | null {
-  const requestedBand = studentBand ?? "core";
+  const requestedBand = normalizeDifficultyBand(studentBand);
   const approvedByBand = new Map(
     approvals
       .filter((approval) => approval.approved)
@@ -18,4 +18,8 @@ export function resolveApprovedActivityForBand(
   );
 
   return approvedByBand.get(requestedBand) ?? approvedByBand.get("core") ?? null;
+}
+
+export function normalizeDifficultyBand(value: string | null | undefined): DifficultyBand {
+  return value === "support" || value === "challenge" || value === "core" ? value : "core";
 }
