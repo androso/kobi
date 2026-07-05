@@ -192,7 +192,7 @@ function getDefaultModelFor(provider: TranscriptionProvider): string {
 }
 
 function getTranscriptionProvider(): TranscriptionProvider {
-  const provider = (process.env.TRANSCRIPTION_PROVIDER ?? "gemini").trim().toLowerCase();
+  const provider = (process.env.TRANSCRIPTION_PROVIDER ?? "openai").trim().toLowerCase();
   if (provider === "gemini" || provider === "openai" || provider === "elevenlabs") {
     return provider;
   }
