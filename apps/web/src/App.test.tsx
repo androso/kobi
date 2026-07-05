@@ -159,16 +159,17 @@ describe("App", () => {
     expect(screen.getByText("Historial de Sesiones")).toBeInTheDocument();
     expect(screen.getByText("Ciencias 4to Grado - Sección A")).toBeInTheDocument();
 
-    // Click on "Resumen" button of the first session
-    const summaryButtons = screen.getAllByRole("button", { name: /resumen/i });
-    await user.click(summaryButtons[0]);
+    // Click on "Ver detalles" button of the first session
+    const detailsButtons = screen.getAllByRole("button", { name: /ver detalles/i });
+    await user.click(detailsButtons[0]);
 
-    // Verify summary modal opens with its contents
-    expect(screen.getByText("Resumen de Clase")).toBeInTheDocument();
+    // Verify unified details modal opens with its contents
+    expect(screen.getByText("Detalles de la Clase")).toBeInTheDocument();
     expect(screen.getByText(/Se discutieron los niveles tróficos/i)).toBeInTheDocument();
+    expect(screen.getAllByText("Carlos M.:")[0]).toBeInTheDocument();
 
     // Close modal
     await user.click(screen.getByRole("button", { name: /entendido/i }));
-    expect(screen.queryByText("Resumen de Clase")).not.toBeInTheDocument();
+    expect(screen.queryByText("Detalles de la Clase")).not.toBeInTheDocument();
   });
 });

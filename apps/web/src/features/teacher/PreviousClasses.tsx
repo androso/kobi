@@ -8,13 +8,20 @@ import {
   Mail, 
   Bell, 
   Search, 
-  X
+  X,
+  Phone,
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
+  MoreHorizontal,
+  ChevronRight
 } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { CreateClassModal } from "./components/CreateClassModal";
 
 // ---------------------------------------------------------------------------
-// Mock previous classes data (all localized to Spanish)
+// Mock previous classes data (structured for the combined summary & transcript layout)
 // ---------------------------------------------------------------------------
 const PREVIOUS_SESSIONS = [
   {
@@ -25,15 +32,24 @@ const PREVIOUS_SESSIONS = [
     title: "Ciencias 4to Grado - Sección A",
     focus: "Ecosistemas y energía",
     date: "15 de junio, 2024",
-    duration: "45 Minutos",
-    iconColor: "text-emerald-600 bg-emerald-50",
-    summary: "Se discutieron los niveles tróficos en el ecosistema. Los estudiantes mostraron gran interés al hablar sobre los descomponedores y el ciclo de la energía. Identificamos un malentendido común sobre si la energía se recicla de la misma forma que la materia. Se recomendó utilizar la actividad interactiva 'Cadena alimenticia'.",
+    duration: "45:00",
+    summaryPoints: [
+      "Se discutieron los niveles tróficos y la pirámide de energía en el ecosistema.",
+      "Los estudiantes mostraron gran interés al hablar sobre los descomponedores y el ciclo de la energía.",
+      "Identificamos un malentendido común sobre si la energía se recicla de la misma forma que la materia."
+    ],
+    nextSteps: [
+      "Repasar la diferencia entre la conservación de la materia y el flujo de energía.",
+      "Asignar la actividad interactiva 'Cadena alimenticia' para la próxima semana."
+    ],
     transcript: [
-      { time: "10:05", speaker: "Sra. Henderson", text: "Buenos días clase, hoy exploraremos cómo fluye la energía a través de un ecosistema." },
-      { time: "10:15", speaker: "Carlos", text: "¿La energía se recicla como el agua y la materia?" },
-      { time: "10:16", speaker: "Sra. Henderson", text: "Excelente pregunta, Carlos. En realidad, la energía fluye de forma unidireccional y se disipa en forma de calor, no se recicla." },
-      { time: "10:28", speaker: "María", text: "Entonces, ¿los productores siempre obtienen su energía del sol directamente?" },
-      { time: "10:29", speaker: "Sra. Henderson", text: "Exacto, María. A través de la fotosíntesis." }
+      { time: "0:01", speaker: "Sra. Henderson", text: "Buenos días clase, hoy exploraremos cómo fluye la energía a través de un ecosistema." },
+      { time: "0:05", speaker: "Carlos M.", text: "¿La energía se recicla como el agua y la materia?" },
+      { time: "0:09", speaker: "Sra. Henderson", text: "Excelente pregunta, Carlos. En realidad, la energía fluye de forma unidireccional y se disipa en forma de calor, no se recicla." },
+      { time: "0:13", speaker: "María J.", text: "Entonces, ¿los productores siempre obtienen su energía del sol directamente?" },
+      { time: "0:18", speaker: "Sra. Henderson", text: "Exacto, María. A través del proceso de la fotosíntesis." },
+      { time: "0:25", speaker: "Carlos M.", text: "¡Ah, entiendo! Por eso la base de la pirámide alimenticia siempre tiene que ser más grande." },
+      { time: "0:29", speaker: "Sra. Henderson", text: "¡Brillante observación, Carlos! De eso se trata la transferencia trófica." }
     ]
   },
   {
@@ -44,13 +60,20 @@ const PREVIOUS_SESSIONS = [
     title: "Matemáticas 5to Grado - Sección B",
     focus: "Ecuaciones lineales",
     date: "14 de junio, 2024",
-    duration: "60 Minutos",
-    iconColor: "text-blue-600 bg-blue-50",
-    summary: "Clase dedicada a resolver ecuaciones lineales simples. Practicamos el despeje de variables y el orden de operaciones (PEMDAS). La mayoría de los estudiantes resolvió con éxito los ejercicios prácticos individuales.",
+    duration: "60:00",
+    summaryPoints: [
+      "Clase dedicada a resolver ecuaciones lineales simples.",
+      "Practicamos el despeje de variables y el orden de operaciones (PEMDAS).",
+      "La mayoría de los estudiantes resolvió con éxito los ejercicios prácticos individuales."
+    ],
+    nextSteps: [
+      "Iniciar con ecuaciones lineales que contengan variables en ambos lados.",
+      "Habilitar práctica de álgebra en el portal del estudiante."
+    ],
     transcript: [
-      { time: "09:02", speaker: "Sra. Henderson", text: "Hoy resolveremos ecuaciones lineales básicas. Recuerden aislar la variable en un lado de la igualdad." },
-      { time: "09:20", speaker: "Sofía", text: "Si sumamos de un lado, ¿tenemos que sumar exactamente lo mismo del otro?" },
-      { time: "09:21", speaker: "Sra. Henderson", text: "Es correcto, Sofía. Una ecuación funciona como una balanza en perfecto equilibrio." }
+      { time: "0:01", speaker: "Sra. Henderson", text: "Hoy resolveremos ecuaciones lineales básicas. Recuerden aislar la variable en un lado de la igualdad." },
+      { time: "0:05", speaker: "Sofía T.", text: "Si sumamos de un lado, ¿tenemos que sumar exactamente lo mismo del otro?" },
+      { time: "0:09", speaker: "Sra. Henderson", text: "Es correcto, Sofía. Una ecuación funciona como una balanza en perfecto equilibrio." }
     ]
   },
   {
@@ -61,13 +84,19 @@ const PREVIOUS_SESSIONS = [
     title: "Historia 4to Grado - Sección A",
     focus: "Culturas Prehispánicas",
     date: "12 de junio, 2024",
-    duration: "50 Minutos",
-    iconColor: "text-amber-600 bg-amber-50",
-    summary: "Taller sobre los asentamientos antiguos y la agricultura prehispánica en Centroamérica. Los alumnos trabajaron en grupos pequeños investigando el sistema de cultivo por terrazas.",
+    duration: "50:00",
+    summaryPoints: [
+      "Taller sobre los asentamientos antiguos y la agricultura prehispánica en Centroamérica.",
+      "Los alumnos trabajaron en grupos pequeños investigando el sistema de cultivo por terrazas."
+    ],
+    nextSteps: [
+      "Realizar una breve exposición sobre la influencia del maíz en la dieta prehispánica.",
+      "Asignar lectura complementaria sobre la civilización maya."
+    ],
     transcript: [
-      { time: "11:10", speaker: "Sra. Henderson", text: "Hoy nos enfocaciones en las técnicas agrícolas utilizadas por las civilizaciones antiguas." },
-      { time: "11:30", speaker: "Mateo", text: "¿El maíz era el único cultivo principal?" },
-      { time: "11:31", speaker: "Sra. Henderson", text: "Principalmente sí, Mateo, pero también cultivaban frijol, calabaza y cacao." }
+      { time: "0:01", speaker: "Sra. Henderson", text: "Hoy nos enfocaremos en las técnicas agrícolas utilizadas por las civilizaciones antiguas." },
+      { time: "0:05", speaker: "Mateo R.", text: "¿El maíz era el único cultivo principal?" },
+      { time: "0:09", speaker: "Sra. Henderson", text: "Principalmente sí, Mateo, pero también cultivaban frijol, calabaza y cacao." }
     ]
   }
 ];
@@ -76,7 +105,9 @@ export function PreviousClasses() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSession, setSelectedSession] = useState<typeof PREVIOUS_SESSIONS[0] | null>(null);
-  const [activeModalType, setActiveModalType] = useState<"summary" | "transcript" | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [playProgress, setPlayProgress] = useState(30);
 
   const filteredSessions = PREVIOUS_SESSIONS.filter(
     (session) =>
@@ -85,14 +116,14 @@ export function PreviousClasses() {
       session.subject.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  function handleOpenModal(session: typeof PREVIOUS_SESSIONS[0], type: "summary" | "transcript") {
+  function handleOpenDetailsModal(session: typeof PREVIOUS_SESSIONS[0]) {
     setSelectedSession(session);
-    setActiveModalType(type);
+    setIsPlaying(false);
+    setPlayProgress(15);
   }
 
   function handleCloseModal() {
     setSelectedSession(null);
-    setActiveModalType(null);
   }
 
   return (
@@ -184,18 +215,13 @@ export function PreviousClasses() {
                             </div>
                           </div>
                           
-                          <div className="flex gap-2.5 self-end sm:self-center">
+                          <div className="self-end sm:self-center">
                             <button 
-                              onClick={() => handleOpenModal(session, "summary")}
-                              className="px-4 py-2 rounded-xl bg-slate-50 hover:bg-[#004ac6] text-slate-700 hover:text-white text-xs font-bold transition-all shadow-sm"
+                              onClick={() => handleOpenDetailsModal(session)}
+                              className="px-5 py-2.5 rounded-xl bg-[#004ac6] hover:bg-[#003ea8] text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1"
                             >
-                              Resumen
-                            </button>
-                            <button 
-                              onClick={() => handleOpenModal(session, "transcript")}
-                              className="px-4 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold transition-all"
-                            >
-                              Transcripción
+                              <span>Ver detalles</span>
+                              <ChevronRight className="h-3.5 w-3.5" />
                             </button>
                           </div>
                         </div>
@@ -294,65 +320,169 @@ export function PreviousClasses() {
       {/* Class creation modal */}
       <CreateClassModal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} />
 
-      {/* Interactive Modal for Summary/Transcript */}
-      {selectedSession && activeModalType && (
+      {/* Unified Sessions Details Modal (Combining Summary & Transcript side-by-side) */}
+      {selectedSession && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div 
             className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm transition-opacity duration-300"
             onClick={handleCloseModal}
           />
-          <div className="relative w-full max-w-xl bg-white rounded-[28px] shadow-2xl border border-slate-100 overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col">
-            <header className="px-6 py-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+          <div className="relative w-full max-w-6xl bg-[#f3f4f6] rounded-[32px] shadow-2xl border border-slate-100 overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-200 h-[85vh] flex flex-col">
+            
+            {/* Modal Header */}
+            <header className="px-8 py-5 border-b border-slate-200 bg-white flex justify-between items-center shrink-0">
               <div>
-                <span className="text-[9px] font-bold uppercase tracking-widest text-[#004ac6]">
+                <span className={`inline-block text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded border ${selectedSession.subjectColor}`}>
                   {selectedSession.subject}
                 </span>
-                <h3 className="text-base font-bold text-slate-900 mt-0.5">
-                  {activeModalType === "summary" ? "Resumen de Clase" : "Transcripción de Clase"}
+                <h3 className="text-lg font-bold text-slate-900 mt-1">
+                  Detalles de la Clase
                 </h3>
               </div>
               <button 
                 onClick={handleCloseModal}
-                className="w-7 h-7 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+                className="w-8 h-8 rounded-full flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
               >
                 <X className="w-4 h-4" />
               </button>
             </header>
 
-            <div className="p-6 overflow-y-auto flex-grow custom-scrollbar">
-              <h4 className="font-bold text-slate-800 text-sm mb-3">{selectedSession.title}</h4>
+            {/* Split content container */}
+            <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
               
-              {activeModalType === "summary" ? (
-                <div className="bg-slate-50 p-4.5 rounded-2xl border border-slate-100">
-                  <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line font-medium">
-                    {selectedSession.summary}
-                  </p>
+              {/* Left Column (Player Card & Summary) - ~45% width */}
+              <div className="w-full md:w-[45%] p-6 flex flex-col gap-5 overflow-y-auto custom-scrollbar border-r border-slate-200">
+                
+                {/* Audio Player Simulated Card */}
+                <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm flex flex-col gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-11 h-11 rounded-full bg-[#004ac6]/10 flex items-center justify-center text-[#004ac6] shrink-0">
+                      <Phone className="w-5 h-5 text-[#004ac6]" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-800 text-sm leading-tight">Clase finalizada</h4>
+                      <p className="text-[11px] text-slate-400 mt-0.5 font-semibold">Sra. Henderson • {selectedSession.duration}</p>
+                    </div>
+                  </div>
+
+                  {/* Player Controls */}
+                  <div className="bg-slate-50 rounded-2xl p-4 flex flex-col gap-3">
+                    <div className="flex items-center gap-3">
+                      <button 
+                        onClick={() => setIsPlaying(!isPlaying)}
+                        className="w-9 h-9 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-[#004ac6] hover:bg-slate-100 transition active:scale-90"
+                      >
+                        {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
+                      </button>
+                      <input 
+                        type="range" 
+                        className="flex-1 h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-[#004ac6]"
+                        min="0" 
+                        max="100" 
+                        value={playProgress}
+                        onChange={(e) => setPlayProgress(Number(e.target.value))}
+                      />
+                      <span className="text-[11px] font-bold text-slate-500 tabular-nums">
+                        {isPlaying ? "0:18" : "0:00"}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-1 text-slate-400 border-t border-slate-100">
+                      <button 
+                        onClick={() => setIsMuted(!isMuted)}
+                        className="hover:text-slate-600 transition"
+                      >
+                        {isMuted ? <VolumeX className="w-4 h-4 text-red-500" /> : <Volume2 className="w-4 h-4" />}
+                      </button>
+                      <span className="text-[11px] font-bold text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-lg">
+                        1x
+                      </span>
+                      <button className="hover:text-slate-600 transition">
+                        <MoreHorizontal className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              ) : (
-                <div className="space-y-4">
+
+                {/* Summary Card */}
+                <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col gap-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <span className="font-bold text-slate-800 text-sm">Resumen de clase</span>
+                    <span className="text-[10px] font-bold text-violet-600 uppercase tracking-wide">Potenciado por Kobi AI ✨</span>
+                  </div>
+
+                  <ul className="space-y-3">
+                    {selectedSession.summaryPoints.map((point, idx) => (
+                      <li key={idx} className="flex gap-2.5 text-xs text-slate-600 leading-relaxed font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-violet-500 mt-1.5 shrink-0" />
+                        <span>{point}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <div className="mt-2 border-t border-slate-100 pt-4">
+                    <h5 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-3">Próximos pasos</h5>
+                    <ul className="space-y-2.5">
+                      {selectedSession.nextSteps.map((step, idx) => (
+                        <li key={idx} className="flex gap-2.5 text-xs text-slate-600 leading-relaxed font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-violet-400 mt-1.5 shrink-0" />
+                          <span>{step}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Right Column (Transcript Details) - ~55% width */}
+              <div className="w-full md:w-[55%] bg-white p-6 md:p-8 flex flex-col min-h-0">
+                
+                {/* Transcript Header Box */}
+                <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4.5 mb-6 flex items-center justify-between shrink-0">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-[#004ac6]/10 flex items-center justify-center text-[#004ac6]">
+                      <Phone className="w-4.5 h-4.5" />
+                    </div>
+                    <div>
+                      <h5 className="font-bold text-slate-800 text-sm leading-tight">{selectedSession.title}</h5>
+                      <p className="text-[11px] text-slate-400 font-semibold mt-0.5">Grabación completa • {selectedSession.duration}</p>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-bold text-slate-500 tabular-nums">
+                    {selectedSession.date}
+                  </span>
+                </div>
+
+                {/* Transcript dialogue listing */}
+                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-4">
                   {selectedSession.transcript.map((line, idx) => (
                     <div key={idx} className="flex gap-4 items-start">
                       <span className="text-xs font-semibold text-slate-400 tabular-nums shrink-0 mt-0.5 w-10">
                         {line.time}
                       </span>
                       <p className="text-slate-700 text-[15px] leading-relaxed">
-                        <span className="font-bold text-[#004ac6] mr-1.5">{line.speaker}:</span>
+                        <span className="font-bold text-slate-800 mr-2">{line.speaker}:</span>
                         {line.text}
                       </p>
                     </div>
                   ))}
                 </div>
-              )}
+
+              </div>
+
             </div>
 
-            <footer className="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+            {/* Footer close bar */}
+            <footer className="px-8 py-4 border-t border-slate-200 bg-white flex justify-end shrink-0">
               <button 
                 onClick={handleCloseModal}
-                className="px-4.5 py-2 bg-slate-800 text-white rounded-xl text-xs font-bold hover:bg-slate-700 transition"
+                className="px-6 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold transition"
               >
                 Entendido
               </button>
             </footer>
+
           </div>
         </div>
       )}
