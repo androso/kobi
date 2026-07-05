@@ -172,4 +172,18 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: /entendido/i }));
     expect(screen.queryByText("Detalles de la Clase")).not.toBeInTheDocument();
   });
+
+  it("opens the teacher help center from the sidebar", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+    await user.type(screen.getByPlaceholderText(/correo electronico/i), "maestra@kobi.demo");
+    await user.type(screen.getByPlaceholderText(/contrasena/i), "kobi123");
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
+
+    await user.click(screen.getByRole("button", { name: /ayuda/i }));
+
+    expect(screen.getByRole("heading", { name: /ayuda rápida para volver a clase sin fricción/i })).toBeInTheDocument();
+    expect(screen.getByText(/ayuda rápida para volver a clase sin fricción/i)).toBeInTheDocument();
+  });
 });

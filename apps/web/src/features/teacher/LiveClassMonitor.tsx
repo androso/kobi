@@ -12,6 +12,7 @@ import {
 import { Sidebar } from "./components/Sidebar";
 import { Header } from "./components/Header";
 import { WaveformVisualizer } from "./components/WaveformVisualizer";
+import { useClassStore } from "../../lib/store";
 
 // ---------------------------------------------------------------------------
 // Datos de sesión simulados — reemplazar con datos en tiempo real del backend
@@ -303,6 +304,10 @@ function SuggestedActivityFAB({ activity }: { activity: string }) {
 export function LiveClassMonitor() {
   const [elapsed, setElapsed] = useState(12 * 60 + 41);
 
+  const monitoringClassId = useClassStore((state) => state.monitoringClassId);
+  const classes = useClassStore((state) => state.classes);
+  const monitoringClass = classes.find((c) => c.id === monitoringClassId) ?? null;
+
   useEffect(() => {
     const id = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(id);
@@ -318,6 +323,24 @@ export function LiveClassMonitor() {
           <div className="flex-1 flex flex-col bg-[#f8f9ff] rounded-[30px] border border-slate-200/50 overflow-hidden shadow-sm min-h-0">
             <Header />
             <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-5 min-h-0">
+              {/* Session header — clase que se está monitoreando */}
+              <div className="flex items-center justify-between flex-wrap gap-3 shrink-0">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-50 text-red-600 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                      Sesión en vivo
+                    </span>
+                    {monitoringClass && (
+                      <span className="text-sm text-slate-500">{monitoringClass.focus}</span>
+                    )}
+                  </div>
+                  <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
+                    {monitoringClass ? monitoringClass.title : "Monitoreo en vivo"}
+                  </h1>
+                </div>
+              </div>
+
               <NotificationBar />
               <div className="grid grid-cols-12 gap-5 flex-1 min-h-0">
                 <div className="col-span-7 flex flex-col min-h-0">

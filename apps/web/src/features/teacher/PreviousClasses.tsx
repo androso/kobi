@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   FolderOpen,
   Calendar,
@@ -100,6 +101,7 @@ const PREVIOUS_SESSIONS = [
 ];
 
 export function PreviousClasses() {
+  const navigate = useNavigate();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSession, setSelectedSession] = useState<typeof PREVIOUS_SESSIONS[0] | null>(null);
@@ -138,7 +140,10 @@ export function PreviousClasses() {
       <div className="grid min-h-screen w-full lg:grid-cols-[240px_minmax(0,1fr)] bg-[#eef3fb]">
         
         {/* Left Sidebar */}
-        <Sidebar onOpenCreateClass={() => setIsCreateModalOpen(true)} />
+        <Sidebar
+          onOpenCreateClass={() => setIsCreateModalOpen(true)}
+          onOpenHelp={() => navigate("/teacher/ayuda")}
+        />
         
         {/* Main Content Area */}
         <div className="flex flex-col p-3 sm:p-4 lg:p-5 h-screen">

@@ -35,6 +35,9 @@ export interface ClassItem {
 
 interface ClassState {
   classes: ClassItem[];
+  monitoringClassId: string | null;
+  startMonitoring: (id: string) => void;
+  stopMonitoring: () => void;
   addClass: (newClass: {
     title: string;
     focus: string;
@@ -84,6 +87,9 @@ const defaultClasses: ClassItem[] = [
 
 export const useClassStore = create<ClassState>((set) => ({
   classes: defaultClasses,
+  monitoringClassId: null,
+  startMonitoring: (id) => set({ monitoringClassId: id }),
+  stopMonitoring: () => set({ monitoringClassId: null }),
   addClass: (newClass) => {
     let accent = "text-slate-700";
     let tone = "from-slate-600 to-zinc-500";
