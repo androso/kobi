@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import {
   Pause,
   StopCircle,
@@ -10,11 +10,20 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import type { DifficultyBand } from "@kobi/activities";
 import { Sidebar } from "./components/Sidebar";
 import { Header } from "./components/Header";
 import { WaveformVisualizer } from "./components/WaveformVisualizer";
 import { KobiMascot } from "./components/KobiMascot";
 import { useClassStore, type SavedSession, type ClassItem } from "../../lib/store";
+import { supabase } from "../../lib/supabase";
+import {
+  loadOrCreateReadyCandidates,
+  publishAssignments,
+  SupabaseActivityDeliveryStore,
+  type DeliveryCandidate,
+  type StudentForAssignment,
+} from "../activityDelivery/artifactDelivery";
 
 // Metadatos de materia según el ícono de la clase
 const SUBJECT_META: Record<
@@ -341,14 +350,193 @@ function InsightsPanel() {
   );
 }
 
-function SuggestedActivityFAB({ activity }: { activity: string }) {
+function SuggestedActivityFAB({
+  activity,
+  loading,
+  onGenerate,
+}: {
+  activity: string;
+  loading: boolean;
+  onGenerate: () => void;
+}) {
   return (
     <div className="fixed bottom-6 right-6 z-50">
-      <button className="bg-violet-600 text-white px-5 py-3 rounded-full shadow-2xl flex items-center gap-2 hover:scale-105 transition-all active:scale-95 font-bold text-sm" type="button">
+      <button
+        className="bg-violet-600 text-white px-5 py-3 rounded-full shadow-2xl flex items-center gap-2 hover:scale-105 transition-all active:scale-95 font-bold text-sm disabled:cursor-not-allowed disabled:opacity-70"
+        disabled={loading}
+        onClick={onGenerate}
+        type="button"
+      >
         <Sparkles className="h-4 w-4" />
-        Actividad sugerida: {activity}
+        {loading ? "Generando actividad..." : `Hora de actividad: ${activity}`}
       </button>
     </div>
+  );
+}
+
+const bandLabels: Record<DifficultyBand, string> = {
+  support: "Apoyo",
+  core: "Base",
+  challenge: "Reto",
+};
+
+function ActivityCandidatePanel({
+  candidates,
+  selectedCandidate,
+  students,
+  approvedBands,
+  overridesByBand,
+  publishStatus,
+  onSelectCandidate,
+  onToggleBand,
+  onToggleStudentBand,
+  onPublish,
+}: {
+  candidates: DeliveryCandidate[];
+  selectedCandidate: DeliveryCandidate | null;
+  students: StudentForAssignment[];
+  approvedBands: DifficultyBand[];
+  overridesByBand: Partial<Record<DifficultyBand, string[]>>;
+  publishStatus: string | null;
+  onSelectCandidate: (candidate: DeliveryCandidate) => void;
+  onToggleBand: (band: DifficultyBand) => void;
+  onToggleStudentBand: (band: DifficultyBand, studentId: string) => void;
+  onPublish: () => void;
+}) {
+  if (candidates.length === 0) return null;
+
+  return (
+    <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-violet-500">
+            Candidatos verificados
+          </p>
+          <h2 className="text-xl font-bold text-slate-900">Aprobar y entregar actividad</h2>
+        </div>
+        <button
+          className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-slate-800"
+          onClick={onPublish}
+          type="button"
+        >
+          Publicar a estudiantes
+        </button>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <div className="grid gap-3 md:grid-cols-3">
+          {candidates.map((candidate) => {
+            const approved = approvedBands.includes(candidate.difficultyBand);
+            return (
+              <article
+                className={`rounded-2xl border p-4 transition ${
+                  selectedCandidate?.id === candidate.id
+                    ? "border-violet-500 bg-violet-50"
+                    : "border-slate-200 bg-white"
+                }`}
+                key={candidate.id}
+              >
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">
+                    {bandLabels[candidate.difficultyBand]}
+                  </span>
+                  <label className="flex items-center gap-2 text-xs font-bold text-slate-600">
+                    <input
+                      checked={approved}
+                      className="h-4 w-4 accent-violet-600"
+                      disabled={candidate.difficultyBand === "core"}
+                      onChange={() => onToggleBand(candidate.difficultyBand)}
+                      type="checkbox"
+                    />
+                    Aprobar
+                  </label>
+                </div>
+                <h3 className="text-base font-bold text-slate-900">{candidate.manifest.title}</h3>
+                <p className="mt-2 text-sm leading-5 text-slate-600">
+                  {candidate.manifest.content.items[0]?.prompt}
+                </p>
+                <dl className="mt-3 grid gap-2 text-xs text-slate-500">
+                  <div>
+                    <dt className="font-bold uppercase tracking-wide text-slate-400">Objetivo</dt>
+                    <dd>{candidate.manifest.curriculum.objective}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-bold uppercase tracking-wide text-slate-400">Evidencia</dt>
+                    <dd>{candidate.evidence[0]?.section}: {candidate.evidence[0]?.text}</dd>
+                  </div>
+                  <div>
+                    <dt className="font-bold uppercase tracking-wide text-slate-400">Verificador</dt>
+                    <dd>
+                      {candidate.verifierScores.deterministic} · alineacion{" "}
+                      {Math.round(candidate.verifierScores.rubric.curriculum_alignment * 100)}%
+                    </dd>
+                  </div>
+                </dl>
+                <button
+                  className="mt-4 rounded-xl border border-violet-200 px-3 py-2 text-sm font-bold text-violet-700 hover:bg-violet-100"
+                  onClick={() => onSelectCandidate(candidate)}
+                  type="button"
+                >
+                  Previsualizar
+                </button>
+              </article>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-col gap-4">
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+            {selectedCandidate ? (
+              <iframe
+                className="h-[360px] w-full bg-white"
+                sandbox="allow-scripts"
+                srcDoc={selectedCandidate.bundleHtml}
+                title={`Previsualizacion ${selectedCandidate.manifest.title}`}
+              />
+            ) : (
+              <div className="flex h-[360px] items-center justify-center text-sm text-slate-500">
+                Selecciona una actividad para previsualizar.
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <h3 className="text-sm font-bold text-slate-800">Bandas por estudiante</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              Todos reciben Base. Marca estudiantes solo si deben recibir Apoyo o Reto.
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              {(["support", "challenge"] as DifficultyBand[]).map((band) => (
+                <div key={band}>
+                  <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">
+                    {bandLabels[band]}
+                  </p>
+                  <div className="max-h-36 space-y-2 overflow-y-auto rounded-xl bg-white p-3">
+                    {students.length === 0 ? (
+                      <p className="text-xs text-slate-400">Sin estudiantes conectados.</p>
+                    ) : (
+                      students.map((student) => (
+                        <label className="flex items-center gap-2 text-sm text-slate-700" key={`${band}-${student.id}`}>
+                          <input
+                            checked={overridesByBand[band]?.includes(student.id) ?? false}
+                            className="h-4 w-4 accent-violet-600"
+                            disabled={!approvedBands.includes(band)}
+                            onChange={() => onToggleStudentBand(band, student.id)}
+                            type="checkbox"
+                          />
+                          {student.displayName}
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {publishStatus ? <p className="mt-3 text-sm font-bold text-emerald-700">{publishStatus}</p> : null}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -359,11 +547,29 @@ export function LiveClassMonitor() {
   const [elapsed, setElapsed] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [finishedSession, setFinishedSession] = useState<SavedSession | null>(null);
+  const [activitySessionId, setActivitySessionId] = useState<string | null>(null);
+  const [candidates, setCandidates] = useState<DeliveryCandidate[]>([]);
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  const [students, setStudents] = useState<StudentForAssignment[]>([]);
+  const [approvedBands, setApprovedBands] = useState<DifficultyBand[]>(["core"]);
+  const [overridesByBand, setOverridesByBand] = useState<Partial<Record<DifficultyBand, string[]>>>({});
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityError, setActivityError] = useState<string | null>(null);
+  const [publishStatus, setPublishStatus] = useState<string | null>(null);
 
   const monitoringClassId = useClassStore((state) => state.monitoringClassId);
   const classes = useClassStore((state) => state.classes);
   const endSession = useClassStore((state) => state.endSession);
   const monitoringClass = classes.find((c) => c.id === monitoringClassId) ?? null;
+  const deliveryStore = useMemo(
+    () => (supabase ? new SupabaseActivityDeliveryStore(supabase) : null),
+    [],
+  );
+  const selectedCandidate =
+    candidates.find((candidate) => candidate.id === selectedCandidateId) ??
+    candidates.find((candidate) => candidate.difficultyBand === "core") ??
+    candidates[0] ??
+    null;
 
   // Timer runs only while recording
   useEffect(() => {
@@ -386,6 +592,87 @@ export function LiveClassMonitor() {
     // Iniciar grabación
     setElapsed(0);
     setIsRecording(true);
+  }
+
+  async function handleGenerateActivity() {
+    if (!monitoringClass || !deliveryStore) {
+      setActivityError("Selecciona una clase y configura Supabase para generar la actividad.");
+      return;
+    }
+
+    setActivityLoading(true);
+    setActivityError(null);
+    setPublishStatus(null);
+
+    try {
+      const result = await loadOrCreateReadyCandidates(deliveryStore, monitoringClass.id);
+      const loadedStudents = await deliveryStore.listStudents(monitoringClass.id);
+      setActivitySessionId(result.sessionId);
+      setCandidates(result.candidates);
+      setStudents(loadedStudents);
+      setSelectedCandidateId(
+        result.candidates.find((candidate) => candidate.difficultyBand === "core")?.id ??
+          result.candidates[0]?.id ??
+          null,
+      );
+      setApprovedBands((bands) => (bands.includes("core") ? bands : ["core", ...bands]));
+    } catch (error) {
+      setActivityError(error instanceof Error ? error.message : "No se pudo generar la actividad.");
+    } finally {
+      setActivityLoading(false);
+    }
+  }
+
+  function toggleApprovedBand(band: DifficultyBand) {
+    if (band === "core") return;
+    setApprovedBands((current) =>
+      current.includes(band) ? current.filter((item) => item !== band) : [...current, band],
+    );
+    setOverridesByBand((current) => ({ ...current, [band]: [] }));
+  }
+
+  function toggleStudentBand(band: DifficultyBand, studentId: string) {
+    setOverridesByBand((current) => {
+      const nextSupport = new Set(current.support ?? []);
+      const nextChallenge = new Set(current.challenge ?? []);
+      const target = band === "support" ? nextSupport : nextChallenge;
+      const other = band === "support" ? nextChallenge : nextSupport;
+
+      if (target.has(studentId)) target.delete(studentId);
+      else {
+        target.add(studentId);
+        other.delete(studentId);
+      }
+
+      return {
+        support: Array.from(nextSupport),
+        challenge: Array.from(nextChallenge),
+      };
+    });
+  }
+
+  async function handlePublish() {
+    if (!monitoringClass || !activitySessionId || !deliveryStore) return;
+
+    setActivityLoading(true);
+    setActivityError(null);
+    setPublishStatus(null);
+
+    try {
+      const published = await publishAssignments({
+        store: deliveryStore,
+        sessionId: activitySessionId,
+        classId: monitoringClass.id,
+        candidates,
+        approvedBands,
+        overridesByBand,
+      });
+      setPublishStatus(`Publicado para ${published.length} estudiantes.`);
+    } catch (error) {
+      setActivityError(error instanceof Error ? error.message : "No se pudo publicar la actividad.");
+    } finally {
+      setActivityLoading(false);
+    }
   }
 
   const remaining = MOCK_INSIGHTS.totalSeconds - elapsed;
@@ -437,11 +724,32 @@ export function LiveClassMonitor() {
                   <InsightsPanel />
                 </div>
               </div>
+              {activityError ? (
+                <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
+                  {activityError}
+                </div>
+              ) : null}
+              <ActivityCandidatePanel
+                approvedBands={approvedBands}
+                candidates={candidates}
+                onPublish={handlePublish}
+                onSelectCandidate={(candidate) => setSelectedCandidateId(candidate.id)}
+                onToggleBand={toggleApprovedBand}
+                onToggleStudentBand={toggleStudentBand}
+                overridesByBand={overridesByBand}
+                publishStatus={publishStatus}
+                selectedCandidate={selectedCandidate}
+                students={students}
+              />
             </div>
           </div>
         </div>
       </div>
-      <SuggestedActivityFAB activity={MOCK_INSIGHTS.suggestedActivity} />
+      <SuggestedActivityFAB
+        activity={MOCK_INSIGHTS.suggestedActivity}
+        loading={activityLoading}
+        onGenerate={handleGenerateActivity}
+      />
 
       {/* Resumen de fin de sesión */}
       {finishedSession && (
