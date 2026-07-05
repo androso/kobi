@@ -5,7 +5,6 @@ import {
   Clock,
   Filter,
   TrendingUp,
-  Mail,
   Search,
   X,
   Mic,
@@ -217,58 +216,31 @@ export function PreviousClasses() {
                 </div>
               </div>
 
-              {/* Right Column: Stats & Profile Sidebar */}
+              {/* Right Column: Period Summary Sidebar */}
               <div className="w-[300px] border-l border-slate-100 bg-white p-6 shrink-0 hidden xl:flex flex-col gap-6 overflow-y-auto custom-scrollbar">
-                
-                {/* Profile detail */}
-                <div className="flex flex-col items-center text-center">
-                  <span className="text-xs font-bold text-slate-400 tracking-wider uppercase mb-5 self-start">Mi Perfil</span>
-                  <div className="relative mb-3">
-                    <div className="w-20 h-20 rounded-full border-4 border-[#004ac6]/10 p-0.5">
-                      <div className="w-full h-full rounded-full bg-gradient-to-tr from-[#004ac6] to-violet-500 flex items-center justify-center text-white text-xl font-bold">
-                        SH
-                      </div>
-                    </div>
-                    <div className="absolute bottom-0.5 right-0.5 w-4 h-4 bg-emerald-500 border-2 border-white rounded-full"></div>
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-800">Sra. Henderson</h3>
-                  <p className="text-xs text-slate-400 font-semibold mt-0.5">Directora del Departamento de Ciencias</p>
-                  
-                  <div className="flex gap-2.5 mt-5">
-                    <button className="w-9 h-9 rounded-full border border-slate-100 flex items-center justify-center hover:bg-slate-50 text-slate-500 transition-colors" title="Bandeja de entrada">
-                      <Mail className="h-4 w-4" />
-                    </button>
-                    <button className="w-9 h-9 rounded-full border border-slate-100 flex items-center justify-center hover:bg-slate-50 text-slate-500 transition-colors" title="Calendario">
-                      <Calendar className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
 
-                <div className="h-px bg-slate-100" />
+                {/* Period Summary */}
+                <div className="space-y-4">
+                  <span className="text-xs font-bold text-slate-400 tracking-wider uppercase">Resumen del período</span>
 
-                {/* Current Unit Progress */}
-                <div className="space-y-5">
-                  <div className="bg-[#f8f9ff] p-4.5 rounded-2xl border border-slate-100">
-                    <p className="text-[9px] font-bold text-[#004ac6] uppercase tracking-widest mb-3">Enfoque Actual</p>
-                    <div className="flex justify-between items-center mb-1.5">
-                      <h4 className="font-bold text-sm text-slate-800">Ciencias - 4to Grado</h4>
-                      <span className="text-xs font-extrabold text-[#004ac6]">64%</span>
-                    </div>
-                    <div className="w-full bg-slate-200/50 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-[#004ac6] h-full w-[64%]"></div>
-                    </div>
-                    <p className="text-[10px] text-slate-400 mt-2 font-semibold">Unidad 2: Ecosistemas</p>
-                  </div>
-
-                  {/* Vertically Aligned Metrics */}
                   <div className="space-y-3">
                     <div className="flex items-center gap-3 p-3.5 bg-white rounded-2xl border border-slate-100">
                       <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
                         <Calendar className="h-4 w-4" />
                       </div>
                       <div>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Total de Sesiones</p>
-                        <p className="text-sm font-bold text-slate-800">142 Clases</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Total de sesiones</p>
+                        <p className="text-sm font-bold text-slate-800">142 clases</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 p-3.5 bg-white rounded-2xl border border-slate-100">
+                      <div className="w-9 h-9 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center shrink-0">
+                        <Clock className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Horas grabadas</p>
+                        <p className="text-sm font-bold text-slate-800">98 h</p>
                       </div>
                     </div>
 
@@ -277,10 +249,27 @@ export function PreviousClasses() {
                         <TrendingUp className="h-4 w-4" />
                       </div>
                       <div>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Participación Promedio</p>
-                        <p className="text-sm font-bold text-slate-800">82% de Puntaje</p>
+                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Participación promedio</p>
+                        <p className="text-sm font-bold text-slate-800">82% de puntaje</p>
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                <div className="h-px bg-slate-100" />
+
+                {/* Current Focus */}
+                <div className="space-y-5">
+                  <div className="bg-[#f8f9ff] p-5 rounded-2xl border border-slate-100">
+                    <p className="text-[9px] font-bold text-[#004ac6] uppercase tracking-widest mb-3">Enfoque actual</p>
+                    <div className="flex justify-between items-center mb-1.5">
+                      <h4 className="font-bold text-sm text-slate-800">Ciencias - 4to Grado</h4>
+                      <span className="text-xs font-extrabold text-[#004ac6]">64%</span>
+                    </div>
+                    <div className="w-full bg-slate-200/50 h-1.5 rounded-full overflow-hidden">
+                      <div className="bg-[#004ac6] h-full w-[64%]"></div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-2 font-semibold">Unidad 2: Ecosistemas</p>
                   </div>
 
                   <button className="w-full py-2.5 text-xs font-bold text-[#004ac6] bg-[#e9f0fe] rounded-xl hover:bg-[#d8e5fd] transition-colors">
