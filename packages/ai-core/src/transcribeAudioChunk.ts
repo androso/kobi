@@ -1,4 +1,4 @@
-import { google } from "@ai-sdk/google";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateText } from "ai";
 import { URL } from "node:url";
 
@@ -33,17 +33,27 @@ export async function transcribeAudioChunk(
   const audioUrl = parseAudioUrl(input.audioUrl);
   const mimeType = normalizeMimeType(input.mimeType);
   const provider = input.provider ?? getTranscriptionProvider();
+  const model = input.model ?? getDefaultModelFor(provider);
 
-  const transcriptText = normalizeTranscriptText(
-    await transcriptionAdapters[provider]({
-      audioUrl,
-      mimeType,
-      model: input.model,
-    }),
-  );
+  console.log(`[transcribeAudioChunk] provider=${provider} model=${model} audioUrl=${audioUrl.toString()}`);
+
+  const rawTranscript = await transcriptionAdapters[provider]({
+    audioUrl,
+    mimeType,
+    model: input.model,
+  });
+
+  const transcriptText = normalizeTranscriptText(rawTranscript);
 
   if (!transcriptText) {
-    throw new Error(`transcribeAudioChunk: ${provider} returned an empty transcript`);
+    console.warn(
+      `[transcribeAudioChunk] ${provider} returned an empty transcript for ${audioUrl.toString()}. ` +
+        `The audio chunk may contain silence, be too short, or the format may be unsupported.`,
+    );
+  } else {
+    console.log(
+      `[transcribeAudioChunk] transcript received (${transcriptText.length} chars): ${transcriptText.slice(0, 200)}${transcriptText.length > 200 ? "..." : ""}`,
+    );
   }
 
   return { transcriptText };
@@ -65,6 +75,9 @@ const transcriptionAdapters: Record<
 };
 
 async function transcribeWithGemini(input: TranscriptionAdapterInput): Promise<string> {
+  const apiKey = readRequiredEnv("GEMINI_API_KEY", "gemini");
+  const google = createGoogleGenerativeAI({ apiKey });
+
   const { text } = await generateText({
     model: google(input.model ?? process.env.TRANSCRIPTION_MODEL ?? DEFAULT_GEMINI_TRANSCRIPTION_MODEL),
     messages: [
@@ -161,6 +174,21 @@ function normalizeMimeType(value: string): string {
   }
 
   return mimeType;
+}
+
+function getDefaultModelFor(provider: TranscriptionProvider): string {
+  switch (provider) {
+    case "gemini":
+      return process.env.TRANSCRIPTION_MODEL ?? DEFAULT_GEMINI_TRANSCRIPTION_MODEL;
+    case "openai":
+      return process.env.TRANSCRIPTION_MODEL ?? DEFAULT_OPENAI_TRANSCRIPTION_MODEL;
+    case "elevenlabs":
+      return (
+        process.env.ELEVENLABS_TRANSCRIPTION_MODEL ??
+        process.env.TRANSCRIPTION_MODEL ??
+        DEFAULT_ELEVENLABS_TRANSCRIPTION_MODEL
+      );
+  }
 }
 
 function getTranscriptionProvider(): TranscriptionProvider {

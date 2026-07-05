@@ -2,10 +2,11 @@ import { loadRootEnv } from "@kobi/db";
 loadRootEnv();
 
 import { createClient } from "@supabase/supabase-js";
-import { getQueue } from "./queue.js";
+import { getQueue, stopQueue } from "./queue.js";
 import { registerTranscribeChunkJob } from "./jobs/transcribeChunk.job.js";
 import { registerBuildLessonStateJob } from "./jobs/buildLessonState.job.js";
 import { registerGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
+import { startApiServer } from "./api.js";
 
 async function main() {
   const supabaseUrl =
@@ -18,18 +19,35 @@ async function main() {
         "Ensure .env.local exists at the repo root with the required variables."
     );
   }
-  const supabase = createClient(
-    supabaseUrl,
-    process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
-  );
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceRoleKey) {
+    throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY. The worker API needs it for storage and queue-backed writes.");
+  }
+
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
 
   const boss = await getQueue();
 
   await registerTranscribeChunkJob(boss, supabase);
   await registerBuildLessonStateJob(boss, supabase);
   await registerGenerateActivityArtifactsJob(boss, supabase);
+  const server = startApiServer({ supabase, boss });
 
-  console.log("Kobi worker running: transcribe-chunk, build-lesson-state, generate-activity-artifacts");
+  console.log("Kobi worker running: API, transcribe-chunk, build-lesson-state, generate-activity-artifacts");
+
+  let shuttingDown = false;
+  async function shutdown(signal: string) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[worker] shutting down (${signal})...`);
+    server.closeAllConnections?.();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await stopQueue();
+    process.exit(0);
+  }
+
+  process.once("SIGTERM", () => void shutdown("SIGTERM"));
+  process.once("SIGINT", () => void shutdown("SIGINT"));
 }
 
 main().catch((error) => {
