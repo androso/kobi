@@ -196,6 +196,16 @@ async function uploadAudioChunk(
 
   const mimeType = audio.type || "application/octet-stream";
   const audioBytes = Buffer.from(await audio.arrayBuffer());
+
+  if (audioBytes.length < 256) {
+    logApi("audio chunk suspiciously small — may be empty or corrupted", {
+      sessionId,
+      chunkIndex,
+      sizeBytes: audioBytes.length,
+      mimeType,
+    });
+  }
+
   const bucket = process.env.AUDIO_BUCKET ?? DEFAULT_AUDIO_BUCKET;
   const storagePath = `${sessionId}/${Date.now()}-${chunkIndex}.${extensionForMimeType(mimeType)}`;
 
