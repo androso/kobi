@@ -27,7 +27,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="flex flex-col justify-between border-b border-slate-200/80 bg-[#eef3fb] p-3 sm:p-4 lg:border-b-0 lg:border-r">
+    <aside className="flex flex-col justify-between border-b border-slate-200/80 bg-[#eef3fb] p-3 sm:p-4 lg:border-b-0 lg:border-r-0">
       <div className="space-y-6">
         <div className="flex items-start gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#004ac6] text-white shadow-sm">

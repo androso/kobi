@@ -43,9 +43,9 @@ export function TeacherDashboard() {
 
   return (
     <main className="min-h-screen bg-[#eef3fb] text-foreground">
-      <div className="grid min-h-screen w-full rounded-l-[30px] overflow-hidden lg:grid-cols-[240px_minmax(0,1fr)]">
+      <div className="grid min-h-screen w-full lg:grid-cols-[240px_minmax(0,1fr)] bg-[#eef3fb]">
         <Sidebar />
-        <div className="flex min-w-0 flex-col bg-[#f8f9ff]">
+        <div className="flex min-w-0 flex-col bg-[#f8f9ff] rounded-l-[30px] border-l border-slate-200/50 overflow-hidden shadow-sm">
           <Header />
           <div className="flex-1 px-6 py-8 md:px-10 max-w-7xl w-full mx-auto">
             {/* Greeting Hero */}
