@@ -112,6 +112,30 @@ describe("artifact delivery bridge", () => {
     ]);
   });
 
+  it("rejects candidate rows from another session before publishing", () => {
+    expect(() =>
+      buildAssignmentUpserts({
+        sessionId: "session-1",
+        students: [{ id: "student-1", displayName: "Ana" }],
+        candidates: [{ ...candidate("core"), sessionId: "session-2" }],
+        approvedBands: ["core"],
+        overridesByBand: {},
+      }),
+    ).toThrow("La actividad candidata no pertenece a esta sesion.");
+  });
+
+  it("rejects candidates whose manifest band does not match the row band", () => {
+    expect(() =>
+      buildAssignmentUpserts({
+        sessionId: "session-1",
+        students: [{ id: "student-1", displayName: "Ana" }],
+        candidates: [{ ...candidate("core"), manifest: manifest("support") }],
+        approvedBands: ["core"],
+        overridesByBand: {},
+      }),
+    ).toThrow("La variante de la candidata no coincide con su manifest.");
+  });
+
   it("publishes approved bands and assignment rows", async () => {
     const fakeStore = store({
       listStudents: vi.fn(async () => [

@@ -13,9 +13,11 @@ export const assignments = pgTable(
     sessionId: uuid("session_id")
       .notNull()
       .references(() => sessions.id, { onDelete: "cascade" }),
-    candidateId: uuid("candidate_id").references(() => sessionActivityCandidates.id, {
-      onDelete: "set null",
-    }),
+    candidateId: uuid("candidate_id")
+      .notNull()
+      .references(() => sessionActivityCandidates.id, {
+        onDelete: "restrict",
+      }),
     activityId: uuid("activity_id")
       .notNull()
       .references(() => activities.id, { onDelete: "cascade" }),
