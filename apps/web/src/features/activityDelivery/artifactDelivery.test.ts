@@ -13,7 +13,7 @@ import {
   publishAssignments,
   SupabaseActivityDeliveryStore,
 } from "./artifactDelivery";
-import type { ActivityManifest, DifficultyBand } from "@kobi/activities";
+import type { ActivityManifest, DifficultyBand } from "@kobi/activities/contracts";
 
 const manifest = (band: DifficultyBand): ActivityManifest => ({
   family: band === "support" ? "match_classify" : band === "challenge" ? "sequence_order" : "guided_practice",

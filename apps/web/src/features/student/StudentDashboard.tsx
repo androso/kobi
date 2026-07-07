@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PlayCircle, ShieldCheck } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ACTIVITY_SDK_VERSION, activitySdkMessageSchema } from "@kobi/activities";
+import { ACTIVITY_SDK_VERSION, activitySdkMessageSchema } from "@kobi/activities/contracts";
 import {
   findClassByCode,
   selectClassArtefactos,

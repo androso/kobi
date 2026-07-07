@@ -8,7 +8,7 @@ import {
   createActivityArtifactCandidates,
   resolveApprovedActivityForBand,
   verifyActivityArtifact,
-} from "./index.js";
+} from "./server.js";
 
 const lessonState: LessonState = {
   topic: "La noticia y sus partes",

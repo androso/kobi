@@ -7,7 +7,7 @@ import {
   Leaf,
   Circle,
 } from "lucide-react";
-import type { DifficultyBand } from "@kobi/activities";
+import type { DifficultyBand } from "@kobi/activities/contracts";
 import { Sidebar } from "./components/Sidebar";
 import { WaveformVisualizer } from "./components/WaveformVisualizer";
 import { useClassStore, type SavedSession, type ClassItem } from "../../lib/store";

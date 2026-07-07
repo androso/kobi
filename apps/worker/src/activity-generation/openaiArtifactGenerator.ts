@@ -19,7 +19,7 @@ import {
   type CreateActivityCandidatesInput,
   type DifficultyBand,
   type SessionContext,
-} from "@kobi/activities";
+} from "@kobi/activities/server";
 
 const difficultyBandSchema = z.enum(["support", "core", "challenge"]);
 const activityFamilySchema = z.enum([

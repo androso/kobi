@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LessonState } from "@kobi/ai-core";
 import type { CurriculumMatch } from "@kobi/curriculum";
-import type { DifficultyBand, SessionContext } from "@kobi/activities";
+import type { DifficultyBand, SessionContext } from "@kobi/activities/contracts";
 import {
   buildActivityGenerationPrompt,
   generateOpenAiActivityCandidates,

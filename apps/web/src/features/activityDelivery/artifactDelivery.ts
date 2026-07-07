@@ -2,16 +2,18 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   activityManifestSchema,
   authorizeActivityTelemetryMessage,
-  buildActivitySessionContext,
-  createActivityArtifactCandidates,
-  resolveApprovedActivityForBand,
-  verifyActivityArtifact,
   type ActivityArtifactCandidate,
   type ActivityEvidence,
   type ActivityManifest,
   type ActivityVerifierScores,
   type DifficultyBand,
-} from "@kobi/activities";
+} from "@kobi/activities/contracts";
+import {
+  buildActivitySessionContext,
+  createActivityArtifactCandidates,
+  resolveApprovedActivityForBand,
+  verifyActivityArtifact,
+} from "@kobi/activities/server";
 
 type CandidateStatus = "ready" | "approved" | "rejected" | "superseded";
 type ActivitySource = "seeded" | "reused" | "new";
