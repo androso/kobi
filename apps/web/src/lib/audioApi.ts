@@ -39,6 +39,10 @@ export interface SubmitDemoTranscriptInput {
   sessionId: string;
 }
 
+export interface RequestActivityCandidatesInput {
+  sessionId: string;
+}
+
 async function parseApiResponse<T>(response: Response): Promise<T> {
   const body = (await response.json().catch(() => ({}))) as { error?: string };
   if (!response.ok) {
@@ -199,5 +203,30 @@ export async function submitManualLessonState({
     sessionId,
     segmentId: payload.segmentId,
   });
+  return payload;
+}
+
+export async function requestActivityCandidates({ sessionId }: RequestActivityCandidatesInput) {
+  if (!isAudioApiConfigured()) {
+    throw new Error("VITE_KOBI_API_URL is not configured");
+  }
+
+  logAudioApi("requesting activity candidates", {
+    url: `${API_URL}/api/sessions/${sessionId}/activity-candidates`,
+    sessionId,
+  });
+
+  const response = await fetch(`${API_URL}/api/sessions/${sessionId}/activity-candidates`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+  });
+
+  const payload = await parseApiResponse<{
+    inserted: number;
+    reused: number;
+    generated: number;
+    skippedReason: string | null;
+  }>(response);
+  logAudioApi("activity candidates requested", payload);
   return payload;
 }

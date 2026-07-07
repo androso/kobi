@@ -47,11 +47,7 @@ const mocks = vi.hoisted(() => {
   return {
     candidate,
     listStudents: vi.fn(async () => [{ id: "student-1", displayName: "Ana" }]),
-    loadOrCreateReadyCandidates: vi.fn(async () => ({
-      sessionId: "session-1",
-      candidates: [candidate],
-      created: true,
-    })),
+    requestActivityCandidates: vi.fn(async () => ({ inserted: 1, reused: 0, generated: 0, skippedReason: null })),
     publishAssignments: vi.fn(async () => [
       {
         id: "assignment-1",
@@ -82,6 +78,7 @@ vi.mock("../../lib/audioApi", () => ({
   createBackendSession: mocks.createBackendSession,
   isAudioApiConfigured: () => true,
   isDemoProjectMode: () => true,
+  requestActivityCandidates: mocks.requestActivityCandidates,
   resolveBackendClassId: (classId: string) => classId,
   submitDemoTranscript: mocks.submitDemoTranscript,
   submitManualLessonState: vi.fn(),
@@ -91,9 +88,8 @@ vi.mock("../../lib/audioApi", () => ({
 vi.mock("../activityDelivery/artifactDelivery", () => ({
   SupabaseActivityDeliveryStore: class {
     listStudents = mocks.listStudents;
-    listCandidates = vi.fn(async () => []);
+    listCandidates = vi.fn(async () => [mocks.candidate]);
   },
-  loadOrCreateReadyCandidates: mocks.loadOrCreateReadyCandidates,
   publishAssignments: mocks.publishAssignments,
 }));
 

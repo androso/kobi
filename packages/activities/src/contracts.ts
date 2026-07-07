@@ -1,4 +1,5 @@
 export * from "./types.js";
+export * from "./assignment.js";
 export * from "./telemetry.js";
 
 import { activitySdkMessageSchema } from "./types.js";

@@ -13,7 +13,6 @@ import { WaveformVisualizer } from "./components/WaveformVisualizer";
 import { useClassStore, type SavedSession, type ClassItem } from "../../lib/store";
 import { supabase } from "../../lib/supabase";
 import {
-  loadOrCreateReadyCandidates,
   publishAssignments,
   SupabaseActivityDeliveryStore,
   type DeliveryCandidate,
@@ -23,6 +22,7 @@ import {
   createBackendSession,
   isAudioApiConfigured,
   isDemoProjectMode,
+  requestActivityCandidates,
   resolveBackendClassId,
   submitDemoTranscript,
   submitManualLessonState,
@@ -1188,16 +1188,12 @@ export function LiveClassMonitor() {
         return;
       }
 
-      const result = await loadOrCreateReadyCandidates(deliveryStore, activeClass.id);
-      const loadedStudents = await deliveryStore.listStudents(activeClass.id);
-      setActivitySessionId(result.sessionId);
-      setCandidates(result.candidates);
-      setStudents(loadedStudents);
-      setSelectedCandidateId(
-        result.candidates.find((candidate) => candidate.difficultyBand === "core")?.id ??
-          result.candidates[0]?.id ??
-          null,
-      );
+      const sessionId = apiSessionIdRef.current ?? (await ensureBackendSession());
+      await requestActivityCandidates({ sessionId });
+
+      if (!await loadCandidatesForSession(sessionId)) {
+        setActivityError("La generacion termino, pero aun no hay actividades listas para esta sesion.");
+      }
     } catch (error) {
       setActivityError(error instanceof Error ? error.message : "No se pudo generar la actividad.");
     } finally {

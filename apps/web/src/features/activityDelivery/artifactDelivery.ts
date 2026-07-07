@@ -2,18 +2,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   activityManifestSchema,
   authorizeActivityTelemetryMessage,
-  type ActivityArtifactCandidate,
   type ActivityEvidence,
   type ActivityManifest,
   type ActivityVerifierScores,
   type DifficultyBand,
-} from "@kobi/activities/contracts";
-import {
-  buildActivitySessionContext,
-  createActivityArtifactCandidates,
   resolveApprovedActivityForBand,
-  verifyActivityArtifact,
-} from "@kobi/activities/server";
+} from "@kobi/activities/contracts";
 
 type CandidateStatus = "ready" | "approved" | "rejected" | "superseded";
 type ActivitySource = "seeded" | "reused" | "new";
@@ -69,12 +63,6 @@ export interface StudentAssignment {
 export interface ActivityDeliveryStore {
   ensureActiveSession(classId: string): Promise<string>;
   listCandidates(sessionId: string): Promise<DeliveryCandidate[]>;
-  saveVerifiedCandidate(input: {
-    sessionId: string;
-    candidate: ActivityArtifactCandidate;
-    artifact: ReturnType<typeof verifyActivityArtifact>["artifact"];
-    contextSnapshot: Record<string, unknown>;
-  }): Promise<DeliveryCandidate>;
   listStudents(classId: string): Promise<StudentForAssignment[]>;
   updateCandidateStatuses(
     sessionId: string,
@@ -99,38 +87,6 @@ export interface ActivityDeliveryStore {
   }): Promise<void>;
 }
 
-const lessonState = {
-  topic: "La noticia y sus partes",
-  objective_guess: "Identificar titular, entradilla y fuente en una noticia breve",
-  key_terms: ["titular", "entradilla", "fuente", "hecho principal"],
-  transcript_summary:
-    "La docente explico las partes de una noticia con ejemplos del periodico escolar.",
-  confidence: 0.88,
-  evidence: {
-    quoted_phrases: ["titular de la noticia", "la fuente nos dice quien informa"],
-    reason: "La clase se centro en reconocer partes de una noticia.",
-  },
-};
-
-const curriculumMatches = [
-  {
-    objective_code: "L7.4.2",
-    unit: "U4",
-    grade: 7,
-    subject: "lenguaje",
-    text: "Reconoce la estructura de la noticia: titular, entradilla, cuerpo y fuente.",
-    similarity: 0.91,
-  },
-  {
-    objective_code: "L7.4.3",
-    unit: "U4",
-    grade: 7,
-    subject: "lenguaje",
-    text: "Distingue informacion principal y secundaria en textos periodisticos.",
-    similarity: 0.84,
-  },
-];
-
 const orderedBands: DifficultyBand[] = ["support", "core", "challenge"];
 
 export async function loadOrCreateReadyCandidates(
@@ -147,34 +103,7 @@ export async function loadOrCreateReadyCandidates(
     return { sessionId, candidates: sortCandidates(existing), created: false };
   }
 
-  const sessionContext = buildActivitySessionContext([lessonState]);
-  const contextSnapshot = { lessonState, curriculumMatches, sessionContext };
-  const generated = createActivityArtifactCandidates({
-    lessonState,
-    sessionContext,
-    curriculumMatches,
-  });
-  const created: DeliveryCandidate[] = [];
-
-  for (const candidate of generated) {
-    if (existing.some((row) => row.difficultyBand === candidate.manifest.difficulty_band)) continue;
-
-    const result = verifyActivityArtifact(candidate);
-    if (!result.ok) {
-      throw new Error(`El verificador rechazo ${candidate.manifest.difficulty_band}: ${result.errors.join("; ")}`);
-    }
-
-    created.push(
-      await store.saveVerifiedCandidate({
-        sessionId,
-        candidate,
-        artifact: result.artifact,
-        contextSnapshot,
-      }),
-    );
-  }
-
-  return { sessionId, candidates: sortCandidates([...existing, ...created]), created: created.length > 0 };
+  return { sessionId, candidates: sortCandidates(existing), created: false };
 }
 
 export function buildAssignmentUpserts(input: {
@@ -317,66 +246,6 @@ export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
       const activity = required(activityById.get(row.activity_id), "No se encontro la actividad candidata.");
       return candidateFromRows(row, activity, required(bundleByRef.get(activity.bundle_ref), "No se encontro el bundle."));
     });
-  }
-
-  async saveVerifiedCandidate(input: {
-    sessionId: string;
-    candidate: ActivityArtifactCandidate;
-    artifact: ReturnType<typeof verifyActivityArtifact>["artifact"];
-    contextSnapshot: Record<string, unknown>;
-  }) {
-    const checksum = checksumText(input.candidate.bundle_html);
-
-    const { error: bundleError } = await this.client
-      .from("activity_bundles")
-      .upsert({
-        ref: input.candidate.bundle_ref,
-        index_html: input.candidate.bundle_html,
-        checksum,
-      }, { onConflict: "ref" });
-
-    if (bundleError) throw new Error(bundleError.message);
-
-    const { data: activity, error: activityError } = await this.client
-      .from("activities")
-      .upsert({
-        contract_version: input.artifact.contract_version,
-        manifest: input.artifact.manifest,
-        bundle_ref: input.artifact.bundle_ref,
-        evidence: input.artifact.evidence,
-        status: input.artifact.status,
-        source: "new",
-        verifier_scores: input.artifact.verifier_scores,
-        parent_id: input.artifact.parent_id,
-        curriculum_tags: [input.artifact.manifest.curriculum.objective],
-      }, { onConflict: "bundle_ref" })
-      .select("id,contract_version,manifest,bundle_ref,evidence,status,source,verifier_scores")
-      .single();
-
-    if (activityError) throw new Error(activityError.message);
-
-    const { data: candidateRow, error: candidateError } = await this.client
-      .from("session_activity_candidates")
-      .insert({
-        session_id: input.sessionId,
-        activity_id: activity.id,
-        difficulty_band: input.artifact.manifest.difficulty_band,
-        status: "ready",
-        source: "new",
-        context_snapshot: input.contextSnapshot,
-        evidence: input.artifact.evidence,
-        verifier_scores: input.artifact.verifier_scores,
-      })
-      .select("id,session_id,activity_id,difficulty_band,status,source,evidence,verifier_scores,created_at")
-      .single();
-
-    if (candidateError) throw new Error(candidateError.message);
-
-    return candidateFromRows(
-      candidateRow as CandidateRow,
-      activity as ActivityRow,
-      { ref: input.candidate.bundle_ref, index_html: input.candidate.bundle_html },
-    );
   }
 
   async listStudents(classId: string) {
@@ -568,15 +437,6 @@ function candidateFromRows(
 function required<T>(value: T | undefined, message: string): T {
   if (!value) throw new Error(message);
   return value;
-}
-
-function checksumText(value: string) {
-  let hash = 2166136261;
-  for (let i = 0; i < value.length; i += 1) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
 interface CandidateRow {
