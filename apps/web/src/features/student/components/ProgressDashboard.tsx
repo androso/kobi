@@ -56,10 +56,6 @@ const BANDS: { key: ArtefactoBand; label: string; color: string }[] = [
   { key: "challenge", label: "Reto", color: "#e0a54e" },
 ];
 
-function questionCount(artefacto: Artefacto): number {
-  return artefacto.content.type === "quiz" ? artefacto.content.questions.length : 0;
-}
-
 export function ProgressDashboard({ artefactos, submissions, studentName }: ProgressDashboardProps) {
   const mine = useMemo(
     () => submissions.filter((sub) => sub.studentName === studentName),
@@ -76,10 +72,8 @@ export function ProgressDashboard({ artefactos, submissions, studentName }: Prog
 
   const earnedScore = mine.reduce((sum, sub) => sum + sub.score, 0);
   const answeredTotal = mine.reduce((sum, sub) => sum + sub.total, 0);
-  const totalQuestions = artefactos.reduce((sum, a) => sum + questionCount(a), 0);
-
   const precision = answeredTotal ? Math.round((earnedScore / answeredTotal) * 100) : 0;
-  const dominio = totalQuestions ? Math.round((earnedScore / totalQuestions) * 100) : 0;
+  const dominio = answeredTotal ? Math.round((earnedScore / answeredTotal) * 100) : 0;
 
   const totalAttempts = mine.reduce((sum, sub) => sum + sub.attempts, 0);
   const totalHints = mine.reduce((sum, sub) => sum + sub.hintsUsed, 0);
