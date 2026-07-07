@@ -44,6 +44,8 @@ Produced by the planner/generator, checked by the verifier, stored in `activitie
 
 For the teacher approval flow, Area C writes support/core/challenge rows to `session_activity_candidates`. The teacher may assign selected students to support or challenge; every unselected student receives the approved core candidate by default. Area E records the final per-student delivery in `assignments.variant`.
 
+Assignment rows are only valid for approved candidates from the same session: `assignments.candidate_id`, `activity_id`, and `variant` must match the selected `session_activity_candidates` row, and the assigned student must belong to the session's class.
+
 ```json
 {
   "contract_version": "activity-artifact/v1",

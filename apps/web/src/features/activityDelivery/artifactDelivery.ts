@@ -37,7 +37,7 @@ export interface StudentForAssignment {
 
 export interface AssignmentUpsert {
   session_id: string;
-  candidate_id: string | null;
+  candidate_id: string;
   activity_id: string;
   student_id: string;
   variant: DifficultyBand;
@@ -184,6 +184,16 @@ export function buildAssignmentUpserts(input: {
 }): AssignmentUpsert[] {
   if (!input.approvedBands.includes("core")) {
     throw new Error("La actividad core debe estar aprobada antes de publicar.");
+  }
+
+  for (const candidate of input.candidates) {
+    if (candidate.sessionId !== input.sessionId) {
+      throw new Error("La actividad candidata no pertenece a esta sesion.");
+    }
+
+    if (candidate.manifest.difficulty_band !== candidate.difficultyBand) {
+      throw new Error("La variante de la candidata no coincide con su manifest.");
+    }
   }
 
   const approvals = input.candidates.map((candidate) => ({
@@ -399,7 +409,8 @@ export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
       const { error } = await this.client
         .from("session_activity_candidates")
         .update({ status: update.status, approved_at: update.approvedAt })
-        .eq("id", update.candidateId);
+        .eq("id", update.candidateId)
+        .eq("session_id", _sessionId);
 
       if (error) throw new Error(error.message);
     }

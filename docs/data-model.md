@@ -81,7 +81,7 @@ session_activity_candidates
 assignments
   id (uuid, PK)
   session_id (FK -> sessions.id)
-  candidate_id (FK -> session_activity_candidates.id, nullable)
+  candidate_id (FK -> session_activity_candidates.id)
   activity_id (FK -> activities.id)
   student_id (FK -> students.id)
   variant (support|core|challenge, default core)
@@ -89,6 +89,8 @@ assignments
   score (real, nullable)
   created_at, completed_at (nullable)
   unique(session_id, student_id)
+  + DB trigger: candidate must be approved and match session_id/activity_id/variant;
+    student must belong to the session class
       │
       │ 1—N
       ▼
