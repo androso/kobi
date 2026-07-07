@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
 import type { ArtifactContent, ArtifactKind, QuizAnswer } from "./artifacts";
+import { isLegacyArtifactDemoEnabled } from "./legacyArtifacts";
 
 interface UserProfile {
   role: "teacher" | "student" | null;
@@ -607,7 +608,7 @@ export const useClassStore = create<ClassState>((set) => ({
   classError: null,
   monitoringClassId: null,
   sessions: [],
-  artefactos: defaultArtefactos,
+  artefactos: isLegacyArtifactDemoEnabled() ? defaultArtefactos : [],
   submissions: [],
   loadTeacherClasses: async (teacherId) => {
     if (!supabase) {
@@ -732,7 +733,7 @@ export const useClassStore = create<ClassState>((set) => ({
       classes: defaultClasses,
       loadingClasses: false,
       classError: null,
-      artefactos: defaultArtefactos,
+      artefactos: isLegacyArtifactDemoEnabled() ? defaultArtefactos : [],
       submissions: [],
     }),
 }));

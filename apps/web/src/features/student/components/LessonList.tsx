@@ -1,4 +1,4 @@
-import { CheckCircle2, FileText, PlayCircle, Trash2, type LucideIcon } from "lucide-react";
+import { CheckCircle2, FileText, PlayCircle, Puzzle, Trash2, type LucideIcon } from "lucide-react";
 import type { Artefacto, ArtefactoSubmission } from "../../../lib/store";
 
 interface LessonListProps {
@@ -13,6 +13,7 @@ interface LessonListProps {
 }
 
 const kindIcon: Record<Artefacto["kind"], LucideIcon> = {
+  verified_bundle: Puzzle,
   quiz: FileText,
   reading: FileText,
   video: PlayCircle,

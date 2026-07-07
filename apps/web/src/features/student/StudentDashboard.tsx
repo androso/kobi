@@ -10,6 +10,7 @@ import {
   type Artefacto,
   type ArtefactoSubmission,
 } from "../../lib/store";
+import { isLegacyArtifactDemoEnabled } from "../../lib/legacyArtifacts";
 import { supabase } from "../../lib/supabase";
 import {
   handleStudentActivityMessage,
@@ -55,20 +56,11 @@ function artefactoFromAssignment(assignment: StudentAssignment, classId: string)
     section: assignment.manifest.curriculum.unit,
     objective: assignment.manifest.curriculum.objective,
     band: assignment.variant,
-    kind: "quiz",
+    kind: "verified_bundle",
     estimateLabel: `${assignment.manifest.est_minutes} min · ${bandLabels[assignment.variant]}`,
     content: {
-      type: "quiz",
-      questions: assignment.manifest.content.items.map((item, index) => ({
-        id: `item-${index + 1}`,
-        prompt: item.prompt,
-        choices: item.answer_key.map((answer, answerIndex) => ({
-          id: `answer-${answerIndex + 1}`,
-          label: answer,
-        })),
-        correctChoiceId: "answer-1",
-        hints: item.hints,
-      })),
+      type: "verified_bundle",
+      family: assignment.manifest.family,
     },
     status: "assigned",
     due: "Hoy",
@@ -216,7 +208,10 @@ export function StudentDashboard() {
     [assignment, classId],
   );
   const localArtefactos = useMemo(
-    () => (studentClass ? selectClassArtefactos({ artefactos: allArtefactos }, studentClass.id) : []),
+    () =>
+      isLegacyArtifactDemoEnabled() && studentClass
+        ? selectClassArtefactos({ artefactos: allArtefactos }, studentClass.id)
+        : [],
     [allArtefactos, studentClass],
   );
   const artefactos = useMemo(
