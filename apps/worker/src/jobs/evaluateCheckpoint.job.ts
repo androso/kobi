@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { lessonStateSchema, type LessonState } from "@kobi/ai-core";
-import { buildActivitySessionContext } from "@kobi/activities";
+import { buildActivitySessionContext } from "@kobi/activities/server";
 import {
   buildCurriculumQueryText,
   retrieveCurriculumMatches,

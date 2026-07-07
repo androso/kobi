@@ -8,7 +8,7 @@ import {
   type ActivityArtifactCandidate,
   type ActivityManifest,
   type RankedActivityRepositoryRow,
-} from "@kobi/activities";
+} from "@kobi/activities/server";
 import {
   planSessionArtifacts,
   runGenerateActivityArtifactsJob,

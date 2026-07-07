@@ -1,23 +1,36 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { retrieveCurriculumMatches } from "@kobi/curriculum";
 import type PgBoss from "pg-boss";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { routeRequest } from "./api.js";
 import { JOB_BUILD_LESSON_STATE } from "./queue.js";
+import { runGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
 
 vi.mock("@kobi/curriculum", async (importOriginal) => {
   const original = await importOriginal<typeof import("@kobi/curriculum")>();
   return {
     ...original,
     embedText: vi.fn(async () => Array.from({ length: 768 }, () => 0.01)),
+    retrieveCurriculumMatches: vi.fn(async () => []),
   };
 });
+
+vi.mock("./jobs/generateActivityArtifacts.job.js", () => ({
+  runGenerateActivityArtifactsJob: vi.fn(async () => ({
+    inserted: 3,
+    reused: 0,
+    generated: 0,
+    skippedReason: null,
+  })),
+}));
 
 describe("worker demo transcript API", () => {
   const originalMode = process.env.KOBI_PROJECT_MODE;
 
   beforeEach(() => {
     process.env.KOBI_PROJECT_MODE = "demo";
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
@@ -68,6 +81,46 @@ describe("worker demo transcript API", () => {
     ]);
     expect(boss.sent).toEqual([{ name: JOB_BUILD_LESSON_STATE, data: { sessionId: "session-1" } }]);
   });
+
+  it("returns 409 when activity candidates are requested before lesson_state exists", async () => {
+    const response = await callRoute(
+      "/api/sessions/session-1/activity-candidates",
+      fakeSupabase(),
+      fakeBoss(),
+      {},
+    );
+
+    expect(response.statusCode).toBe(409);
+    expect(runGenerateActivityArtifactsJob).not.toHaveBeenCalled();
+  });
+
+  it("generates activity candidates on the worker from the latest lesson_state", async () => {
+    const supabase = fakeSupabase();
+    supabase.segments.push({
+      session_id: "session-1",
+      lesson_state: lessonState,
+      created_at: "2026-07-07T10:00:00.000Z",
+    });
+    vi.mocked(retrieveCurriculumMatches).mockResolvedValueOnce([curriculumMatch]);
+
+    const response = await callRoute(
+      "/api/sessions/session-1/activity-candidates",
+      supabase,
+      fakeBoss(),
+      {},
+    );
+
+    expect(response.statusCode).toBe(201);
+    expect(retrieveCurriculumMatches).toHaveBeenCalledWith(
+      supabase.client,
+      expect.objectContaining({ grade: 7, subject: "lenguaje", unit: "U4" }),
+    );
+    expect(runGenerateActivityArtifactsJob).toHaveBeenCalledWith(supabase.client, {
+      sessionId: "session-1",
+      lessonState,
+      curriculumMatches: [curriculumMatch],
+    });
+  });
 });
 
 async function callDemoRoute(
@@ -75,7 +128,17 @@ async function callDemoRoute(
   boss: ReturnType<typeof fakeBoss>,
   body: Record<string, unknown>,
 ) {
+  return callRoute("/api/sessions/session-1/demo-transcript-chunks", supabase, boss, body);
+}
+
+async function callRoute(
+  url: string,
+  supabase: ReturnType<typeof fakeSupabase>,
+  boss: ReturnType<typeof fakeBoss>,
+  body: Record<string, unknown>,
+) {
   const req = fakeRequest(body);
+  req.url = url;
   const res = fakeResponse();
   await routeRequest(req, res, supabase.client, boss.instance);
   return res;
@@ -125,15 +188,43 @@ function fakeBoss() {
 function fakeSupabase() {
   const curriculumChunks: unknown[] = [];
   const audioChunks: Array<Record<string, unknown>> = [];
+  const segments: Array<Record<string, unknown>> = [];
+  const sessions: Array<Record<string, unknown>> = [
+    {
+      id: "session-1",
+      classes: { grade: 7, subject: "lenguaje", unit: "U4" },
+    },
+  ];
 
   const client = {
     from(table: string) {
-      return new FakeQuery(table, { curriculumChunks, audioChunks });
+      return new FakeQuery(table, { curriculumChunks, audioChunks, segments, sessions });
     },
   } as unknown as SupabaseClient;
 
-  return { client, curriculumChunks, audioChunks };
+  return { client, curriculumChunks, audioChunks, segments, sessions };
 }
+
+const lessonState = {
+  topic: "La noticia",
+  objective_guess: "Identificar titular, entradilla y fuente",
+  key_terms: ["titular", "entradilla", "fuente"],
+  transcript_summary: "La clase explico las partes de una noticia.",
+  confidence: 0.9,
+  evidence: {
+    quoted_phrases: ["titular de la noticia"],
+    reason: "La docente explico partes de la noticia.",
+  },
+};
+
+const curriculumMatch = {
+  objective_code: "L7.4.2",
+  unit: "U4",
+  grade: 7,
+  subject: "lenguaje",
+  text: "Reconoce la estructura de la noticia.",
+  similarity: 0.91,
+};
 
 class FakeQuery {
   private filters = new Map<string, unknown>();
@@ -144,6 +235,8 @@ class FakeQuery {
     private readonly state: {
       curriculumChunks: unknown[];
       audioChunks: Array<Record<string, unknown>>;
+      segments: Array<Record<string, unknown>>;
+      sessions: Array<Record<string, unknown>>;
     },
   ) {}
 
@@ -153,6 +246,10 @@ class FakeQuery {
 
   eq(column: string, value: unknown) {
     this.filters.set(column, value);
+    return this;
+  }
+
+  order() {
     return this;
   }
 
@@ -170,15 +267,27 @@ class FakeQuery {
   }
 
   maybeSingle() {
-    if (this.table !== "audio_chunks") {
-      return Promise.resolve({ data: null, error: null });
+    if (this.table === "audio_chunks") {
+      const match = this.state.audioChunks.find((chunk) =>
+        chunk.session_id === this.filters.get("session_id") &&
+        chunk.chunk_index === this.filters.get("chunk_index"),
+      );
+      return Promise.resolve({ data: match ? { id: match.id } : null, error: null });
     }
 
-    const match = this.state.audioChunks.find((chunk) =>
-      chunk.session_id === this.filters.get("session_id") &&
-      chunk.chunk_index === this.filters.get("chunk_index"),
-    );
-    return Promise.resolve({ data: match ? { id: match.id } : null, error: null });
+    if (this.table === "segments") {
+      const match = this.state.segments.find((segment) =>
+        segment.session_id === this.filters.get("session_id"),
+      );
+      return Promise.resolve({ data: match ? { lesson_state: match.lesson_state } : null, error: null });
+    }
+
+    if (this.table === "sessions") {
+      const match = this.state.sessions.find((session) => session.id === this.filters.get("id"));
+      return Promise.resolve({ data: match ?? null, error: null });
+    }
+
+    return Promise.resolve({ data: null, error: null });
   }
 
   single() {

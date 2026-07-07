@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { config } from "dotenv";
-import { buildActivitySessionContext, verifyActivityArtifact } from "@kobi/activities";
+import { buildActivitySessionContext, verifyActivityArtifact } from "@kobi/activities/server";
 import {
   createOpenAiActivityDraftClient,
   generateOpenAiActivityCandidates,

@@ -16,7 +16,7 @@ import {
   type DifficultyBand,
   type RankedActivityRepositoryRow,
   type SessionContext,
-} from "@kobi/activities";
+} from "@kobi/activities/server";
 import { lessonStateSchema, type LessonState } from "@kobi/ai-core";
 import type { CurriculumMatch } from "@kobi/curriculum";
 import type PgBoss from "pg-boss";

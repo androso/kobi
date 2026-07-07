@@ -1,11 +1,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { lessonStateFromManualEntry } from "@kobi/ai-core";
-import { embedText } from "@kobi/curriculum";
+import { buildCurriculumQueryText, embedText, retrieveCurriculumMatches } from "@kobi/curriculum";
+import { lessonStateFromManualEntry, lessonStateSchema, type LessonState } from "@kobi/ai-core";
 import type PgBoss from "pg-boss";
 import { demoTranscriptChunks, DEMO_TRANSCRIPT_TICK_MS } from "./demoTranscript.js";
 import { JOB_BUILD_LESSON_STATE, JOB_TRANSCRIBE_CHUNK } from "./queue.js";
+import { runGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
 
 interface ApiServerOptions {
   supabase: SupabaseClient;
@@ -432,6 +433,89 @@ async function uploadAudioChunk(
   writeJson(res, 201, { audioChunkId: chunk.id });
 }
 
+async function createActivityCandidates(
+  res: ServerResponse,
+  sessionId: string,
+  supabase: SupabaseClient,
+) {
+  const lessonState = await loadLatestLessonState(supabase, sessionId);
+  if (!lessonState) {
+    writeJson(res, 409, { error: "No lesson_state is available for this session yet." });
+    return;
+  }
+
+  const classContext = await loadSessionClassContext(supabase, sessionId);
+  const curriculumMatches = await retrieveCurriculumMatches(supabase, {
+    queryText: buildCurriculumQueryText(lessonState),
+    grade: classContext.grade,
+    subject: classContext.subject,
+    unit: classContext.unit,
+  });
+
+  const result = await runGenerateActivityArtifactsJob(supabase, {
+    sessionId,
+    lessonState,
+    curriculumMatches,
+  });
+
+  writeJson(res, result.skippedReason ? 200 : 201, result);
+}
+
+async function loadLatestLessonState(
+  supabase: SupabaseClient,
+  sessionId: string,
+): Promise<LessonState | null> {
+  const { data, error } = await supabase
+    .from("segments")
+    .select("lesson_state")
+    .eq("session_id", sessionId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Activity candidate request failed to load lesson_state: ${error.message}`);
+  }
+
+  const parsed = lessonStateSchema.safeParse(data?.lesson_state);
+  return parsed.success ? parsed.data : null;
+}
+
+async function loadSessionClassContext(
+  supabase: SupabaseClient,
+  sessionId: string,
+): Promise<{ grade: number; subject: string; unit?: string }> {
+  const { data, error } = await supabase
+    .from("sessions")
+    .select("classes(grade, subject, unit)")
+    .eq("id", sessionId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`Activity candidate request failed to load class context: ${error.message}`);
+  }
+
+  const classContext = normalizeClassContext(data?.classes);
+  return {
+    grade: classContext?.grade ?? 7,
+    subject: classContext?.subject ?? "lenguaje",
+    unit: classContext?.unit,
+  };
+}
+
+function normalizeClassContext(value: unknown): { grade: number; subject: string; unit: string } | null {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw || typeof raw !== "object") return null;
+
+  const row = raw as Record<string, unknown>;
+  const grade = Number(row.grade);
+  const subject = typeof row.subject === "string" ? row.subject : "";
+  const unit = typeof row.unit === "string" ? row.unit : "";
+
+  if (!Number.isInteger(grade) || grade <= 0 || !subject) return null;
+  return { grade, subject, unit };
+}
+
 export async function routeRequest(
   req: IncomingMessage,
   res: ServerResponse,
@@ -471,6 +555,12 @@ export async function routeRequest(
   const manualLessonStateMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/manual-lesson-state$/);
   if (req.method === "POST" && manualLessonStateMatch?.[1]) {
     await createManualLessonState(req, res, manualLessonStateMatch[1], supabase);
+    return;
+  }
+
+  const activityCandidatesMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/activity-candidates$/);
+  if (req.method === "POST" && activityCandidatesMatch?.[1]) {
+    await createActivityCandidates(res, activityCandidatesMatch[1], supabase);
     return;
   }
 
