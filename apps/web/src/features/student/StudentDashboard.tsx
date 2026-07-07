@@ -4,7 +4,6 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { ACTIVITY_SDK_VERSION, activitySdkMessageSchema } from "@kobi/activities";
 import {
   findClassByCode,
-  selectClassArtefactos,
   useAuthStore,
   useClassStore,
   type Artefacto,
@@ -18,7 +17,6 @@ import {
 } from "../activityDelivery/artifactDelivery";
 import { StudentSidebar, type StudentSidebarNavItem } from "./components/StudentSidebar";
 import { LessonList } from "./components/LessonList";
-import { ArtifactRenderer } from "./components/ArtifactRenderer";
 import { ProgressDashboard } from "./components/ProgressDashboard";
 import { StudentHelpModal } from "./components/StudentHelpModal";
 
@@ -55,20 +53,11 @@ function artefactoFromAssignment(assignment: StudentAssignment, classId: string)
     section: assignment.manifest.curriculum.unit,
     objective: assignment.manifest.curriculum.objective,
     band: assignment.variant,
-    kind: "quiz",
+    kind: "verified_bundle",
     estimateLabel: `${assignment.manifest.est_minutes} min · ${bandLabels[assignment.variant]}`,
     content: {
-      type: "quiz",
-      questions: assignment.manifest.content.items.map((item, index) => ({
-        id: `item-${index + 1}`,
-        prompt: item.prompt,
-        choices: item.answer_key.map((answer, answerIndex) => ({
-          id: `answer-${answerIndex + 1}`,
-          label: answer,
-        })),
-        correctChoiceId: "answer-1",
-        hints: item.hints,
-      })),
+      type: "verified_bundle",
+      family: assignment.manifest.family,
     },
     status: "assigned",
     due: "Hoy",
@@ -94,7 +83,6 @@ export function StudentDashboard() {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const classes = useClassStore((state) => state.classes);
-  const allArtefactos = useClassStore((state) => state.artefactos);
   const submissions = useClassStore((state) => state.submissions);
 
   const [assignment, setAssignment] = useState<StudentAssignment | null>(null);
@@ -215,13 +203,9 @@ export function StudentDashboard() {
     () => (assignment ? artefactoFromAssignment(assignment, classId) : null),
     [assignment, classId],
   );
-  const localArtefactos = useMemo(
-    () => (studentClass ? selectClassArtefactos({ artefactos: allArtefactos }, studentClass.id) : []),
-    [allArtefactos, studentClass],
-  );
   const artefactos = useMemo(
-    () => (deliveredArtefacto ? [deliveredArtefacto] : deliveryStore && backendDeliveryReady ? [] : localArtefactos),
-    [backendDeliveryReady, deliveredArtefacto, deliveryStore, localArtefactos],
+    () => (deliveredArtefacto ? [deliveredArtefacto] : []),
+    [deliveredArtefacto],
   );
 
   const assignmentSubmissions = useMemo<ArtefactoSubmission[]>(() => {
@@ -371,13 +355,6 @@ export function StudentDashboard() {
                     title={assignment.manifest.title}
                   />
                 </section>
-              ) : activeArtefacto ? (
-                <ArtifactRenderer
-                  key={activeArtefacto.id}
-                  artefacto={activeArtefacto}
-                  onHome={() => setSelectedArtefactoId(artefactos[0]?.id ?? null)}
-                  studentName={studentName}
-                />
               ) : (
                 <div className="mx-auto max-w-2xl rounded-3xl border border-dashed border-[#e0ddd5] bg-white/60 p-10 text-center text-sm text-[#8a8f98]">
                   No tienes actividades asignadas todavía. Tu profesor las publicará aquí.

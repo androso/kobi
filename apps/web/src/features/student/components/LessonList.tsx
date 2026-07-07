@@ -1,4 +1,4 @@
-import { CheckCircle2, FileText, PlayCircle, Trash2, type LucideIcon } from "lucide-react";
+import { CheckCircle2, Puzzle, Trash2 } from "lucide-react";
 import type { Artefacto, ArtefactoSubmission } from "../../../lib/store";
 
 interface LessonListProps {
@@ -11,12 +11,6 @@ interface LessonListProps {
   onSelect: (id: string) => void;
   onDismiss?: (id: string) => void;
 }
-
-const kindIcon: Record<Artefacto["kind"], LucideIcon> = {
-  quiz: FileText,
-  reading: FileText,
-  video: PlayCircle,
-};
 
 export function LessonList({
   title,
@@ -42,7 +36,7 @@ export function LessonList({
               sub.studentName === studentName &&
               sub.status === "completed",
           );
-          const Icon = isDone ? CheckCircle2 : kindIcon[artefacto.kind];
+          const Icon = isDone ? CheckCircle2 : Puzzle;
 
           return (
             <li
