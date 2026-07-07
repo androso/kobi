@@ -48,6 +48,8 @@ const bandLabels = {
   challenge: "Reto",
 } as const;
 
+const allowLegacyDemoArtefactos = isLegacyArtifactDemoEnabled();
+
 function artefactoFromAssignment(assignment: StudentAssignment, classId: string): Artefacto {
   return {
     id: assignment.id,
@@ -207,16 +209,16 @@ export function StudentDashboard() {
     () => (assignment ? artefactoFromAssignment(assignment, classId) : null),
     [assignment, classId],
   );
-  const localArtefactos = useMemo(
+  const demoArtefactos = useMemo(
     () =>
-      isLegacyArtifactDemoEnabled() && studentClass
+      allowLegacyDemoArtefactos && studentClass
         ? selectClassArtefactos({ artefactos: allArtefactos }, studentClass.id)
         : [],
     [allArtefactos, studentClass],
   );
   const artefactos = useMemo(
-    () => (deliveredArtefacto ? [deliveredArtefacto] : deliveryStore && backendDeliveryReady ? [] : localArtefactos),
-    [backendDeliveryReady, deliveredArtefacto, deliveryStore, localArtefactos],
+    () => (deliveredArtefacto ? [deliveredArtefacto] : deliveryStore && backendDeliveryReady ? [] : demoArtefactos),
+    [backendDeliveryReady, deliveredArtefacto, deliveryStore, demoArtefactos],
   );
 
   const assignmentSubmissions = useMemo<ArtefactoSubmission[]>(() => {

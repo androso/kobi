@@ -143,7 +143,7 @@ describe("App", () => {
     expect(screen.getByText(/desactiva la confirmacion por correo/i)).toBeInTheDocument();
   });
 
-  it("joins the student dashboard with a classroom code", async () => {
+  it("joins the student dashboard without silently loading demo quiz artifacts", async () => {
     const user = userEvent.setup();
 
     renderApp();
@@ -152,24 +152,12 @@ describe("App", () => {
     await user.type(screen.getByPlaceholderText(/nombre/i), "Ana");
     await user.click(screen.getByRole("button", { name: /entrar a clase/i }));
 
-    // Lesson list + first quiz question render for the seeded KOBI7 class.
-    expect(await screen.findByRole("heading", { name: /vocabulario en contexto: la noticia/i })).toBeInTheDocument();
-    expect(screen.getByText(/pregunta 1 de 3/i)).toBeInTheDocument();
-
-    // Answer all three questions correctly, advancing through the quiz.
-    await user.click(screen.getByRole("button", { name: /^noticia$/i }));
-    await user.click(screen.getByRole("button", { name: /siguiente/i }));
-    await user.click(screen.getByRole("button", { name: /^la entradilla$/i }));
-    await user.click(screen.getByRole("button", { name: /siguiente/i }));
-    await user.click(screen.getByRole("button", { name: /^qué pasó$/i }));
-    await user.click(screen.getByRole("button", { name: /entregar/i }));
-
-    expect(screen.getByText(/respuesta correcta en todas/i)).toBeInTheDocument();
-    expect(screen.getByText(/obtuviste 3 de 3/i)).toBeInTheDocument();
+    expect(await screen.findByText(/no tienes actividades asignadas todav/i)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /vocabulario en contexto: la noticia/i })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: /progreso/i }));
     expect(screen.getByRole("heading", { level: 1, name: /progreso/i })).toBeInTheDocument();
-    expect(screen.getByText(/meta completada/i)).toBeInTheDocument();
+    expect(screen.getByText(/aún no has respondido actividades/i)).toBeInTheDocument();
   });
 
   it("shows an error when a student uses an invalid classroom code", async () => {

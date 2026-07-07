@@ -234,10 +234,9 @@ export interface ClassItem {
 export type ArtefactoBand = "support" | "core" | "challenge";
 
 /**
- * An "artefacto" is the student-facing activity the teacher publishes to a
- * class — the shared contract between the teacher flow and the student
- * dashboard. Its typed `content` (see lib/artifacts.ts) is what the client
- * renders, analogous to a Claude artifact.
+ * Legacy local artefacto shape used only for explicit demo/development mode.
+ * Production delivery uses verified ActivityArtifact bundles rendered in a
+ * sandboxed iframe via packages/activities.
  */
 export interface Artefacto {
   id: string;
@@ -441,8 +440,9 @@ const defaultClasses: ClassItem[] = [
   }
 ];
 
-// Seeded artefactos for the demo class (join code KOBI7 -> class-1). Stand in
-// for teacher-published activities until artifacts are backend-driven.
+// Seeded quiz artefactos for the local demo class (join code KOBI7 -> class-1).
+// These are intentionally quarantined behind VITE_KOBI_PROJECT_MODE=demo and
+// must not be used as a production fallback for verified HTML artifacts.
 const defaultArtefactos: Artefacto[] = [
   {
     id: "artefacto-1",
