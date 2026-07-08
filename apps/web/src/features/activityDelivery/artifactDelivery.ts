@@ -142,6 +142,10 @@ export function buildAssignmentUpserts(input: {
       throw new Error("No hay actividad core aprobada para asignar.");
     }
 
+    if (!approved.candidate_id) {
+      throw new Error("La actividad aprobada no tiene candidata asociada.");
+    }
+
     return {
       session_id: input.sessionId,
       candidate_id: approved.candidate_id,
