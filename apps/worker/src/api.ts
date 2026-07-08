@@ -24,6 +24,15 @@ const DEMO_CURRICULUM = {
     "Conozcamos los triangulos y cuadrilateros: identifica segmentos, lados, vertices y angulos en figuras planas. Clasifica figuras con tres lados como triangulos y figuras con cuatro lados como cuadrilateros, usando el conteo de lados, vertices y angulos.",
 };
 
+class ApiRequestError extends Error {
+  constructor(
+    message: string,
+    readonly statusCode = 400,
+  ) {
+    super(message);
+  }
+}
+
 function logApi(message: string, details?: Record<string, unknown>) {
   console.info(`[Kobi API] ${message}`, details ?? {});
 }
@@ -70,7 +79,11 @@ async function readJsonBody(req: IncomingMessage) {
 
   if (chunks.length === 0) return {};
 
-  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
+  } catch {
+    throw new ApiRequestError("Request body must be valid JSON");
+  }
 }
 
 function toWebRequest(req: IncomingMessage, url: URL) {
@@ -330,7 +343,13 @@ async function uploadAudioChunk(
   boss: PgBoss,
 ) {
   const webRequest = toWebRequest(req, url);
-  const form = await webRequest.formData();
+  let form: FormData;
+  try {
+    form = await webRequest.formData();
+  } catch {
+    writeJson(res, 400, { error: "Request body must be multipart/form-data." });
+    return;
+  }
   const audio = form.get("audio");
 
   if (!(audio instanceof Blob)) {
@@ -338,9 +357,17 @@ async function uploadAudioChunk(
     return;
   }
 
-  const chunkIndex = sanitizeChunkIndex(form.get("chunk_index"));
-  const startMs = sanitizeMs(form.get("start_ms"), "start_ms");
-  const endMs = sanitizeMs(form.get("end_ms"), "end_ms");
+  let chunkIndex: number;
+  let startMs: number;
+  let endMs: number;
+  try {
+    chunkIndex = sanitizeChunkIndex(form.get("chunk_index"));
+    startMs = sanitizeMs(form.get("start_ms"), "start_ms");
+    endMs = sanitizeMs(form.get("end_ms"), "end_ms");
+  } catch (error) {
+    writeJson(res, 400, { error: error instanceof Error ? error.message : "Invalid audio chunk metadata" });
+    return;
+  }
 
   if (endMs <= startMs) {
     writeJson(res, 400, { error: "end_ms must be greater than start_ms" });
@@ -522,49 +549,55 @@ export async function routeRequest(
   supabase: SupabaseClient,
   boss: PgBoss,
 ) {
-  if (req.method === "OPTIONS") {
-    handleOptions(res);
-    return;
+  try {
+    if (req.method === "OPTIONS") {
+      handleOptions(res);
+      return;
+    }
+
+    const url = getRequestUrl(req);
+    logApi("request", { method: req.method, path: url.pathname });
+
+    if (req.method === "GET" && url.pathname === "/health") {
+      writeJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/sessions") {
+      await createSession(req, res, supabase);
+      return;
+    }
+
+    const audioChunkMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/audio-chunks$/);
+    if (req.method === "POST" && audioChunkMatch?.[1]) {
+      await uploadAudioChunk(req, res, url, audioChunkMatch[1], supabase, boss);
+      return;
+    }
+
+    const demoTranscriptChunkMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/demo-transcript-chunks$/);
+    if (req.method === "POST" && demoTranscriptChunkMatch?.[1]) {
+      await createDemoTranscriptChunk(req, res, demoTranscriptChunkMatch[1], supabase, boss);
+      return;
+    }
+
+    const manualLessonStateMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/manual-lesson-state$/);
+    if (req.method === "POST" && manualLessonStateMatch?.[1]) {
+      await createManualLessonState(req, res, manualLessonStateMatch[1], supabase);
+      return;
+    }
+
+    const activityCandidatesMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/activity-candidates$/);
+    if (req.method === "POST" && activityCandidatesMatch?.[1]) {
+      await createActivityCandidates(res, activityCandidatesMatch[1], supabase);
+      return;
+    }
+
+    writeJson(res, 404, { error: "Not found" });
+  } catch (error) {
+    const statusCode = error instanceof ApiRequestError ? error.statusCode : 500;
+    const message = error instanceof Error ? error.message : "Unexpected API error";
+    writeJson(res, statusCode, { error: message });
   }
-
-  const url = getRequestUrl(req);
-  logApi("request", { method: req.method, path: url.pathname });
-
-  if (req.method === "GET" && url.pathname === "/health") {
-    writeJson(res, 200, { ok: true });
-    return;
-  }
-
-  if (req.method === "POST" && url.pathname === "/api/sessions") {
-    await createSession(req, res, supabase);
-    return;
-  }
-
-  const audioChunkMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/audio-chunks$/);
-  if (req.method === "POST" && audioChunkMatch?.[1]) {
-    await uploadAudioChunk(req, res, url, audioChunkMatch[1], supabase, boss);
-    return;
-  }
-
-  const demoTranscriptChunkMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/demo-transcript-chunks$/);
-  if (req.method === "POST" && demoTranscriptChunkMatch?.[1]) {
-    await createDemoTranscriptChunk(req, res, demoTranscriptChunkMatch[1], supabase, boss);
-    return;
-  }
-
-  const manualLessonStateMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/manual-lesson-state$/);
-  if (req.method === "POST" && manualLessonStateMatch?.[1]) {
-    await createManualLessonState(req, res, manualLessonStateMatch[1], supabase);
-    return;
-  }
-
-  const activityCandidatesMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/activity-candidates$/);
-  if (req.method === "POST" && activityCandidatesMatch?.[1]) {
-    await createActivityCandidates(res, activityCandidatesMatch[1], supabase);
-    return;
-  }
-
-  writeJson(res, 404, { error: "Not found" });
 }
 
 export function startApiServer({ supabase, boss }: ApiServerOptions) {
