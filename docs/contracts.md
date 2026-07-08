@@ -97,6 +97,7 @@ Assignment rows are only valid for approved candidates from the same session: `a
 - Allowed families are `match_classify`, `sequence_order`, and `guided_practice`.
 - `content.items[]` is required and must include prompts plus answer keys; hints default to an empty list when omitted.
 - `bundle_ref` must be unguessable and authorized by assignment/class before iframe delivery.
+- Auth-lite students receive a per-student `access_token` from `join_class_by_code`; student assignment reads, dismissals, telemetry, and completion go through checked delivery RPCs using that token, not broad anonymous table access.
 - The parent injects only manifest, assignment id, and difficulty band. It must not inject Supabase credentials, student PII, raw transcript, or broader class/session context.
 - The iframe communicates only through the Activity SDK over `postMessage`: `getManifest()`, `getBand()`, `reportAttempt()`, `reportHint()`, and `reportComplete()`.
 - The parent validates message source, schema, assignment authorization, method allowlist, payload size, and telemetry rate limits.

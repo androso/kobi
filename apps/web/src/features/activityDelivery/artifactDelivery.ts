@@ -60,6 +60,11 @@ export interface StudentAssignment {
   bundleHtml: string;
 }
 
+export interface StudentDeliveryAccess {
+  studentId: string;
+  accessToken: string;
+}
+
 export interface ActivityDeliveryStore {
   ensureActiveSession(classId: string): Promise<string>;
   listCandidates(sessionId: string): Promise<DeliveryCandidate[]>;
@@ -215,7 +220,10 @@ export async function handleStudentActivityMessage(input: {
 }
 
 export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
-  constructor(private readonly client: SupabaseClient) {}
+  constructor(
+    private readonly client: SupabaseClient,
+    private readonly studentAccess?: StudentDeliveryAccess,
+  ) {}
 
   async ensureActiveSession(classId: string) {
     const { data: existing, error: selectError } = await this.client
@@ -310,6 +318,22 @@ export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
   }
 
   async loadLatestAssignmentForStudent(studentId: string) {
+    const studentAccess = this.studentAccessFor(studentId);
+    if (studentAccess) {
+      const { data, error } = await this.client
+        .rpc("load_latest_assignment_for_student", {
+          input_student_id: studentId,
+          input_access_token: studentAccess.accessToken,
+        })
+        .maybeSingle();
+
+      if (error) throw new Error(error.message);
+      if (!data) return null;
+
+      const row = data as StudentAssignmentRpcRow;
+      return assignmentFromRpcRow(row);
+    }
+
     const { data: assignment, error } = await this.client
       .from("assignments")
       .select("id,session_id,activity_id,student_id,variant,status,created_at")
@@ -346,6 +370,19 @@ export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
     studentId: string;
     dismissedAt: string;
   }) {
+    const studentAccess = this.studentAccessFor(input.studentId);
+    if (studentAccess) {
+      const { error } = await this.client.rpc("dismiss_assignment_for_student", {
+        input_assignment_id: input.assignmentId,
+        input_student_id: input.studentId,
+        input_access_token: studentAccess.accessToken,
+        input_dismissed_at: input.dismissedAt,
+      });
+
+      if (error) throw new Error(error.message);
+      return;
+    }
+
     const { error } = await this.client
       .from("assignments")
       .update({ dismissed_at: input.dismissedAt })
@@ -360,6 +397,19 @@ export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
     type: "attempt" | "hint" | "complete";
     payload: Record<string, unknown>;
   }) {
+    if (this.studentAccess) {
+      const { error } = await this.client.rpc("record_student_activity_event", {
+        input_assignment_id: input.assignmentId,
+        input_student_id: this.studentAccess.studentId,
+        input_access_token: this.studentAccess.accessToken,
+        input_type: input.type,
+        input_payload: input.payload,
+      });
+
+      if (error) throw new Error(error.message);
+      return;
+    }
+
     const { error } = await this.client
       .from("events")
       .insert({
@@ -376,6 +426,19 @@ export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
     score: number;
     completedAt: string;
   }) {
+    if (this.studentAccess) {
+      const { error } = await this.client.rpc("complete_assignment_for_student", {
+        input_assignment_id: input.assignmentId,
+        input_student_id: this.studentAccess.studentId,
+        input_access_token: this.studentAccess.accessToken,
+        input_score: input.score,
+        input_completed_at: input.completedAt,
+      });
+
+      if (error) throw new Error(error.message);
+      return;
+    }
+
     const { error } = await this.client
       .from("assignments")
       .update({ status: "completed", score: input.score, completed_at: input.completedAt })
@@ -402,6 +465,11 @@ export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
 
     if (error) throw new Error(error.message);
     return new Map(((data ?? []) as BundleRow[]).map((row) => [row.ref, row] as const));
+  }
+
+  private studentAccessFor(studentId: string): StudentDeliveryAccess | null {
+    if (!this.studentAccess || this.studentAccess.studentId !== studentId) return null;
+    return this.studentAccess;
   }
 }
 
@@ -449,6 +517,19 @@ function candidateFromRows(
   };
 }
 
+function assignmentFromRpcRow(row: StudentAssignmentRpcRow): StudentAssignment {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    activityId: row.activity_id,
+    studentId: row.student_id,
+    variant: row.variant,
+    status: row.status,
+    manifest: parseManifest(row.manifest),
+    bundleHtml: row.bundle_html,
+  };
+}
+
 function required<T>(value: T | undefined, message: string): T {
   if (!value) throw new Error(message);
   return value;
@@ -486,4 +567,10 @@ interface AssignmentRow {
   activity_id: string;
   student_id: string;
   variant: DifficultyBand;
+}
+
+interface StudentAssignmentRpcRow extends AssignmentRow {
+  status: string;
+  manifest: unknown;
+  bundle_html: string;
 }

@@ -107,10 +107,19 @@ export function StudentDashboard() {
   const classCode = user?.joinCode?.trim() || "KOBI7";
   const classId = user?.classId ?? "class-1";
   const studentId = user?.studentId;
+  const studentAccessToken = user?.studentAccessToken;
   const activeSection = getStudentRouteSection(location.pathname);
   const deliveryStore = useMemo(
-    () => (supabase ? new SupabaseActivityDeliveryStore(supabase) : null),
-    [],
+    () =>
+      supabase
+        ? new SupabaseActivityDeliveryStore(
+            supabase,
+            studentId && studentAccessToken
+              ? { studentId, accessToken: studentAccessToken }
+              : undefined,
+          )
+        : null,
+    [studentAccessToken, studentId],
   );
 
   useEffect(() => {

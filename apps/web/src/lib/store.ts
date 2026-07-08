@@ -8,6 +8,7 @@ interface UserProfile {
   email?: string;
   studentName?: string;
   studentId?: string;
+  studentAccessToken?: string;
   classId?: string;
   className?: string;
   joinCode?: string;
@@ -29,6 +30,7 @@ interface JoinedClassRow {
   class_name: string;
   join_code: string;
   display_name: string;
+  access_token: string;
 }
 
 interface AuthState {
@@ -60,7 +62,15 @@ function readLocalStudentAuth(): UserProfile | null {
     if (!stored) return null;
     const parsed = JSON.parse(stored) as UserProfile;
 
-    if (parsed.role !== "student" || !parsed.studentId || !parsed.classId || !parsed.studentName) return null;
+    if (
+      parsed.role !== "student" ||
+      !parsed.studentId ||
+      !parsed.studentAccessToken ||
+      !parsed.classId ||
+      !parsed.studentName
+    ) {
+      return null;
+    }
     return parsed;
   } catch {
     return null;
@@ -193,6 +203,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const profile: UserProfile = {
       role: "student",
       studentId: joined.student_id,
+      studentAccessToken: joined.access_token,
       classId: joined.class_id,
       className: joined.class_name,
       joinCode: joined.join_code,

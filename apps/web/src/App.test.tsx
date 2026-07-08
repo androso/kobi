@@ -28,6 +28,7 @@ describe("App", () => {
             role: "student",
             studentName,
             studentId: "student-1",
+            studentAccessToken: "student-token-1",
             classId: "class-1",
             className: "Ciencia 4to - Sección A",
             joinCode: "KOBI7",
