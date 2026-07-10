@@ -153,6 +153,21 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: /tus clases/i })).toBeInTheDocument();
   });
 
+  it("preserves the teacher brand mark colors in dark mode", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.type(screen.getByPlaceholderText(/correo electr[oó]nico/i), "maestra@kobi.test");
+    await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "securepass");
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
+
+    const brandHeading = screen.getByRole("heading", { name: "Kobi Labs" });
+    const brandMark = brandHeading.parentElement?.previousElementSibling;
+
+    expect(brandMark).toHaveClass("teacher-brand-mark");
+    expect(brandMark?.querySelector("svg")).toHaveClass("teacher-brand-mascot");
+  });
+
   it("signs up a teacher and opens the dashboard when Supabase returns a session", async () => {
     const user = userEvent.setup();
 

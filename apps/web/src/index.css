@@ -301,6 +301,15 @@
     background-color: hsl(var(--theme-control-hover));
   }
 
+  .dark .teacher-brand-mark {
+    background-color: #fce7db;
+    box-shadow: 0 6px 18px rgb(251 146 60 / 20%);
+  }
+
+  .dark .teacher-brand-mascot {
+    color: #0f172a;
+  }
+
   @media (max-width: 639px) {
     .theme-toggle span {
       position: absolute;
