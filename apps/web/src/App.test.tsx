@@ -95,6 +95,28 @@ describe("App", () => {
     expect(passwordInput).toHaveFocus();
   });
 
+  it("shows empty login fields as accessible errors", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
+
+    const emailInput = screen.getByPlaceholderText(/correo electr[oó]nico/i);
+    const passwordInput = screen.getByPlaceholderText(/^contrase[nñ]a$/i);
+    const emailError = screen.getByText(/ingresa tu correo electr[oó]nico/i);
+    const passwordError = screen.getByText(/ingresa tu contrase[nñ]a/i);
+
+    expect(emailInput).toHaveAttribute("aria-invalid", "true");
+    expect(emailInput).toHaveAttribute("aria-describedby", "login-email-error");
+    expect(emailInput.parentElement).toHaveClass("border-red-500", "dark:border-red-400");
+    expect(emailError).toHaveClass("text-red-600", "dark:text-red-300");
+
+    expect(passwordInput).toHaveAttribute("aria-invalid", "true");
+    expect(passwordInput).toHaveAttribute("aria-describedby", "login-password-error");
+    expect(passwordInput.parentElement).toHaveClass("border-red-500", "dark:border-red-400");
+    expect(passwordError).toHaveClass("text-red-600", "dark:text-red-300");
+  });
+
   it("switches to the student join form", async () => {
     const user = userEvent.setup();
 
