@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import type { DifficultyBand } from "@kobi/activities/contracts";
 import { Sidebar } from "./components/Sidebar";
-import { WaveformVisualizer } from "./components/WaveformVisualizer";
 import { useClassStore, type SavedSession, type ClassItem } from "../../lib/store";
 import { supabase } from "../../lib/supabase";
 import {
@@ -61,17 +60,19 @@ const SUBJECT_META: Record<
 };
 
 // Construye una sesión guardada a partir de la clase monitoreada y los datos en vivo
-function buildSession(cls: ClassItem, durationSeconds: number): SavedSession {
+function buildSession(
+  cls: ClassItem,
+  durationSeconds: number,
+  lessonState: LessonStateSnapshot | null,
+): SavedSession {
   const meta = SUBJECT_META[cls.icon] ?? SUBJECT_META.pen;
-  const summaryPoints = [
-    `Tema trabajado: ${MOCK_INSIGHTS.detectedTopic}.`,
-    `Objetivo de la sesión: ${MOCK_INSIGHTS.currentObjective}`,
-    `Conceptos clave abordados: ${MOCK_INSIGHTS.keywords.join(", ")}.`,
-  ];
-  const nextSteps = [
-    ...MOCK_INSIGHTS.misconceptions.map((m) => `Reforzar: ${m.title.toLowerCase()}.`),
-    `Asignar la actividad sugerida: ${MOCK_INSIGHTS.suggestedActivity}.`,
-  ];
+  const summaryPoints = lessonState
+    ? [
+        lessonState.transcript_summary,
+        lessonState.objective_guess ? `Objetivo: ${lessonState.objective_guess}` : "",
+        lessonState.key_terms.length > 0 ? `Conceptos clave: ${lessonState.key_terms.join(", ")}.` : "",
+      ].filter((point): point is string => Boolean(point))
+    : [];
   return {
     id: `session-${Date.now()}`,
     classId: cls.id,
@@ -87,33 +88,10 @@ function buildSession(cls: ClassItem, durationSeconds: number): SavedSession {
     }),
     duration: formatTime(durationSeconds),
     summaryPoints,
-    nextSteps,
+    nextSteps: [],
     transcript: [],
   };
 }
-
-// ---------------------------------------------------------------------------
-// Datos de sesión simulados — reemplazar con datos en tiempo real del backend
-// cuando la transcripción esté implementada.
-// ---------------------------------------------------------------------------
-const MOCK_INSIGHTS = {
-  totalSeconds: 29 * 60 + 41,
-  detectedTopic: "Ecosistemas",
-  currentObjective: "Analizar el flujo de energía a través de los niveles tróficos.",
-  keywords: ["Fotosíntesis", "Descomponedores", "Niveles tróficos", "Pirámide de energía"],
-  highlightedKeyword: "Niveles tróficos",
-  misconceptions: [
-    {
-      title: "Confusión entre energía y materia",
-      description:
-        '3 estudiantes preguntaron si la energía se "recicla" como el agua. Confusión común con la Ley de Conservación de la Materia.',
-    },
-  ],
-  engagementPulse: [40, 65, 85, 70, 95, 60, 45],
-  suggestedActivity: "Juego de redes de energía",
-};
-
-// ---------------------------------------------------------------------------
 
 function formatTime(seconds: number) {
   const m = Math.floor(Math.abs(seconds) / 60)
@@ -125,23 +103,8 @@ function formatTime(seconds: number) {
 
 // -- Sub-componentes ---------------------------------------------------------
 
-function NotificationBar() {
-  return (
-    <div className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 inline-flex items-center gap-2.5 w-fit self-start shrink-0">
-      <Sparkles className="h-4 w-4 text-violet-500 animate-bounce" />
-      <span className="text-sm text-slate-600">Kobi está trabajando</span>
-      <div className="flex gap-1">
-        <div className="w-1.5 h-1.5 rounded-full bg-violet-300" />
-        <div className="w-1.5 h-1.5 rounded-full bg-violet-400" />
-        <div className="w-1.5 h-1.5 rounded-full bg-violet-600" />
-      </div>
-    </div>
-  );
-}
-
 function TranscriptPlayerCard({
   elapsed,
-  remaining,
   isRecording,
   onToggleRecording,
   uploadStatus,
@@ -149,7 +112,6 @@ function TranscriptPlayerCard({
   uploadedChunkCount,
 }: {
   elapsed: number;
-  remaining: number;
   isRecording: boolean;
   onToggleRecording: () => void;
   uploadStatus: string | null;
@@ -165,10 +127,10 @@ function TranscriptPlayerCard({
 
   return (
     <div className="bg-white rounded-[20px] shadow-sm border border-slate-200 overflow-hidden flex flex-col flex-1 min-h-0">
-      {/* Encabezado de transcripción */}
+      {/* Recording status */}
       <div className="flex items-center justify-between px-6 pt-5 pb-3 shrink-0">
         <span className="text-[10px] font-bold tracking-widest uppercase text-slate-400">
-          Transcripción en vivo
+          Grabación de clase
         </span>
         {isRecording ? (
           <span className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest uppercase text-emerald-600">
@@ -183,7 +145,7 @@ function TranscriptPlayerCard({
         )}
       </div>
 
-      {/* Cuerpo de la transcripción (desplazable) */}
+      {/* Honest recording state; transcript text is not exposed by the current contract. */}
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-6 flex flex-col gap-4">
         {isRecording ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center gap-3 py-10">
@@ -192,9 +154,7 @@ function TranscriptPlayerCard({
             </span>
             <div>
               <p className="text-sm font-bold text-slate-700">Grabando audio...</p>
-              <p className="text-xs text-slate-400 mt-1 max-w-xs">
-                La transcripción en vivo estará disponible próximamente.
-              </p>
+              <p className="text-xs text-slate-400 mt-1 max-w-xs">Los fragmentos se envían al análisis de la sesión.</p>
             </div>
           </div>
         ) : (
@@ -205,16 +165,11 @@ function TranscriptPlayerCard({
             <div>
               <p className="text-sm font-bold text-slate-700">Listo para grabar</p>
               <p className="text-xs text-slate-400 mt-1 max-w-xs">
-                Inicia la grabación para comenzar la transcripción y el análisis en tiempo real.
+                Inicia la grabación para comenzar el análisis de la sesión.
               </p>
             </div>
           </div>
         )}
-      </div>
-
-      {/* Visualizador de forma de onda */}
-      <div className="h-24 bg-[#f8f7f5] border-y border-slate-200 px-4 shrink-0">
-        <WaveformVisualizer active={isRecording} />
       </div>
 
       {/* Controles de grabación */}
@@ -244,25 +199,14 @@ function TranscriptPlayerCard({
             PAUSAR
           </button>
         ) : isRecording ? (
-          <div className="flex items-center gap-3">
-            <button
-              className="w-11 h-11 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-all active:scale-90"
-              type="button"
-            >
-              <Pause className="h-5 w-5" />
-            </button>
-            <button
-              onClick={onToggleRecording}
-              className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-3 font-bold text-sm transition-all hover:shadow-lg active:scale-95"
-              type="button"
-            >
-              <StopCircle className="h-5 w-5" />
-              <span>
-                DETENER{" "}
-                <span className="opacity-75 font-normal">{formatTime(remaining)}</span>
-              </span>
-            </button>
-          </div>
+          <button
+            onClick={onToggleRecording}
+            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-3 font-bold text-sm transition-all hover:shadow-lg active:scale-95"
+            type="button"
+          >
+            <StopCircle className="h-5 w-5" />
+            DETENER
+          </button>
         ) : (
           <button
             onClick={onToggleRecording}
@@ -279,11 +223,21 @@ function TranscriptPlayerCard({
 }
 
 function InsightsPanel({ lessonState }: { lessonState: LessonStateSnapshot | null }) {
-  const detectedTopic = lessonState?.topic ?? MOCK_INSIGHTS.detectedTopic;
-  const currentObjective = lessonState?.objective_guess ?? MOCK_INSIGHTS.currentObjective;
-  const keywords = lessonState?.key_terms.length ? lessonState.key_terms : MOCK_INSIGHTS.keywords;
-  const highlightedKeyword = keywords[0] ?? MOCK_INSIGHTS.highlightedKeyword;
-  const misconceptionDescription = lessonState?.evidence.reason ?? MOCK_INSIGHTS.misconceptions[0]?.description;
+  if (!lessonState) {
+    return (
+      <div className="bg-white rounded-[28px] p-6 border border-slate-200 shadow-sm h-full flex items-center justify-center">
+        <div className="max-w-sm text-center">
+          <Sparkles className="mx-auto h-8 w-8 text-slate-300" />
+          <h2 className="mt-3 text-base font-bold text-slate-700">Esperando análisis de la sesión</h2>
+          <p className="mt-2 text-sm text-slate-400">
+            El tema, objetivo y evidencia aparecerán cuando el worker guarde un lesson_state.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const keywords = lessonState.key_terms;
 
   return (
     <div className="bg-white rounded-[28px] p-6 border border-slate-200 shadow-sm h-full flex flex-col gap-6 overflow-y-auto">
@@ -294,7 +248,7 @@ function InsightsPanel({ lessonState }: { lessonState: LessonStateSnapshot | nul
         </label>
         <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full border-2 border-emerald-600 text-emerald-700 bg-emerald-50 font-bold text-base w-fit">
           <Leaf className="h-4 w-4" />
-          {detectedTopic}
+          {lessonState.topic}
         </span>
       </div>
 
@@ -305,7 +259,7 @@ function InsightsPanel({ lessonState }: { lessonState: LessonStateSnapshot | nul
         </label>
         <div className="bg-slate-50 rounded-2xl p-4 border border-violet-400">
           <p className="text-sm text-slate-700 italic font-medium">
-            "{currentObjective}"
+            {lessonState.objective_guess ?? "Sin objetivo identificado"}
           </p>
         </div>
       </div>
@@ -320,7 +274,7 @@ function InsightsPanel({ lessonState }: { lessonState: LessonStateSnapshot | nul
             <span
               key={kw}
               className={`px-3 py-1 rounded-lg text-xs font-bold border transition-colors ${
-                kw === highlightedKeyword
+                kw === keywords[0]
                   ? "border-[#004ac6] text-[#004ac6] bg-blue-50"
                   : "border-slate-200 text-slate-600 hover:bg-slate-50"
               }`}
@@ -336,64 +290,28 @@ function InsightsPanel({ lessonState }: { lessonState: LessonStateSnapshot | nul
         <label className="text-[10px] font-bold tracking-widest uppercase text-slate-400">
           Conceptos erróneos detectados
         </label>
-        {lessonState ? (
+        {lessonState.evidence.reason ? (
           <div className="bg-red-50 rounded-2xl p-4 border border-red-100 flex gap-3">
             <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
             <div className="flex flex-col gap-1">
               <h4 className="font-bold text-red-800 text-sm">Evidencia del analisis</h4>
               <p className="text-red-700 text-xs leading-relaxed opacity-80">
-                {misconceptionDescription}
+                {lessonState.evidence.reason}
               </p>
             </div>
           </div>
-        ) : MOCK_INSIGHTS.misconceptions.map((m) => (
-          <div
-            key={m.title}
-            className="bg-red-50 rounded-2xl p-4 border border-red-100 flex gap-3"
-          >
-            <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
-            <div className="flex flex-col gap-1">
-              <h4 className="font-bold text-red-800 text-sm">{m.title}</h4>
-              <p className="text-red-700 text-xs leading-relaxed opacity-80">
-                {m.description}
-              </p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Pulso de participación */}
-      <div className="flex flex-col gap-2">
-        <label className="text-[10px] font-bold tracking-widest uppercase text-slate-400">
-          Pulso de participación
-        </label>
-        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-          <div className="flex justify-between items-end h-20 gap-1.5 px-2">
-            {MOCK_INSIGHTS.engagementPulse.map((pct, i) => (
-              <div
-                key={i}
-                className="flex-1 rounded-t-full bg-gradient-to-t from-violet-600 to-violet-400"
-                style={{ height: `${pct}%` }}
-              />
-            ))}
-          </div>
-          <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase px-2 mt-2">
-            <span>T-20m</span>
-            <span>T-10m</span>
-            <span>AHORA</span>
-          </div>
-        </div>
+        ) : (
+          <p className="text-sm text-slate-400">No hay evidencia adicional registrada.</p>
+        )}
       </div>
     </div>
   );
 }
 
 function SuggestedActivityFAB({
-  activity,
   loading,
   onGenerate,
 }: {
-  activity: string;
   loading: boolean;
   onGenerate: () => void;
 }) {
@@ -406,7 +324,7 @@ function SuggestedActivityFAB({
         type="button"
       >
         <Sparkles className="h-4 w-4" />
-        {loading ? "Generando actividad..." : `Hora de actividad: ${activity}`}
+        {loading ? "Generando actividad..." : "Hora de actividad"}
       </button>
     </div>
   );
@@ -1116,7 +1034,7 @@ export function LiveClassMonitor() {
     setUploadStatus(apiSessionIdRef.current ? "Sesion enviada al worker" : uploadStatus);
 
     if (activeClass) {
-      const session = buildSession(activeClass, elapsed);
+      const session = buildSession(activeClass, elapsed, latestLessonState);
       setCompletedSessionClassId(activeClass.id);
       endSession(session); // guarda en historial + limpia el monitor activo
       void handleGenerateActivity();
@@ -1243,8 +1161,6 @@ export function LiveClassMonitor() {
     }
   }
 
-  const remaining = MOCK_INSIGHTS.totalSeconds - elapsed;
-
   return (
     <main className="min-h-screen bg-[#eef3fb] overflow-hidden">
       <div className="grid min-h-screen w-full lg:grid-cols-[240px_minmax(0,1fr)] bg-[#eef3fb]">
@@ -1277,12 +1193,10 @@ export function LiveClassMonitor() {
                 </div>
               </div>
 
-              <NotificationBar />
               <div className="grid grid-cols-12 gap-5 flex-1 min-h-0">
                 <div className="col-span-7 flex flex-col min-h-0">
                   <TranscriptPlayerCard
                     elapsed={elapsed}
-                    remaining={remaining}
                     isRecording={isRecording}
                     onToggleRecording={toggleRecording}
                     uploadStatus={uploadStatus}
@@ -1329,7 +1243,6 @@ export function LiveClassMonitor() {
         </div>
       </div>
       <SuggestedActivityFAB
-        activity={MOCK_INSIGHTS.suggestedActivity}
         loading={activityLoading}
         onGenerate={handleGenerateActivity}
       />

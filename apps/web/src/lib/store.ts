@@ -104,7 +104,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
       if (session?.user) {
         await ensureTeacherProfile(session.user);
-        useClassStore.setState({ classes: [], artefactos: [], submissions: [] });
+        useClassStore.setState({ classes: [] });
       }
 
       set({
@@ -115,7 +115,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       supabase.auth.onAuthStateChange((_event, nextSession) => {
         if (nextSession?.user) {
           void ensureTeacherProfile(nextSession.user);
-          useClassStore.setState({ classes: [], artefactos: [], submissions: [] });
+          useClassStore.setState({ classes: [] });
         }
 
         const localStudentAuth = readLocalStudentAuth();
@@ -143,7 +143,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     await ensureTeacherProfile(data.user);
     clearLocalStudentAuth();
-    useClassStore.setState({ classes: [], artefactos: [], submissions: [] });
+    useClassStore.setState({ classes: [] });
     set({ status: "authenticated", user: teacherProfileFromSupabaseUser(data.user) });
     return {};
   },
@@ -164,7 +164,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     await ensureTeacherProfile(data.session.user);
     clearLocalStudentAuth();
-    useClassStore.setState({ classes: [], artefactos: [], submissions: [] });
+    useClassStore.setState({ classes: [] });
     set({ status: "authenticated", user: teacherProfileFromSupabaseUser(data.session.user) });
     return {};
   },
@@ -252,24 +252,6 @@ export interface Artefacto {
   createdAt: number;
 }
 
-/**
- * A student's submission for an artefacto; flows back so teacher analytics can
- * report real progress. Keyed uniquely by (artefactoId, studentName).
- */
-export interface ArtefactoSubmission {
-  id: string;
-  artefactoId: string;
-  classId: string;
-  studentName: string;
-  answers: [];
-  score: number;
-  total: number;
-  attempts: number;
-  hintsUsed: number;
-  status: "in_progress" | "submitted" | "completed";
-  submittedAt: number;
-}
-
 export interface SessionTranscriptLine {
   time: string;
   speaker: string;
@@ -297,8 +279,6 @@ interface ClassState {
   classError: string | null;
   monitoringClassId: string | null;
   sessions: SavedSession[];
-  artefactos: Artefacto[];
-  submissions: ArtefactoSubmission[];
   loadTeacherClasses: (teacherId: string) => Promise<void>;
   startMonitoring: (id: string) => void;
   stopMonitoring: () => void;
@@ -442,8 +422,6 @@ export const useClassStore = create<ClassState>((set) => ({
   classError: null,
   monitoringClassId: null,
   sessions: [],
-  artefactos: [],
-  submissions: [],
   loadTeacherClasses: async (teacherId) => {
     if (!supabase) {
       set({ classError: "Supabase no esta configurado." });
@@ -533,7 +511,5 @@ export const useClassStore = create<ClassState>((set) => ({
       classes: defaultClasses,
       loadingClasses: false,
       classError: null,
-      artefactos: [],
-      submissions: [],
     }),
 }));

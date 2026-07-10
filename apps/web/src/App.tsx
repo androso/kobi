@@ -4,7 +4,6 @@ import { LoginPage } from "./features/auth/LoginPage";
 import { TeacherDashboard } from "./features/teacher/TeacherDashboard";
 import { LiveClassMonitor } from "./features/teacher/LiveClassMonitor";
 import { PreviousClasses } from "./features/teacher/PreviousClasses";
-import { SessionAnalytics } from "./features/teacher/SessionAnalytics";
 import { HelpCenter } from "./features/teacher/HelpCenter";
 import { StudentDashboard } from "./features/student/StudentDashboard";
 import { useAuthStore } from "./lib/store";
@@ -70,14 +69,6 @@ export function App() {
         }
       />
       <Route
-        path="/teacher/analytics"
-        element={
-          <RequireRole role="teacher">
-            <SessionAnalytics />
-          </RequireRole>
-        }
-      />
-      <Route
         path="/teacher/ayuda"
         element={
           <RequireRole role="teacher">
@@ -95,14 +86,6 @@ export function App() {
       />
       <Route
         path="/student/asignaciones"
-        element={
-          <RequireRole role="student">
-            <StudentDashboard />
-          </RequireRole>
-        }
-      />
-      <Route
-        path="/student/progreso"
         element={
           <RequireRole role="student">
             <StudentDashboard />

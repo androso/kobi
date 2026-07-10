@@ -15,12 +15,8 @@ const tips = [
     body: "Elige una lección de la lista de la izquierda para ver su contenido.",
   },
   {
-    title: "Responde el quiz",
-    body: "Selecciona una respuesta, avanza con Siguiente y entrega al final.",
-  },
-  {
-    title: "Revisa tu progreso",
-    body: "En Progreso ves tu precisión, dominio y actividades completadas.",
+    title: "Completa la actividad",
+    body: "Sigue las instrucciones de la actividad y usa sus pistas cuando las necesites.",
   },
 ];
 
