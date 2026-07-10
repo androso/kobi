@@ -1,10 +1,10 @@
 import { CheckCircle2, CircleDashed, Layers3, UserRound } from "lucide-react";
 import { PortalCard } from "../../../components/portal/PortalChrome";
-import type { Artefacto, ArtefactoBand, ArtefactoSubmission } from "../../../lib/store";
+import type { Artefacto, ArtefactoBand } from "../../../lib/store";
 
 interface ProgressDashboardProps {
   artefactos: Artefacto[];
-  submissions: ArtefactoSubmission[];
+  completedIds: ReadonlySet<string>;
   studentName: string;
 }
 
@@ -14,12 +14,7 @@ const bandLabels: Record<ArtefactoBand, string> = {
   challenge: "Reto",
 };
 
-export function ProgressDashboard({ artefactos, submissions, studentName }: ProgressDashboardProps) {
-  const completedIds = new Set(
-    submissions
-      .filter((submission) => submission.studentName === studentName && submission.status === "completed")
-      .map((submission) => submission.artefactoId),
-  );
+export function ProgressDashboard({ artefactos, completedIds, studentName }: ProgressDashboardProps) {
   const completedCount = artefactos.filter((artefacto) => completedIds.has(artefacto.id)).length;
   const remainingCount = Math.max(artefactos.length - completedCount, 0);
   const completionPercent = artefactos.length ? Math.round((completedCount / artefactos.length) * 100) : 0;

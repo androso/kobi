@@ -14,8 +14,8 @@ const tips = [
     body: "Elige la actividad que publicó tu docente para abrirla de forma segura.",
   },
   {
-    title: "Trabaja a tu ritmo",
-    body: "La actividad guarda los intentos y la entrega desde tu cuenta de estudiante.",
+    title: "Completa la actividad",
+    body: "Sigue las instrucciones y usa las pistas cuando las necesites; tus avances se guardan desde tu cuenta.",
   },
   {
     title: "Revisa tu progreso",

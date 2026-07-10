@@ -1,13 +1,12 @@
 import { CheckCircle2, Puzzle, Trash2 } from "lucide-react";
-import type { Artefacto, ArtefactoSubmission } from "../../../lib/store";
+import type { Artefacto } from "../../../lib/store";
 
 interface LessonListProps {
   title: string;
   section: string;
   artefactos: Artefacto[];
   activeId: string | undefined;
-  submissions: ArtefactoSubmission[];
-  studentName: string;
+  completedIds: ReadonlySet<string>;
   onSelect: (id: string) => void;
   onDismiss?: (id: string) => void;
 }
@@ -17,8 +16,7 @@ export function LessonList({
   section,
   artefactos,
   activeId,
-  submissions,
-  studentName,
+  completedIds,
   onSelect,
   onDismiss,
 }: LessonListProps) {
@@ -33,12 +31,7 @@ export function LessonList({
       <ul className="mt-5 space-y-2">
         {artefactos.map((artefacto, index) => {
           const isActive = artefacto.id === activeId;
-          const isDone = submissions.some(
-            (sub) =>
-              sub.artefactoId === artefacto.id &&
-              sub.studentName === studentName &&
-              sub.status === "completed",
-          );
+          const isDone = completedIds.has(artefacto.id);
           const Icon = isDone ? CheckCircle2 : Puzzle;
 
           return (

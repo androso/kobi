@@ -7,7 +7,6 @@ import {
   useAuthStore,
   useClassStore,
   type Artefacto,
-  type ArtefactoSubmission,
 } from "../../lib/store";
 import { supabase } from "../../lib/supabase";
 import {
@@ -84,11 +83,9 @@ export function StudentDashboard() {
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const classes = useClassStore((state) => state.classes);
-  const submissions = useClassStore((state) => state.submissions);
 
   const [assignment, setAssignment] = useState<StudentAssignment | null>(null);
   const [loadingAssignment, setLoadingAssignment] = useState(true);
-  const [backendDeliveryReady, setBackendDeliveryReady] = useState(false);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [telemetryStatus, setTelemetryStatus] = useState<string | null>(null);
   const [selectedArtefactoId, setSelectedArtefactoId] = useState<string | null>(null);
@@ -108,10 +105,19 @@ export function StudentDashboard() {
   const classCode = user?.joinCode?.trim() || "KOBI7";
   const classId = user?.classId ?? "class-1";
   const studentId = user?.studentId;
+  const studentAccessToken = user?.studentAccessToken;
   const activeSection = getStudentRouteSection(location.pathname);
   const deliveryStore = useMemo(
-    () => (supabase ? new SupabaseActivityDeliveryStore(supabase) : null),
-    [],
+    () =>
+      supabase
+        ? new SupabaseActivityDeliveryStore(
+            supabase,
+            studentId && studentAccessToken
+              ? { studentId, accessToken: studentAccessToken }
+              : undefined,
+          )
+        : null,
+    [studentAccessToken, studentId],
   );
 
   useEffect(() => {
@@ -134,7 +140,6 @@ export function StudentDashboard() {
         if (!cancelled) {
           const visibleAssignment = loaded && pendingDismissalsRef.current.has(loaded.id) ? null : loaded;
           setAssignment((current) => (sameAssignment(current, visibleAssignment) ? current : visibleAssignment));
-          setBackendDeliveryReady(true);
           setAssignmentError(null);
         }
       } catch (error) {
@@ -209,41 +214,13 @@ export function StudentDashboard() {
     [deliveredArtefacto],
   );
 
-  const assignmentSubmissions = useMemo<ArtefactoSubmission[]>(() => {
-    if (!deliveredArtefacto || assignment?.status !== "completed") return [];
-
-    return [
-      {
-        id: `assignment-submission-${assignment.id}`,
-        artefactoId: deliveredArtefacto.id,
-        classId: deliveredArtefacto.classId,
-        studentName,
-        answers: [],
-        score: 1,
-        total: 1,
-        attempts: 1,
-        hintsUsed: 0,
-        status: "completed",
-        submittedAt: 0,
-      },
-    ];
-  }, [assignment, deliveredArtefacto, studentName]);
-
-  const displaySubmissions = deliveredArtefacto ? assignmentSubmissions : submissions;
-
   const activeArtefacto = useMemo(
     () => artefactos.find((item) => item.id === selectedArtefactoId) ?? artefactos[0],
     [artefactos, selectedArtefactoId],
   );
-
-  const completedCount = useMemo(
-    () =>
-      artefactos.filter((item) =>
-        displaySubmissions.some(
-          (sub) => sub.artefactoId === item.id && sub.studentName === studentName && sub.status === "completed",
-        ),
-      ).length,
-    [artefactos, displaySubmissions, studentName],
+  const completedIds = useMemo(
+    () => (assignment?.status === "completed" ? new Set([assignment.id]) : new Set<string>()),
+    [assignment],
   );
 
   function handleLogout() {
@@ -279,13 +256,6 @@ export function StudentDashboard() {
     }
   }
 
-  const progressSummary =
-    completedCount === artefactos.length && artefactos.length > 0
-      ? "Todo completado"
-      : completedCount > 0
-        ? "En progreso"
-        : "Sin iniciar";
-
   return (
     <main className="min-h-screen bg-[#eef5fb] text-slate-950">
       <div className="min-h-screen lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
@@ -294,7 +264,6 @@ export function StudentDashboard() {
           navItems={studentNavItems}
           onHelp={() => setHelpOpen(true)}
           onLogout={handleLogout}
-          progressLabel={progressSummary}
           studentName={studentName}
         />
 
@@ -331,8 +300,7 @@ export function StudentDashboard() {
                       onDismiss={assignment ? handleDismissAssignment : undefined}
                       onSelect={setSelectedArtefactoId}
                       section={studentClass?.focus ?? activeArtefacto?.section ?? "Actividades"}
-                      studentName={studentName}
-                      submissions={displaySubmissions}
+                      completedIds={completedIds}
                       title={studentClass?.title ?? user?.className ?? "Tu clase"}
                     />
                   </PortalCard>
@@ -412,7 +380,7 @@ export function StudentDashboard() {
                     <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Progreso</h1>
                     <p className="mt-2 text-base text-slate-500">Revisa las actividades que realmente has completado.</p>
                   </header>
-                  <ProgressDashboard artefactos={artefactos} studentName={studentName} submissions={displaySubmissions} />
+                  <ProgressDashboard artefactos={artefactos} completedIds={completedIds} studentName={studentName} />
                 </div>
               </div>
             )}

@@ -103,6 +103,22 @@ afterEach(() => {
 });
 
 describe("LiveClassMonitor activity delivery", () => {
+  it("shows an honest empty analysis state without mock lesson metrics", () => {
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText(/esperando análisis de la sesión/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^ecosistemas$/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/pulso de participación/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^hora de actividad$/i })).toBeInTheDocument();
+  });
+
   it("renders generated candidates and publishes assignments", async () => {
     const user = userEvent.setup();
     useClassStore.getState().resetClasses();

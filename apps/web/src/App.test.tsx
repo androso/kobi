@@ -28,6 +28,7 @@ describe("App", () => {
             role: "student",
             studentName,
             studentId: "student-1",
+            studentAccessToken: "student-token-1",
             classId: "class-1",
             className: "Ciencia 4to - Sección A",
             joinCode: "KOBI7",
@@ -41,6 +42,7 @@ describe("App", () => {
     });
     useClassStore.getState().resetClasses();
     useClassStore.setState({
+      sessions: [],
       loadTeacherClasses: async () => {},
       addClass: async (newClass) => {
         const createdClass = {
@@ -76,6 +78,46 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: /iniciar sesi[oó]n/i })).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/correo electr[oó]nico/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /entrar/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /olvidaste tu contrase/i })).not.toBeInTheDocument();
+  });
+
+  it("keeps focused login fields on a dark surface in dark mode", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    const passwordInput = screen.getByPlaceholderText(/^contrase[nñ]a$/i);
+    const inputShell = passwordInput.parentElement;
+
+    expect(inputShell).toHaveClass(
+      "dark:focus-within:border-sky-400",
+      "dark:focus-within:bg-slate-800",
+      "dark:focus-within:ring-sky-400/25",
+    );
+
+    await user.click(passwordInput);
+    expect(passwordInput).toHaveFocus();
+  });
+
+  it("shows empty login fields as accessible errors", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
+
+    const emailInput = screen.getByPlaceholderText(/correo electr[oó]nico/i);
+    const passwordInput = screen.getByPlaceholderText(/^contrase[nñ]a$/i);
+    const emailError = screen.getByText(/ingresa tu correo electr[oó]nico/i);
+    const passwordError = screen.getByText(/ingresa tu contrase[nñ]a/i);
+
+    expect(emailInput).toHaveAttribute("aria-invalid", "true");
+    expect(emailInput).toHaveAttribute("aria-describedby", "login-email-error");
+    expect(emailInput.parentElement).toHaveClass("border-red-500", "dark:border-red-400");
+    expect(emailError).toHaveClass("text-red-600", "dark:text-red-300");
+
+    expect(passwordInput).toHaveAttribute("aria-invalid", "true");
+    expect(passwordInput).toHaveAttribute("aria-describedby", "login-password-error");
+    expect(passwordInput.parentElement).toHaveClass("border-red-500", "dark:border-red-400");
+    expect(passwordError).toHaveClass("text-red-600", "dark:text-red-300");
   });
 
   it("switches to the student join form", async () => {
@@ -112,6 +154,76 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { name: /bienvenido\(a\) de nuevo, sra\. henderson/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /tus clases/i })).toBeInTheDocument();
+  });
+
+  it("preserves the teacher brand mark colors in dark mode", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.type(screen.getByPlaceholderText(/correo electr[oó]nico/i), "maestra@kobi.test");
+    await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "securepass");
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
+
+    const brandHeading = screen.getByRole("heading", { name: "Kobi Labs" });
+    const brandMark = brandHeading.parentElement?.previousElementSibling;
+
+    expect(brandMark).toHaveClass("teacher-brand-mark");
+    expect(brandMark?.querySelector("svg")).toHaveClass("teacher-brand-mascot");
+  });
+
+  it("switches store-backed classes between grid and list layouts", async () => {
+    const user = userEvent.setup();
+    useClassStore.setState({
+      classes: [
+        {
+          id: "class-store-1",
+          title: "Lenguaje 7mo",
+          joinCode: "LENG7",
+          focus: "Comprensión lectora",
+          students: "18 estudiantes activos",
+          studentCount: 18,
+          topics: ["Ideas principales"],
+          accent: "text-violet-700",
+          tone: "from-violet-600 to-purple-500",
+          icon: "book",
+        },
+        {
+          id: "class-store-2",
+          title: "Ciencias 6to",
+          joinCode: "CIEN6",
+          focus: "El sistema solar",
+          students: "20 estudiantes activos",
+          studentCount: 20,
+          topics: ["Planetas"],
+          accent: "text-emerald-700",
+          tone: "from-emerald-600 to-teal-500",
+          icon: "leaf",
+        },
+      ],
+    });
+
+    renderApp();
+    await user.type(screen.getByPlaceholderText(/correo electr[oó]nico/i), "maestra@kobi.test");
+    await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "securepass");
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
+
+    const gridButton = screen.getByRole("button", { name: /cuadrícula/i });
+    const listButton = screen.getByRole("button", { name: /lista/i });
+    const classList = screen.getByRole("list", { name: /clases/i });
+
+    expect(gridButton).toHaveAttribute("aria-pressed", "true");
+    expect(listButton).toHaveAttribute("aria-pressed", "false");
+    expect(classList).toHaveClass("md:grid-cols-2", "lg:grid-cols-3");
+    expect(within(classList).getByText("Lenguaje 7mo")).toBeInTheDocument();
+    expect(within(classList).getByText("Ciencias 6to")).toBeInTheDocument();
+
+    await user.click(listButton);
+
+    expect(gridButton).toHaveAttribute("aria-pressed", "false");
+    expect(listButton).toHaveAttribute("aria-pressed", "true");
+    expect(classList).toHaveClass("grid-cols-1");
+    expect(classList).not.toHaveClass("md:grid-cols-2", "lg:grid-cols-3");
+    expect(within(classList).getAllByRole("listitem")[0]).toHaveClass("md:grid-cols-[16rem_minmax(0,1fr)]");
   });
 
   it("signs up a teacher and opens the dashboard when Supabase returns a session", async () => {
@@ -254,6 +366,39 @@ describe("App", () => {
     expect(within(dialog as HTMLElement).getByRole("button", { name: /copiar invitacion/i })).toBeInTheDocument();
   });
 
+  it("does not expose unwired teacher navigation or fabricated dashboard summaries", async () => {
+    const user = userEvent.setup();
+    useClassStore.setState({
+      sessions: [
+        {
+          id: "session-real",
+          classId: "class-1",
+          subject: "CIENCIAS",
+          subjectColor: "text-emerald-700",
+          dotColor: "bg-emerald-500",
+          title: "Ciencia 4to - Sección A",
+          focus: "Ecosistemas",
+          date: "10 de julio de 2026",
+          duration: "15:00",
+          summaryPoints: ["Resumen real"],
+          nextSteps: [],
+          transcript: [],
+        },
+      ],
+    });
+
+    renderApp();
+    await user.type(screen.getByPlaceholderText(/correo electr[oó]nico/i), "maestra@kobi.test");
+    await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "securepass");
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
+
+    expect(screen.queryByRole("button", { name: /^anal[ií]ticas$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /actividades recientes/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^soporte$/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/participación semanal subió/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/próxima sesión/i)).not.toBeInTheDocument();
+  });
+
   it("navigates to the previous classes section and opens the summary modal", async () => {
     const user = userEvent.setup();
     render(
@@ -275,6 +420,9 @@ describe("App", () => {
     // Verify we are on the Historial de Clases page
     expect(screen.getByText("Historial de Sesiones")).toBeInTheDocument();
     expect(screen.getAllByText("Ciencias 4to Grado - Sección A")[0]).toBeInTheDocument();
+    expect(screen.queryByText(/participación promedio/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("64%")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /filtrar por fecha/i })).not.toBeInTheDocument();
 
     // Click on "Ver detalles" button of the first session
     const detailsButtons = screen.getAllByRole("button", { name: /ver detalles/i });
@@ -284,6 +432,7 @@ describe("App", () => {
     expect(screen.getByText("Detalles de la Clase")).toBeInTheDocument();
     expect(screen.getByText(/Se discutieron los niveles tróficos/i)).toBeInTheDocument();
     expect(screen.getAllByText("Carlos M.:")[0]).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reproducir/i })).not.toBeInTheDocument();
 
     // Close modal
     await user.click(screen.getByRole("button", { name: /entendido/i }));

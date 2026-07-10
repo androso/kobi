@@ -10,7 +10,6 @@ export interface StudentSidebarNavItem {
 interface StudentSidebarProps {
   studentName: string;
   classCode: string;
-  progressLabel: string;
   onLogout: () => void;
   onHelp: () => void;
   navItems: readonly StudentSidebarNavItem[];
@@ -19,7 +18,6 @@ interface StudentSidebarProps {
 export function StudentSidebar({
   studentName,
   classCode,
-  progressLabel,
   onLogout,
   onHelp,
   navItems,
@@ -42,9 +40,8 @@ export function StudentSidebar({
           <PortalBrand portalLabel="Portal estudiantil" />
           <div className="mt-8 rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-3">
             <p className="truncate text-sm font-bold text-slate-900">{studentName}</p>
-            <div className="mt-1 flex items-center justify-between gap-2 text-[10px] font-bold uppercase tracking-wider">
+            <div className="mt-1 text-[10px] font-bold uppercase tracking-wider">
               <span className="text-[#004ac6]">Clase {classCode}</span>
-              <span className="truncate text-slate-400">{progressLabel}</span>
             </div>
           </div>
         </div>

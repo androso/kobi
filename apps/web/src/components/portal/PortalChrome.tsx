@@ -33,11 +33,11 @@ export function KobiMascot({ className }: { className?: string }) {
 export function PortalBrand({ portalLabel }: { portalLabel: string }) {
   return (
     <div className="flex items-center gap-3">
-      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] bg-[#fce7db] shadow-md shadow-orange-200/40">
-        <KobiMascot className="h-8 w-8 text-slate-900" />
+      <div className="teacher-brand-mark flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] bg-[#fce7db] shadow-md shadow-orange-200/40">
+        <KobiMascot className="teacher-brand-mascot h-8 w-8 text-slate-900" />
       </div>
       <div className="min-w-0">
-        <p className="truncate text-[17px] font-bold leading-tight text-slate-950">Kobi Labs</p>
+        <h1 className="truncate text-[17px] font-bold leading-tight text-slate-950">Kobi Labs</h1>
         <p className="mt-0.5 truncate text-[10px] font-bold uppercase tracking-wider text-slate-400">
           {portalLabel}
         </p>

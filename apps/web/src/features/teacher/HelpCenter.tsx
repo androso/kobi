@@ -3,11 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   BookOpen,
   CircleHelp,
-  LayoutGrid,
-  Lightbulb,
-  MessageSquare,
   Search,
-  Settings2,
   Sparkles,
   Users2,
   Volume2,
@@ -17,7 +13,7 @@ import {
 } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 
-type HelpContext = "dashboard" | "monitor" | "repositories" | "analytics";
+type HelpContext = "dashboard" | "monitor" | "repositories";
 
 type HelpAction = {
   label: string;
@@ -57,17 +53,12 @@ const contextMeta: Record<
   monitor: {
     eyebrow: "Monitoreo en vivo",
     title: "Ayuda para la clase en curso",
-    description: "Resuelve dudas sobre transcripción, participación y señales de fricción.",
+    description: "Resuelve dudas sobre grabación, análisis de la lección y publicación de actividades.",
   },
   repositories: {
     eyebrow: "Clases anteriores",
     title: "Revisión de sesiones pasadas",
     description: "Encuentra resúmenes, transcripciones y detalles históricos más rápido.",
-  },
-  analytics: {
-    eyebrow: "Analíticas",
-    title: "Lectura de resultados",
-    description: "Interpreta métricas, progreso y señales para tomar decisiones con Kobi.",
   },
 };
 
@@ -77,15 +68,15 @@ const helpTopics: HelpTopic[] = [
     description: "Abre el flujo de nueva clase para definir nombre, grado, materia y unidad.",
     icon: Sparkles,
     tags: ["clase", "crear", "sesión", "nueva"],
-    contexts: ["dashboard", "repositories", "analytics"],
+    contexts: ["dashboard", "repositories"],
     action: { label: "Abrir panel", kind: "navigate", to: "/teacher" },
   },
   {
     title: "Ver monitoreo en vivo",
-    description: "Revisa la sesión activa, la transcripción y los puntos de fricción.",
+    description: "Graba la sesión, revisa el lesson_state y publica actividades verificadas.",
     icon: PlayCircle,
-    tags: ["monitor", "vivo", "transcripción", "fricción"],
-    contexts: ["dashboard", "monitor", "analytics"],
+    tags: ["monitor", "vivo", "grabación", "actividad"],
+    contexts: ["dashboard", "monitor"],
     action: { label: "Ir al monitoreo", kind: "navigate", to: "/teacher/monitor" },
   },
   {
@@ -93,16 +84,8 @@ const helpTopics: HelpTopic[] = [
     description: "Consulta resúmenes, transcripciones y detalles de sesiones previas.",
     icon: BookOpen,
     tags: ["historial", "clases", "sesiones", "resúmenes"],
-    contexts: ["dashboard", "repositories", "analytics"],
+    contexts: ["dashboard", "repositories"],
     action: { label: "Abrir historial", kind: "navigate", to: "/teacher/repositories" },
-  },
-  {
-    title: "Analizar resultados",
-    description: "Interpreta participación, progreso y puntos de fricción por estudiante.",
-    icon: LayoutGrid,
-    tags: ["analíticas", "progreso", "participación", "resultados"],
-    contexts: ["dashboard", "monitor", "analytics"],
-    action: { label: "Ver analíticas", kind: "navigate", to: "/teacher/analytics" },
   },
   {
     title: "Actividades y variantes",
@@ -110,39 +93,15 @@ const helpTopics: HelpTopic[] = [
     icon: Users2,
     tags: ["variantes", "apoyo", "reto", "actividad"],
     contexts: ["dashboard", "monitor", "repositories"],
-    action: { label: "Volver al panel", kind: "navigate", to: "/teacher" },
-  },
-  {
-    title: "Consejos docentes",
-    description: "Encuentra orientación práctica para ritmo, retroalimentación y aprobación.",
-    icon: Lightbulb,
-    tags: ["consejos", "aprobación", "feedback", "ritmo"],
-    contexts: ["dashboard", "analytics", "repositories"],
-    action: { label: "Abrir historial", kind: "navigate", to: "/teacher/repositories" },
+    action: { label: "Ir al monitoreo", kind: "navigate", to: "/teacher/monitor" },
   },
   {
     title: "Contactar soporte",
     description: "Escribe al equipo si algo bloquea tu clase, acceso o configuración.",
     icon: CircleHelp,
     tags: ["soporte", "ayuda", "correo", "bloqueo"],
-    contexts: ["dashboard", "monitor", "repositories", "analytics"],
+    contexts: ["dashboard", "monitor", "repositories"],
     action: { label: "Enviar correo", kind: "mailto", href: "mailto:soporte@kobi.ai" },
-  },
-  {
-    title: "Configuración",
-    description: "Ajusta preferencias del portal y del espacio docente.",
-    icon: Settings2,
-    tags: ["configuración", "portal", "preferencias"],
-    contexts: ["dashboard", "analytics"],
-    action: { label: "Abrir panel", kind: "navigate", to: "/teacher" },
-  },
-  {
-    title: "Notas y evidencias",
-    description: "Guarda observaciones, seguimientos y evidencia de clase.",
-    icon: MessageSquare,
-    tags: ["notas", "evidencia", "observaciones", "seguimiento"],
-    contexts: ["repositories", "analytics"],
-    action: { label: "Ver clases anteriores", kind: "navigate", to: "/teacher/repositories" },
   },
 ];
 
@@ -154,8 +113,8 @@ const faqs: HelpFAQ[] = [
   },
   {
     question: "¿Dónde veo el monitoreo en vivo?",
-    answer: "Abre Monitoreo en vivo en el menú lateral para revisar participación, progreso y señales de fricción.",
-    tags: ["monitor", "vivo", "transcripción"],
+    answer: "Abre una clase desde el panel. Mientras la sesión esté activa, el acceso aparece en el menú lateral.",
+    tags: ["monitor", "vivo", "grabación"],
   },
   {
     question: "¿Cómo contacto soporte?",
@@ -371,7 +330,7 @@ export function HelpCenter() {
 
                 <div className="mt-14 grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
                   <section className="rounded-[1.75rem] bg-white p-7 shadow-sm ring-1 ring-slate-200/70">
-                    <div className="flex items-center justify-between gap-4">
+                    <div>
                       <div>
                         <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400">
                           Más de la referencia
@@ -380,26 +339,19 @@ export function HelpCenter() {
                           Aprende los patrones principales de Kobi
                         </h2>
                       </div>
-                      <button
-                        className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
-                        onClick={() => navigate("/teacher/analytics")}
-                        type="button"
-                      >
-                        Abrir analíticas
-                      </button>
                     </div>
 
                     <div className="mt-6 grid gap-4 sm:grid-cols-2">
                       <div className="rounded-3xl border border-slate-200 p-5">
                         <p className="text-lg font-semibold text-slate-950">Sesiones</p>
                         <p className="mt-2 text-sm leading-6 text-slate-600">
-                          Revisa transcripciones, resúmenes y resultados de cada sesión.
+                          Revisa los resúmenes y detalles que la sesión realmente guardó.
                         </p>
                       </div>
                       <div className="rounded-3xl border border-slate-200 p-5">
                         <p className="text-lg font-semibold text-slate-950">Estudiantes</p>
                         <p className="mt-2 text-sm leading-6 text-slate-600">
-                          Ve actividad en vivo, progreso y puntos de fricción de un vistazo.
+                          Revisa las clases y estudiantes registrados en tu espacio docente.
                         </p>
                       </div>
                       <div className="rounded-3xl border border-slate-200 p-5">
@@ -459,14 +411,13 @@ export function HelpCenter() {
 
                   <div className="grid gap-4 lg:grid-cols-2">
                     {results.filteredFaqs.map((faq) => (
-                      <button
+                      <article
                         className="rounded-[1.5rem] border border-slate-200 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
                         key={faq.question}
-                        type="button"
                       >
                         <p className="text-base font-semibold text-slate-950">{faq.question}</p>
                         <p className="mt-2 text-sm leading-6 text-slate-600">{faq.answer}</p>
-                      </button>
+                      </article>
                     ))}
                   </div>
                 </section>

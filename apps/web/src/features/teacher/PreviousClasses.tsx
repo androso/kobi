@@ -3,14 +3,9 @@ import {
   FolderOpen,
   Calendar,
   Clock,
-  Filter,
   Search,
   X,
   Mic,
-  Play,
-  Pause,
-  Volume2,
-  VolumeX,
   Sparkles,
   ChevronRight
 } from "lucide-react";
@@ -109,10 +104,6 @@ export function PreviousClasses() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedSession, setSelectedSession] = useState<SavedSession | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [playProgress, setPlayProgress] = useState(30);
-  const [playbackRate, setPlaybackRate] = useState(1);
 
   // Sessions saved live from the monitor appear first, then the seed history (only for mock teacher)
   const storeSessions = useClassStore((state) => state.sessions);
@@ -129,15 +120,6 @@ export function PreviousClasses() {
     return sum + mins;
   }, 0);
   const totalHours = Math.round((totalMinutes / 60) * 10) / 10;
-  const averageParticipation = totalSessionsCount > 0 ? "82%" : "0%";
-
-  const PLAYBACK_RATES = [1, 1.25, 1.5, 2, 0.5];
-  function cyclePlaybackRate() {
-    setPlaybackRate((rate) => {
-      const idx = PLAYBACK_RATES.indexOf(rate);
-      return PLAYBACK_RATES[(idx + 1) % PLAYBACK_RATES.length];
-    });
-  }
 
   const filteredSessions = allSessions.filter(
     (session) =>
@@ -148,8 +130,6 @@ export function PreviousClasses() {
 
   function handleOpenDetailsModal(session: SavedSession) {
     setSelectedSession(session);
-    setIsPlaying(false);
-    setPlayProgress(15);
   }
 
   function handleCloseModal() {
@@ -173,15 +153,11 @@ export function PreviousClasses() {
               {/* Left Column: Sessions List */}
               <div className="flex-1 overflow-y-auto p-6 lg:p-8 custom-scrollbar">
                 <div className="max-w-3xl mx-auto">
-                  <header className="flex justify-between items-end mb-6">
+                  <header className="mb-6">
                     <div>
                       <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Historial de Sesiones</h2>
                       <p className="text-sm text-slate-500 mt-1">Revisa y administra los resúmenes y transcripciones de tus clases anteriores.</p>
                     </div>
-                    <button className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm">
-                      <Filter className="h-3.5 w-3.5 text-slate-500" />
-                      <span>Filtrar por Fecha</span>
-                    </button>
                   </header>
 
                   {/* Sessions grid */}
@@ -256,33 +232,8 @@ export function PreviousClasses() {
                       <p className="text-xs text-slate-500 mt-0.5 font-medium">Horas grabadas</p>
                     </div>
 
-                    <div className="rounded-3xl p-5 bg-blue-100/60 hover:bg-blue-100/80 transition-colors">
-                      <p className="text-lg font-extrabold text-slate-800 leading-tight">{averageParticipation}</p>
-                      <p className="text-xs text-slate-500 mt-0.5 font-medium">Participación promedio</p>
-                    </div>
                   </div>
                 </div>
-
-                {/* Current Focus — pastel card */}
-                {allSessions.length > 0 ? (
-                  <div className="space-y-4">
-                    <span className="text-xs font-bold text-slate-400 tracking-wider uppercase">Enfoque actual</span>
-                    <div className="rounded-3xl p-5 bg-indigo-100/50">
-                      <div className="flex justify-between items-center mb-2">
-                        <h4 className="font-bold text-sm text-slate-800">{allSessions[0].title}</h4>
-                        <span className="text-xs font-extrabold text-indigo-600">64%</span>
-                      </div>
-                      <div className="w-full bg-white/70 h-2 rounded-full overflow-hidden">
-                        <div className="bg-indigo-500 h-full w-[64%] rounded-full"></div>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-2.5 font-medium">{allSessions[0].focus}</p>
-                    </div>
-
-                    <button className="w-full py-3 text-xs font-bold text-slate-700 bg-slate-100 rounded-2xl hover:bg-slate-200/70 transition-colors">
-                      Ver analíticas detalladas
-                    </button>
-                  </div>
-                ) : null}
 
               </div>
 
@@ -329,7 +280,7 @@ export function PreviousClasses() {
               {/* Left Column (Recording bubble & AI summary) - ~45% width */}
               <div className="w-full md:w-[45%] p-6 md:p-8 flex flex-col gap-5 overflow-y-auto custom-scrollbar border-r border-slate-200">
 
-                {/* Recording "message bubble" with inline player */}
+                {/* Session summary header */}
                 <div className="flex gap-3 items-start">
                  
                   <div className="flex-1 bg-slate-100 rounded-3xl rounded-tl-md p-5 flex flex-col gap-4">
@@ -340,41 +291,6 @@ export function PreviousClasses() {
                       </p>
                     </div>
 
-                    {/* Inline player row */}
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => setIsPlaying(!isPlaying)}
-                        className="text-violet-600 hover:text-violet-700 transition active:scale-90 shrink-0"
-                        title={isPlaying ? "Pausar" : "Reproducir"}
-                      >
-                        {isPlaying ? <Pause className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current" />}
-                      </button>
-                      <input
-                        type="range"
-                        className="flex-1 h-1.5 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-white"
-                        min="0"
-                        max="100"
-                        value={playProgress}
-                        onChange={(e) => setPlayProgress(Number(e.target.value))}
-                      />
-                      <span className="text-xs font-bold text-slate-500 tabular-nums shrink-0">
-                        {selectedSession.duration}
-                      </span>
-                      <button
-                        onClick={() => setIsMuted(!isMuted)}
-                        className="text-slate-400 hover:text-slate-600 transition shrink-0"
-                        title={isMuted ? "Activar sonido" : "Silenciar"}
-                      >
-                        {isMuted ? <VolumeX className="w-4 h-4 text-red-500" /> : <Volume2 className="w-4 h-4" />}
-                      </button>
-                      <button
-                        onClick={cyclePlaybackRate}
-                        className="text-xs font-bold text-slate-500 hover:text-slate-700 transition shrink-0 tabular-nums w-10 text-right"
-                        title="Cambiar velocidad"
-                      >
-                        {playbackRate}x
-                      </button>
-                    </div>
                   </div>
                 </div>
 
