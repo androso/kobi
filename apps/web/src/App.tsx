@@ -6,6 +6,7 @@ import { LiveClassMonitor } from "./features/teacher/LiveClassMonitor";
 import { PreviousClasses } from "./features/teacher/PreviousClasses";
 import { HelpCenter } from "./features/teacher/HelpCenter";
 import { StudentDashboard } from "./features/student/StudentDashboard";
+import { StudentRoster } from "./features/teacher/StudentRoster";
 import { useAuthStore } from "./lib/store";
 
 function AuthRedirect() {
@@ -44,6 +45,10 @@ export function App() {
   return (
     <Routes>
       <Route path="/" element={<AuthRedirect />} />
+      <Route
+        path="/teacher/classes/:classId/students"
+        element={<RequireRole role="teacher"><StudentRoster /></RequireRole>}
+      />
       <Route
         path="/teacher"
         element={

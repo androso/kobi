@@ -149,6 +149,13 @@ export function ClassCard({ item, viewMode, index = 0, onShareCode }: ClassCardP
               Compartir
             </button>
           ) : null}
+          <button
+            className="ml-2 mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold uppercase tracking-wider text-slate-700 hover:bg-slate-50"
+            onClick={(event) => { event.stopPropagation(); navigate(`/teacher/classes/${item.id}/students`); }}
+            type="button"
+          >
+            Estudiantes
+          </button>
         </div>
 
         {/* Topics List */}
