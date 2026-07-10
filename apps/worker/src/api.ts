@@ -50,7 +50,7 @@ function writeJson(
   res.writeHead(statusCode, {
     "content-type": "application/json",
     "access-control-allow-origin": getCorsOrigin(),
-    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
     "access-control-allow-headers": "content-type,authorization",
     ...extraHeaders,
   });
@@ -60,7 +60,7 @@ function writeJson(
 function handleOptions(res: ServerResponse) {
   res.writeHead(204, {
     "access-control-allow-origin": getCorsOrigin(),
-    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
     "access-control-allow-headers": "content-type,authorization",
     "access-control-max-age": "86400",
   });
@@ -69,6 +69,88 @@ function handleOptions(res: ServerResponse) {
 
 function getRequestUrl(req: IncomingMessage) {
   return new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+}
+
+const STUDENT_EMAIL_DOMAIN = "students.kobi.invalid";
+const MIN_STUDENT_PASSWORD_LENGTH = 8;
+
+function normalizeUsername(value: string) {
+  return value.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9-]/g, "");
+}
+
+function usernameEmail(username: string) {
+  return `${username}@${STUDENT_EMAIL_DOMAIN}`;
+}
+
+async function requireTeacher(req: IncomingMessage, supabase: SupabaseClient) {
+  const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (!token) throw new ApiRequestError("Unauthorized", 401);
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user || data.user.user_metadata?.role === "student") throw new ApiRequestError("Unauthorized", 401);
+  return data.user;
+}
+
+async function requireOwnedClass(req: IncomingMessage, supabase: SupabaseClient, classId: string) {
+  const teacher = await requireTeacher(req, supabase);
+  const { data } = await supabase.from("classes").select("id").eq("id", classId).eq("teacher_id", teacher.id).maybeSingle();
+  if (!data) throw new ApiRequestError("Class not found", 404);
+  return teacher;
+}
+
+async function listRoster(req: IncomingMessage, res: ServerResponse, classId: string, supabase: SupabaseClient) {
+  await requireOwnedClass(req, supabase, classId);
+  const { data, error } = await supabase.from("students")
+    .select("id,class_id,display_name,username,is_active,activated_at,joined_at")
+    .eq("class_id", classId).not("auth_user_id", "is", null).order("display_name");
+  if (error) throw new ApiRequestError(error.message);
+  writeJson(res, 200, { students: data ?? [] });
+}
+
+async function createRosterStudent(req: IncomingMessage, res: ServerResponse, classId: string, supabase: SupabaseClient) {
+  await requireOwnedClass(req, supabase, classId);
+  const body = await readJsonBody(req);
+  const displayName = typeof body.displayName === "string" ? body.displayName.trim() : "";
+  const password = typeof body.password === "string" ? body.password : "";
+  if (!displayName) throw new ApiRequestError("displayName is required");
+  if (password.length < MIN_STUDENT_PASSWORD_LENGTH) throw new ApiRequestError(`Password must be at least ${MIN_STUDENT_PASSWORD_LENGTH} characters`);
+  const base = normalizeUsername(displayName).replace(/^-+|-+$/g, "") || "estudiante";
+  let authUserId: string | undefined;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const username = `${base}-${crypto.randomUUID().replace(/-/g, "").slice(0, 6)}`;
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email: usernameEmail(username), password, email_confirm: true,
+      user_metadata: { role: "student", username, display_name: displayName },
+    });
+    if (authError) continue;
+    authUserId = authData.user.id;
+    const { data, error } = await supabase.from("students").insert({
+      class_id: classId, display_name: displayName, username, auth_user_id: authUserId,
+      is_active: true, activated_at: new Date().toISOString(), access_token: null,
+    }).select("id,class_id,display_name,username,is_active,activated_at,joined_at").single();
+    if (!error) { writeJson(res, 201, { student: data }); return; }
+    await supabase.auth.admin.deleteUser(authUserId);
+    authUserId = undefined;
+  }
+  throw new ApiRequestError("Unable to provision student account", 409);
+}
+
+async function updateRosterStudent(req: IncomingMessage, res: ServerResponse, classId: string, studentId: string, action: string, supabase: SupabaseClient) {
+  await requireOwnedClass(req, supabase, classId);
+  const { data: student } = await supabase.from("students").select("id,auth_user_id").eq("id", studentId).eq("class_id", classId).not("auth_user_id", "is", null).maybeSingle();
+  if (!student?.auth_user_id) throw new ApiRequestError("Student not found", 404);
+  if (action === "password") {
+    const body = await readJsonBody(req); const password = typeof body.password === "string" ? body.password : "";
+    if (password.length < MIN_STUDENT_PASSWORD_LENGTH) throw new ApiRequestError(`Password must be at least ${MIN_STUDENT_PASSWORD_LENGTH} characters`);
+    const { error } = await supabase.auth.admin.updateUserById(student.auth_user_id, { password });
+    if (error) throw new ApiRequestError("Unable to reset password", 400);
+  } else if (action === "deactivate" || action === "reactivate") {
+    const active = action === "reactivate";
+    const { error } = await supabase.auth.admin.updateUserById(student.auth_user_id, { ban_duration: active ? "none" : "876000h" });
+    if (error) throw new ApiRequestError("Unable to update account", 400);
+    const { error: rowError } = await supabase.from("students").update({ is_active: active, activated_at: active ? new Date().toISOString() : null }).eq("id", studentId);
+    if (rowError) throw new ApiRequestError(rowError.message);
+  } else throw new ApiRequestError("Unknown roster action", 404);
+  writeJson(res, 200, { ok: true });
 }
 
 async function readJsonBody(req: IncomingMessage) {
@@ -561,6 +643,14 @@ export async function routeRequest(
     if (req.method === "GET" && url.pathname === "/health") {
       writeJson(res, 200, { ok: true });
       return;
+    }
+
+    const rosterMatch = url.pathname.match(/^\/api\/classes\/([^/]+)\/students$/);
+    if (req.method === "GET" && rosterMatch?.[1]) { await listRoster(req, res, rosterMatch[1], supabase); return; }
+    if (req.method === "POST" && rosterMatch?.[1]) { await createRosterStudent(req, res, rosterMatch[1], supabase); return; }
+    const rosterActionMatch = url.pathname.match(/^\/api\/classes\/([^/]+)\/students\/([^/]+)\/(password|deactivate|reactivate)$/);
+    if (req.method === "POST" && rosterActionMatch?.[1] && rosterActionMatch[2] && rosterActionMatch[3]) {
+      await updateRosterStudent(req, res, rosterActionMatch[1], rosterActionMatch[2], rosterActionMatch[3], supabase); return;
     }
 
     if (req.method === "POST" && url.pathname === "/api/sessions") {
