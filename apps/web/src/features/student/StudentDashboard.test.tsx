@@ -86,6 +86,22 @@ describe("StudentDashboard", () => {
     expect(activityFrame).toHaveAttribute("referrerpolicy", "no-referrer");
   });
 
+  it("uses dark-mode-safe student shell and pet surfaces", async () => {
+    document.documentElement.classList.add("dark");
+
+    renderDashboard();
+
+    expect(await screen.findByRole("heading", { name: /practica: la noticia/i })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: /navegación estudiante/i })).toHaveClass(
+      "student-portal-sidebar",
+    );
+    expect(document.querySelector(".student-portal-profile")).toBeInTheDocument();
+    expect(document.querySelectorAll(".kobi-pet-surface").length).toBeGreaterThan(0);
+    expect(document.querySelectorAll(".kobi-mascot").length).toBeGreaterThan(0);
+
+    document.documentElement.classList.remove("dark");
+  });
+
   it("navigates between student assignments and completion-backed progress", async () => {
     const user = userEvent.setup();
 

@@ -16,7 +16,12 @@ const bodyPoints = Array.from({ length: SPIKES * 2 }, (_, index) => {
 
 export function KobiMascot({ className }: { className?: string }) {
   return (
-    <svg aria-hidden="true" className={className} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <svg
+      aria-hidden="true"
+      className={["kobi-mascot", className].filter(Boolean).join(" ")}
+      viewBox="0 0 100 100"
+      xmlns="http://www.w3.org/2000/svg"
+    >
       <polygon
         fill="currentColor"
         points={bodyPoints}
@@ -33,7 +38,7 @@ export function KobiMascot({ className }: { className?: string }) {
 export function PortalBrand({ portalLabel }: { portalLabel: string }) {
   return (
     <div className="flex items-center gap-3">
-      <div className="teacher-brand-mark flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] bg-[#fce7db] shadow-md shadow-orange-200/40">
+      <div className="kobi-pet-surface teacher-brand-mark flex h-12 w-12 shrink-0 items-center justify-center rounded-[18px] bg-[#fce7db] shadow-md shadow-orange-200/40">
         <KobiMascot className="teacher-brand-mascot h-8 w-8 text-slate-900" />
       </div>
       <div className="min-w-0">

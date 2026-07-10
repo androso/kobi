@@ -286,7 +286,7 @@ export function StudentDashboard() {
                       <p className="text-[10px] font-bold uppercase tracking-wider text-blue-200">Código de clase</p>
                       <p className="mt-1 font-mono text-xl font-black tracking-[0.16em]">{classCode}</p>
                     </div>
-                    <div className="flex h-20 w-20 items-center justify-center rounded-[26px] bg-[#fce7db] text-slate-900 shadow-lg shadow-blue-950/20 sm:h-24 sm:w-24">
+                    <div className="kobi-pet-surface flex h-20 w-20 items-center justify-center rounded-[26px] bg-[#fce7db] text-slate-900 shadow-lg shadow-blue-950/20 sm:h-24 sm:w-24">
                       <KobiMascot className="h-14 w-14 sm:h-16 sm:w-16" />
                     </div>
                   </div>
@@ -308,7 +308,9 @@ export function StudentDashboard() {
                   <div className="min-w-0">
                     {loadingAssignment && deliveryStore && !assignment ? (
                       <PortalCard className="p-10 text-center">
-                        <KobiMascot className="mx-auto h-16 w-16 text-slate-900" />
+                        <div className="kobi-pet-surface mx-auto flex h-20 w-20 items-center justify-center rounded-[26px] bg-[#fce7db]">
+                          <KobiMascot className="h-14 w-14 text-slate-900" />
+                        </div>
                         <h2 className="mt-4 text-xl font-bold text-slate-900">Buscando actividad...</h2>
                         <p className="mt-2 text-sm text-slate-500">Kobi revisa si tu docente ya publicó una actividad.</p>
                       </PortalCard>
@@ -357,7 +359,7 @@ export function StudentDashboard() {
                       </PortalCard>
                     ) : (
                       <PortalCard className="border-dashed p-10 text-center">
-                        <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[26px] bg-[#fce7db]">
+                        <div className="kobi-pet-surface mx-auto flex h-20 w-20 items-center justify-center rounded-[26px] bg-[#fce7db]">
                           <KobiMascot className="h-14 w-14 text-slate-900" />
                         </div>
                         <h2 className="mt-5 text-xl font-bold text-slate-900">Todo tranquilo por ahora</h2>

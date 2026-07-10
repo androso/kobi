@@ -82,7 +82,7 @@ export function StudentHelpModal({ open, onClose, classCode }: StudentHelpModalP
               </button>
             </div>
             <div className="mt-4 flex items-center gap-3">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fce7db]">
+              <div className="kobi-pet-surface flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fce7db]">
                 <KobiMascot className="h-8 w-8 text-slate-900" />
               </div>
               <p className="text-sm font-semibold leading-5 text-blue-100">Kobi te acompaña a encontrar y completar tu actividad.</p>
