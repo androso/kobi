@@ -2,11 +2,8 @@ import {
   LayoutGrid,
   TrendingUp,
   FolderOpen,
-  BarChart3,
-  History,
   Plus,
   CircleHelp,
-  BookOpen,
   LogOut,
   type LucideIcon
 } from "lucide-react";
@@ -23,8 +20,6 @@ const teacherNavItems: Array<{ label: string; icon: LucideIcon; path: string }> 
   { label: "Panel", icon: LayoutGrid, path: "/teacher" },
   { label: "Monitoreo en vivo", icon: TrendingUp, path: "/teacher/monitor" },
   { label: "Clases anteriores", icon: FolderOpen, path: "/teacher/repositories" },
-  { label: "Analíticas", icon: BarChart3, path: "/teacher/analytics" },
-  { label: "Actividades recientes", icon: History, path: "/teacher/recent" },
 ];
 
 function SidebarAction({
@@ -64,7 +59,6 @@ export function Sidebar({ onOpenCreateClass, onOpenHelp }: SidebarProps) {
   function getHelpRoute() {
     if (location.pathname === "/teacher/monitor") return "/teacher/ayuda?from=monitor";
     if (location.pathname === "/teacher/repositories") return "/teacher/ayuda?from=repositories";
-    if (location.pathname === "/teacher/analytics") return "/teacher/ayuda?from=analytics";
     return "/teacher/ayuda?from=dashboard";
   }
 
@@ -163,7 +157,6 @@ export function Sidebar({ onOpenCreateClass, onOpenHelp }: SidebarProps) {
               navigate(getHelpRoute());
             }}
           />
-          <SidebarAction icon={BookOpen} label="Soporte" />
           <button
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-950 transition"
             onClick={handleLogout}

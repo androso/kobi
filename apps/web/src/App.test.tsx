@@ -42,6 +42,7 @@ describe("App", () => {
     });
     useClassStore.getState().resetClasses();
     useClassStore.setState({
+      sessions: [],
       loadTeacherClasses: async () => {},
       addClass: async (newClass) => {
         const createdClass = {
@@ -77,6 +78,7 @@ describe("App", () => {
     expect(screen.getByRole("heading", { name: /iniciar sesi[oó]n/i })).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/correo electr[oó]nico/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /entrar/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /olvidaste tu contrase/i })).not.toBeInTheDocument();
   });
 
   it("keeps focused login fields on a dark surface in dark mode", async () => {
@@ -265,9 +267,7 @@ describe("App", () => {
     expect(await screen.findByText(/no tienes actividades asignadas todav/i)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /vocabulario en contexto: la noticia/i })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("link", { name: /progreso/i }));
-    expect(screen.getByRole("heading", { level: 1, name: /progreso/i })).toBeInTheDocument();
-    expect(screen.getByText(/aún no has respondido actividades/i)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /progreso/i })).not.toBeInTheDocument();
   });
 
   it("shows an error when a student uses an invalid classroom code", async () => {
@@ -364,6 +364,39 @@ describe("App", () => {
     expect(within(dialog as HTMLElement).getByRole("button", { name: /copiar invitacion/i })).toBeInTheDocument();
   });
 
+  it("does not expose unwired teacher navigation or fabricated dashboard summaries", async () => {
+    const user = userEvent.setup();
+    useClassStore.setState({
+      sessions: [
+        {
+          id: "session-real",
+          classId: "class-1",
+          subject: "CIENCIAS",
+          subjectColor: "text-emerald-700",
+          dotColor: "bg-emerald-500",
+          title: "Ciencia 4to - Sección A",
+          focus: "Ecosistemas",
+          date: "10 de julio de 2026",
+          duration: "15:00",
+          summaryPoints: ["Resumen real"],
+          nextSteps: [],
+          transcript: [],
+        },
+      ],
+    });
+
+    renderApp();
+    await user.type(screen.getByPlaceholderText(/correo electr[oó]nico/i), "maestra@kobi.test");
+    await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "securepass");
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
+
+    expect(screen.queryByRole("button", { name: /^anal[ií]ticas$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /actividades recientes/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^soporte$/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/participación semanal subió/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/próxima sesión/i)).not.toBeInTheDocument();
+  });
+
   it("navigates to the previous classes section and opens the summary modal", async () => {
     const user = userEvent.setup();
     render(
@@ -385,6 +418,9 @@ describe("App", () => {
     // Verify we are on the Historial de Clases page
     expect(screen.getByText("Historial de Sesiones")).toBeInTheDocument();
     expect(screen.getAllByText("Ciencias 4to Grado - Sección A")[0]).toBeInTheDocument();
+    expect(screen.queryByText(/participación promedio/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("64%")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /filtrar por fecha/i })).not.toBeInTheDocument();
 
     // Click on "Ver detalles" button of the first session
     const detailsButtons = screen.getAllByRole("button", { name: /ver detalles/i });
@@ -394,6 +430,7 @@ describe("App", () => {
     expect(screen.getByText("Detalles de la Clase")).toBeInTheDocument();
     expect(screen.getByText(/Se discutieron los niveles tróficos/i)).toBeInTheDocument();
     expect(screen.getAllByText("Carlos M.:")[0]).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /reproducir/i })).not.toBeInTheDocument();
 
     // Close modal
     await user.click(screen.getByRole("button", { name: /entendido/i }));

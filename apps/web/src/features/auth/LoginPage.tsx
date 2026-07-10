@@ -380,9 +380,6 @@ export function LoginPage() {
                 <div className="mt-6 flex flex-col gap-3">
                   {teacherAuthMode === "login" ? (
                     <>
-                      <button className="self-start text-sm font-medium text-[#1077e5] hover:text-[#005cb3] transition-colors" type="button">
-                        ¿Olvidaste tu contraseña?
-                      </button>
                       <p className="text-sm text-slate-500">
                         ¿No tienes una cuenta?{" "}
                         <button

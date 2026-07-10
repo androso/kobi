@@ -10,7 +10,6 @@ export interface StudentSidebarNavItem {
 interface StudentSidebarProps {
   studentName: string;
   classCode: string;
-  progressLabel: string;
   onLogout: () => void;
   onHelp: () => void;
   className?: string;
@@ -20,7 +19,6 @@ interface StudentSidebarProps {
 export function StudentSidebar({
   studentName,
   classCode,
-  progressLabel,
   onLogout,
   onHelp,
   className,
@@ -42,7 +40,6 @@ export function StudentSidebar({
         </div>
         <h2 className="sr-only">{studentName}</h2>
         <p className="sr-only">Código de clase {classCode}</p>
-        <p className="sr-only">{progressLabel}</p>
       </div>
 
       <nav className="mt-16 flex w-full flex-1 flex-col items-center gap-10">
