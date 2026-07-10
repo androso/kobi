@@ -78,6 +78,45 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /entrar/i })).toBeInTheDocument();
   });
 
+  it("keeps focused login fields on a dark surface in dark mode", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    const passwordInput = screen.getByPlaceholderText(/^contrase[nñ]a$/i);
+    const inputShell = passwordInput.parentElement;
+
+    expect(inputShell).toHaveClass(
+      "dark:focus-within:border-sky-400",
+      "dark:focus-within:bg-slate-800",
+      "dark:focus-within:ring-sky-400/25",
+    );
+
+    await user.click(passwordInput);
+    expect(passwordInput).toHaveFocus();
+  });
+
+  it("shows empty login fields as accessible errors", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
+
+    const emailInput = screen.getByPlaceholderText(/correo electr[oó]nico/i);
+    const passwordInput = screen.getByPlaceholderText(/^contrase[nñ]a$/i);
+    const emailError = screen.getByText(/ingresa tu correo electr[oó]nico/i);
+    const passwordError = screen.getByText(/ingresa tu contrase[nñ]a/i);
+
+    expect(emailInput).toHaveAttribute("aria-invalid", "true");
+    expect(emailInput).toHaveAttribute("aria-describedby", "login-email-error");
+    expect(emailInput.parentElement).toHaveClass("border-red-500", "dark:border-red-400");
+    expect(emailError).toHaveClass("text-red-600", "dark:text-red-300");
+
+    expect(passwordInput).toHaveAttribute("aria-invalid", "true");
+    expect(passwordInput).toHaveAttribute("aria-describedby", "login-password-error");
+    expect(passwordInput.parentElement).toHaveClass("border-red-500", "dark:border-red-400");
+    expect(passwordError).toHaveClass("text-red-600", "dark:text-red-300");
+  });
+
   it("switches to the student join form", async () => {
     const user = userEvent.setup();
 
@@ -112,6 +151,21 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { name: /bienvenido\(a\) de nuevo, sra\. henderson/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /tus clases/i })).toBeInTheDocument();
+  });
+
+  it("preserves the teacher brand mark colors in dark mode", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.type(screen.getByPlaceholderText(/correo electr[oó]nico/i), "maestra@kobi.test");
+    await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "securepass");
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
+
+    const brandHeading = screen.getByRole("heading", { name: "Kobi Labs" });
+    const brandMark = brandHeading.parentElement?.previousElementSibling;
+
+    expect(brandMark).toHaveClass("teacher-brand-mark");
+    expect(brandMark?.querySelector("svg")).toHaveClass("teacher-brand-mascot");
   });
 
   it("signs up a teacher and opens the dashboard when Supabase returns a session", async () => {
