@@ -1,8 +1,11 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { THEME_STORAGE_KEY } from "../lib/theme";
 import { ThemeToggle } from "./ThemeToggle";
+
+const themeStyles = readFileSync(`${process.cwd()}/src/index.css`, "utf8");
 
 function setSystemTheme(prefersDark: boolean) {
   Object.defineProperty(window, "matchMedia", {
@@ -55,5 +58,11 @@ describe("ThemeToggle", () => {
     expect(document.documentElement.style.colorScheme).toBe("dark");
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe("dark");
     expect(screen.getByRole("button", { name: "Cambiar a modo claro" })).toBeInTheDocument();
+  });
+
+  it("keeps neutral hover text readable in dark mode", () => {
+    expect(themeStyles).toContain('.dark [class~="hover:text-slate-900"]:hover');
+    expect(themeStyles).toContain('.dark [class~="hover:text-slate-950"]:hover');
+    expect(themeStyles).toContain('color: hsl(var(--theme-text));');
   });
 });

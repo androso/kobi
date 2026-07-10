@@ -301,6 +301,29 @@
     background-color: hsl(var(--theme-control-hover));
   }
 
+  .dark [class~="hover:text-slate-600"]:hover,
+  .dark [class~="hover:text-slate-700"]:hover,
+  .dark [class~="hover:text-slate-800"]:hover,
+  .dark [class~="hover:text-slate-900"]:hover,
+  .dark [class~="hover:text-slate-950"]:hover,
+  .dark [class~="hover:text-[#5b6270]"]:hover {
+    color: hsl(var(--theme-text));
+  }
+
+  .dark [class~="hover:text-[#004ac6]"]:hover,
+  .dark [class~="hover:text-[#005cb3]"]:hover,
+  .dark .group:hover [class~="group-hover:text-[#004ac6]"] {
+    color: hsl(210 100% 72%);
+  }
+
+  .dark [class~="hover:text-violet-700"]:hover {
+    color: hsl(255 90% 78%);
+  }
+
+  .dark [class~="hover:text-[#b91c1c]"]:hover {
+    color: hsl(0 90% 78%);
+  }
+
   .dark .teacher-brand-mark {
     background-color: #fce7db;
     box-shadow: 0 6px 18px rgb(251 146 60 / 20%);
