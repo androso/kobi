@@ -198,6 +198,64 @@ describe("artifact delivery bridge", () => {
     expect(query.eq).toHaveBeenCalledWith("student_id", "student-1");
   });
 
+  it("uses the student delivery RPC when dismissing with a student token", async () => {
+    const rpc = vi.fn(async () => ({ error: null }));
+    const from = vi.fn();
+    const deliveryStore = new SupabaseActivityDeliveryStore(
+      { from, rpc } as never,
+      { studentId: "student-1", accessToken: "student-token-1" },
+    );
+
+    await deliveryStore.dismissAssignmentForStudent({
+      assignmentId: "assignment-1",
+      studentId: "student-1",
+      dismissedAt: "2026-07-05T08:00:00.000Z",
+    });
+
+    expect(rpc).toHaveBeenCalledWith("dismiss_assignment_for_student", {
+      input_assignment_id: "assignment-1",
+      input_student_id: "student-1",
+      input_access_token: "student-token-1",
+      input_dismissed_at: "2026-07-05T08:00:00.000Z",
+    });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("loads student assignments through the authorized delivery RPC", async () => {
+    const maybeSingle = vi.fn(async () => ({
+      data: {
+        id: "assignment-1",
+        session_id: "session-1",
+        activity_id: "activity-core",
+        student_id: "student-1",
+        variant: "core",
+        status: "assigned",
+        manifest: manifest("core"),
+        bundle_html: "<!doctype html><html><body>Actividad</body></html>",
+      },
+      error: null,
+    }));
+    const rpc = vi.fn(() => ({ maybeSingle }));
+    const from = vi.fn();
+    const deliveryStore = new SupabaseActivityDeliveryStore(
+      { from, rpc } as never,
+      { studentId: "student-1", accessToken: "student-token-1" },
+    );
+
+    const assignment = await deliveryStore.loadLatestAssignmentForStudent("student-1");
+
+    expect(rpc).toHaveBeenCalledWith("load_latest_assignment_for_student", {
+      input_student_id: "student-1",
+      input_access_token: "student-token-1",
+    });
+    expect(assignment).toMatchObject({
+      id: "assignment-1",
+      studentId: "student-1",
+      bundleHtml: expect.stringContaining("Actividad"),
+    });
+    expect(from).not.toHaveBeenCalled();
+  });
+
   it("authorizes iframe telemetry and stamps the parent assignment id", async () => {
     const fakeStore = store();
     const assignment: StudentAssignment = {

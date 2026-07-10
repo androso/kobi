@@ -56,6 +56,7 @@ describe("StudentDashboard", () => {
         role: "student",
         studentName: "Ana",
         studentId: "student-1",
+        studentAccessToken: "student-token-1",
         classId: "class-1",
         className: "Ciencia 4to - Seccion A",
         joinCode: "KOBI7",

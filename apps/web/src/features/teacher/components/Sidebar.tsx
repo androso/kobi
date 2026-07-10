@@ -67,8 +67,8 @@ export function Sidebar({ onOpenCreateClass, onOpenHelp }: SidebarProps) {
       <div className="space-y-8">
         {/* Header Branding */}
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-[18px] bg-[#fce7db] shadow-md shadow-orange-200/40">
-            <KobiMascot className="h-8 w-8 text-slate-900" />
+          <div className="teacher-brand-mark flex h-12 w-12 items-center justify-center rounded-[18px] bg-[#fce7db] shadow-md shadow-orange-200/40">
+            <KobiMascot className="teacher-brand-mascot h-8 w-8 text-slate-900" />
           </div>
           <div className="flex flex-col justify-center">
             <h1 className="text-[17px] font-bold text-slate-950 leading-tight">Kobi Labs</h1>

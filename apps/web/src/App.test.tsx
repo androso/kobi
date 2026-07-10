@@ -28,6 +28,7 @@ describe("App", () => {
             role: "student",
             studentName,
             studentId: "student-1",
+            studentAccessToken: "student-token-1",
             classId: "class-1",
             className: "Ciencia 4to - Sección A",
             joinCode: "KOBI7",
@@ -80,6 +81,45 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: /olvidaste tu contrase/i })).not.toBeInTheDocument();
   });
 
+  it("keeps focused login fields on a dark surface in dark mode", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    const passwordInput = screen.getByPlaceholderText(/^contrase[nñ]a$/i);
+    const inputShell = passwordInput.parentElement;
+
+    expect(inputShell).toHaveClass(
+      "dark:focus-within:border-sky-400",
+      "dark:focus-within:bg-slate-800",
+      "dark:focus-within:ring-sky-400/25",
+    );
+
+    await user.click(passwordInput);
+    expect(passwordInput).toHaveFocus();
+  });
+
+  it("shows empty login fields as accessible errors", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
+
+    const emailInput = screen.getByPlaceholderText(/correo electr[oó]nico/i);
+    const passwordInput = screen.getByPlaceholderText(/^contrase[nñ]a$/i);
+    const emailError = screen.getByText(/ingresa tu correo electr[oó]nico/i);
+    const passwordError = screen.getByText(/ingresa tu contrase[nñ]a/i);
+
+    expect(emailInput).toHaveAttribute("aria-invalid", "true");
+    expect(emailInput).toHaveAttribute("aria-describedby", "login-email-error");
+    expect(emailInput.parentElement).toHaveClass("border-red-500", "dark:border-red-400");
+    expect(emailError).toHaveClass("text-red-600", "dark:text-red-300");
+
+    expect(passwordInput).toHaveAttribute("aria-invalid", "true");
+    expect(passwordInput).toHaveAttribute("aria-describedby", "login-password-error");
+    expect(passwordInput.parentElement).toHaveClass("border-red-500", "dark:border-red-400");
+    expect(passwordError).toHaveClass("text-red-600", "dark:text-red-300");
+  });
+
   it("switches to the student join form", async () => {
     const user = userEvent.setup();
 
@@ -114,6 +154,76 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { name: /bienvenido\(a\) de nuevo, sra\. henderson/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /tus clases/i })).toBeInTheDocument();
+  });
+
+  it("preserves the teacher brand mark colors in dark mode", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.type(screen.getByPlaceholderText(/correo electr[oó]nico/i), "maestra@kobi.test");
+    await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "securepass");
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
+
+    const brandHeading = screen.getByRole("heading", { name: "Kobi Labs" });
+    const brandMark = brandHeading.parentElement?.previousElementSibling;
+
+    expect(brandMark).toHaveClass("teacher-brand-mark");
+    expect(brandMark?.querySelector("svg")).toHaveClass("teacher-brand-mascot");
+  });
+
+  it("switches store-backed classes between grid and list layouts", async () => {
+    const user = userEvent.setup();
+    useClassStore.setState({
+      classes: [
+        {
+          id: "class-store-1",
+          title: "Lenguaje 7mo",
+          joinCode: "LENG7",
+          focus: "Comprensión lectora",
+          students: "18 estudiantes activos",
+          studentCount: 18,
+          topics: ["Ideas principales"],
+          accent: "text-violet-700",
+          tone: "from-violet-600 to-purple-500",
+          icon: "book",
+        },
+        {
+          id: "class-store-2",
+          title: "Ciencias 6to",
+          joinCode: "CIEN6",
+          focus: "El sistema solar",
+          students: "20 estudiantes activos",
+          studentCount: 20,
+          topics: ["Planetas"],
+          accent: "text-emerald-700",
+          tone: "from-emerald-600 to-teal-500",
+          icon: "leaf",
+        },
+      ],
+    });
+
+    renderApp();
+    await user.type(screen.getByPlaceholderText(/correo electr[oó]nico/i), "maestra@kobi.test");
+    await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "securepass");
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
+
+    const gridButton = screen.getByRole("button", { name: /cuadrícula/i });
+    const listButton = screen.getByRole("button", { name: /lista/i });
+    const classList = screen.getByRole("list", { name: /clases/i });
+
+    expect(gridButton).toHaveAttribute("aria-pressed", "true");
+    expect(listButton).toHaveAttribute("aria-pressed", "false");
+    expect(classList).toHaveClass("md:grid-cols-2", "lg:grid-cols-3");
+    expect(within(classList).getByText("Lenguaje 7mo")).toBeInTheDocument();
+    expect(within(classList).getByText("Ciencias 6to")).toBeInTheDocument();
+
+    await user.click(listButton);
+
+    expect(gridButton).toHaveAttribute("aria-pressed", "false");
+    expect(listButton).toHaveAttribute("aria-pressed", "true");
+    expect(classList).toHaveClass("grid-cols-1");
+    expect(classList).not.toHaveClass("md:grid-cols-2", "lg:grid-cols-3");
+    expect(within(classList).getAllByRole("listitem")[0]).toHaveClass("md:grid-cols-[16rem_minmax(0,1fr)]");
   });
 
   it("signs up a teacher and opens the dashboard when Supabase returns a session", async () => {

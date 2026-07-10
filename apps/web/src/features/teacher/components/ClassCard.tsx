@@ -83,7 +83,7 @@ export function ClassCard({ item, viewMode, index = 0, onShareCode }: ClassCardP
     index >= 3 ? "animation-delay-300" : "";
 
   return (
-    <article onClick={handleOpenMonitor} className={`cursor-pointer overflow-hidden rounded-[28px] border border-slate-200/60 bg-white shadow-sm hover:shadow-xl hover:shadow-slate-100/50 hover:-translate-y-1 transition-all duration-300 flex flex-col group animate-fade-in-up ${delayClass} ${isList ? "grid md:grid-cols-[16rem_minmax(0,1fr)]" : ""}`}>
+    <article onClick={handleOpenMonitor} role="listitem" className={`cursor-pointer overflow-hidden rounded-[28px] border border-slate-200/60 bg-white shadow-sm hover:shadow-xl hover:shadow-slate-100/50 hover:-translate-y-1 transition-all duration-300 flex flex-col group animate-fade-in-up ${delayClass} ${isList ? "grid md:grid-cols-[16rem_minmax(0,1fr)]" : ""}`}>
       
       {/* Banner Area */}
       <div className={`relative overflow-hidden shrink-0 ${isList ? "min-h-48" : "h-44"}`}>
