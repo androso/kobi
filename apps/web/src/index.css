@@ -66,37 +66,51 @@
 }
 
 @layer utilities {
-  .theme-toggle {
+  .theme-picker {
     align-items: center;
     background: hsl(var(--theme-control));
     border: 1px solid hsl(var(--theme-border));
     border-radius: 9999px;
     box-shadow: 0 8px 24px hsl(var(--theme-shadow));
     color: hsl(var(--theme-text));
-    display: inline-flex;
-    font-size: 0.75rem;
-    font-weight: 700;
-    gap: 0.45rem;
-    min-height: 2.75rem;
-    padding: 0.65rem 0.85rem;
+    display: flex;
+    gap: 0.2rem;
+    padding: 0.25rem;
     position: fixed;
     right: 1rem;
     top: 1rem;
-    transition: background-color 160ms ease, border-color 160ms ease, transform 160ms ease;
     z-index: 100;
   }
 
-  .theme-toggle:hover {
+  .theme-option {
+    align-items: center;
+    border-radius: 9999px;
+    color: hsl(var(--theme-text-muted));
+    display: inline-flex;
+    font-size: 0.75rem;
+    font-weight: 700;
+    gap: 0.4rem;
+    min-height: 2.25rem;
+    padding: 0.5rem 0.7rem;
+    transition: background-color 160ms ease, color 160ms ease;
+  }
+
+  .theme-option:hover {
     background: hsl(var(--theme-control-hover));
-    transform: translateY(-1px);
+    color: hsl(var(--theme-text));
   }
 
-  .theme-toggle:focus-visible {
+  .theme-option[aria-pressed="true"] {
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+  }
+
+  .theme-option:focus-visible {
     outline: 3px solid hsl(var(--ring));
-    outline-offset: 3px;
+    outline-offset: 2px;
   }
 
-  .theme-toggle svg {
+  .theme-option svg {
     height: 1rem;
     width: 1rem;
   }
@@ -334,7 +348,7 @@
   }
 
   @media (max-width: 639px) {
-    .theme-toggle span {
+    .theme-option span {
       position: absolute;
       width: 1px;
       height: 1px;

@@ -7,14 +7,19 @@
       (() => {
         try {
           const savedTheme = localStorage.getItem("kobi_theme");
-          const theme = savedTheme === "light" || savedTheme === "dark"
+          const preference = savedTheme === "light" || savedTheme === "dark" || savedTheme === "system"
             ? savedTheme
-            : matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+            : "system";
+          const theme = preference === "system"
+            ? matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+            : preference;
           document.documentElement.classList.toggle("dark", theme === "dark");
           document.documentElement.dataset.theme = theme;
+          document.documentElement.dataset.themePreference = preference;
           document.documentElement.style.colorScheme = theme;
         } catch {
           document.documentElement.dataset.theme = "light";
+          document.documentElement.dataset.themePreference = "system";
           document.documentElement.style.colorScheme = "light";
         }
       })();
