@@ -157,7 +157,7 @@ describe("App", () => {
 
     await user.click(screen.getByRole("link", { name: /progreso/i }));
     expect(screen.getByRole("heading", { level: 1, name: /progreso/i })).toBeInTheDocument();
-    expect(screen.getByText(/aún no has respondido actividades/i)).toBeInTheDocument();
+    expect(screen.getByText(/aún no hay actividades para mostrar/i)).toBeInTheDocument();
   });
 
   it("shows an error when a student uses an invalid classroom code", async () => {

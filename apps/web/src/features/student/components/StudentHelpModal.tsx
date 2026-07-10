@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { X } from "lucide-react";
+import { KobiMascot } from "../../../components/portal/PortalChrome";
 
 interface StudentHelpModalProps {
   open: boolean;
@@ -7,20 +8,18 @@ interface StudentHelpModalProps {
   classCode: string;
 }
 
-const ACCENT = "#5b5bd6";
-
 const tips = [
   {
     title: "Abre una actividad",
-    body: "Elige una lección de la lista de la izquierda para ver su contenido.",
+    body: "Elige la actividad que publicó tu docente para abrirla de forma segura.",
   },
   {
-    title: "Responde el quiz",
-    body: "Selecciona una respuesta, avanza con Siguiente y entrega al final.",
+    title: "Trabaja a tu ritmo",
+    body: "La actividad guarda los intentos y la entrega desde tu cuenta de estudiante.",
   },
   {
     title: "Revisa tu progreso",
-    body: "En Progreso ves tu precisión, dominio y actividades completadas.",
+    body: "En Progreso ves únicamente las actividades que recibiste y completaste.",
   },
 ];
 
@@ -66,11 +65,11 @@ export function StudentHelpModal({ open, onClose, classCode }: StudentHelpModalP
         <div
           aria-labelledby="student-help-title"
           aria-modal="true"
-          className="kobi-letter relative z-10 overflow-hidden rounded-[24px] bg-gradient-to-b from-white to-[#eef0fb] shadow-2xl"
+          className="kobi-letter relative z-10 overflow-hidden rounded-[28px] border border-slate-100 bg-white shadow-2xl"
           role="dialog"
         >
           {/* Document header tab */}
-          <div className="px-6 pt-5 pb-5" style={{ backgroundColor: ACCENT }}>
+          <div className="bg-[#004ac6] px-6 pb-5 pt-5">
             <div className="flex items-start justify-between">
               <p className="text-xs font-semibold uppercase tracking-wide text-white/80">Centro de ayuda</p>
               <button
@@ -82,26 +81,27 @@ export function StudentHelpModal({ open, onClose, classCode }: StudentHelpModalP
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="mt-3 flex gap-2">
-              <span className="h-1.5 w-10 rounded-full bg-white/35" />
-              <span className="h-1.5 w-10 rounded-full bg-white/35" />
-              <span className="h-1.5 w-10 rounded-full bg-white/35" />
+            <div className="mt-4 flex items-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#fce7db]">
+                <KobiMascot className="h-8 w-8 text-slate-900" />
+              </div>
+              <p className="text-sm font-semibold leading-5 text-blue-100">Kobi te acompaña a encontrar y completar tu actividad.</p>
             </div>
           </div>
 
           {/* Document body */}
           <div className="px-6 pb-16 pt-5">
-            <h2 className="font-serif text-2xl font-bold leading-tight text-[#1f2340]" id="student-help-title">
+            <h2 className="text-2xl font-bold leading-tight text-slate-950" id="student-help-title">
               Cómo usar tu panel
             </h2>
 
             <ul className="mt-4 space-y-3">
               {tips.map((tip) => (
                 <li className="flex items-start gap-3" key={tip.title}>
-                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: ACCENT }} />
+                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-[#004ac6]" />
                   <div>
-                    <p className="text-sm font-semibold text-[#2b2b2b]">{tip.title}</p>
-                    <p className="text-xs text-[#8a8f98]">{tip.body}</p>
+                    <p className="text-sm font-semibold text-slate-900">{tip.title}</p>
+                    <p className="text-xs leading-5 text-slate-500">{tip.body}</p>
                   </div>
                 </li>
               ))}
@@ -111,8 +111,7 @@ export function StudentHelpModal({ open, onClose, classCode }: StudentHelpModalP
 
         {/* Envelope pocket the letter emerges from */}
         <div
-          className="kobi-pocket absolute inset-x-4 bottom-0 z-20 flex h-14 items-center justify-between rounded-2xl px-5 shadow-lg"
-          style={{ backgroundColor: ACCENT }}
+          className="kobi-pocket absolute inset-x-4 bottom-0 z-20 flex h-14 items-center justify-between rounded-2xl bg-[#004ac6] px-5 shadow-lg"
         >
           <span className="text-xs font-medium uppercase tracking-wide text-white/70">Código de clase</span>
           <span className="text-sm font-bold text-white">{classCode}</span>

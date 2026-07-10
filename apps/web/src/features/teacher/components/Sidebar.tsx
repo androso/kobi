@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore, useClassStore } from "../../../lib/store";
-import { KobiMascot } from "./KobiMascot";
+import { PortalAction, PortalBrand, PortalNavButton } from "../../../components/portal/PortalChrome";
 
 interface SidebarProps {
   onOpenCreateClass?: () => void;
@@ -26,27 +26,6 @@ const teacherNavItems: Array<{ label: string; icon: LucideIcon; path: string }> 
   { label: "Analíticas", icon: BarChart3, path: "/teacher/analytics" },
   { label: "Actividades recientes", icon: History, path: "/teacher/recent" },
 ];
-
-function SidebarAction({
-  icon: Icon,
-  label,
-  onClick,
-}: {
-  icon: LucideIcon;
-  label: string;
-  onClick?: () => void;
-}) {
-  return (
-    <button
-      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
-      onClick={onClick}
-      type="button"
-    >
-      <Icon className="h-5 w-5 text-slate-500" />
-      <span>{label}</span>
-    </button>
-  );
-}
 
 export function Sidebar({ onOpenCreateClass, onOpenHelp }: SidebarProps) {
   const navigate = useNavigate();
@@ -71,16 +50,7 @@ export function Sidebar({ onOpenCreateClass, onOpenHelp }: SidebarProps) {
   return (
     <aside className="flex flex-col justify-between border-b border-slate-100 bg-[#f8f9fc] p-6 lg:border-b-0 lg:border-r lg:border-slate-100 w-[240px] shrink-0 h-screen select-none">
       <div className="space-y-8">
-        {/* Header Branding */}
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-[18px] bg-[#fce7db] shadow-md shadow-orange-200/40">
-            <KobiMascot className="h-8 w-8 text-slate-900" />
-          </div>
-          <div className="flex flex-col justify-center">
-            <h1 className="text-[17px] font-bold text-slate-950 leading-tight">Kobi Labs</h1>
-            <p className="text-[10px] font-bold text-slate-400 tracking-wider uppercase mt-0.5">PORTAL DOCENTE</p>
-          </div>
-        </div>
+        <PortalBrand portalLabel="Portal docente" />
 
         {/* Navigation */}
         <nav className="space-y-1">
@@ -118,19 +88,13 @@ export function Sidebar({ onOpenCreateClass, onOpenHelp }: SidebarProps) {
             }
 
             return (
-              <button
-                className={`flex w-full items-center gap-3.5 px-4 py-3 rounded-xl text-left text-sm font-semibold transition-all duration-200 ${
-                  active
-                    ? "bg-[#e9f0fe] text-[#004ac6]"
-                    : "text-slate-600 hover:bg-slate-100/50 hover:text-slate-900"
-                }`}
+              <PortalNavButton
+                active={active}
+                icon={Icon}
                 key={item.label}
+                label={item.label}
                 onClick={() => navigate(item.path)}
-                type="button"
-              >
-                <Icon className={`h-5 w-5 shrink-0 ${active ? "text-[#004ac6]" : "text-slate-500"}`} />
-                <span>{item.label}</span>
-              </button>
+              />
             );
           })}
         </nav>
@@ -151,7 +115,7 @@ export function Sidebar({ onOpenCreateClass, onOpenHelp }: SidebarProps) {
 
         {/* Footer Actions */}
         <div className="space-y-1">
-          <SidebarAction
+          <PortalAction
             icon={CircleHelp}
             label="Ayuda"
             onClick={() => {
@@ -163,7 +127,7 @@ export function Sidebar({ onOpenCreateClass, onOpenHelp }: SidebarProps) {
               navigate(getHelpRoute());
             }}
           />
-          <SidebarAction icon={BookOpen} label="Soporte" />
+          <PortalAction icon={BookOpen} label="Soporte" />
           <button
             className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-500 hover:bg-slate-50 hover:text-slate-950 transition"
             onClick={handleLogout}
