@@ -533,6 +533,7 @@ export const useClassStore = create<ClassState>((set) => ({
       classes: defaultClasses,
       loadingClasses: false,
       classError: null,
+      monitoringClassId: null,
       artefactos: [],
       submissions: [],
     }),

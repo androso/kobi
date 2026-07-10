@@ -254,6 +254,25 @@ describe("App", () => {
     expect(within(dialog as HTMLElement).getByRole("button", { name: /copiar invitacion/i })).toBeInTheDocument();
   });
 
+  it("keeps live monitoring scoped to the monitor route after opening a class", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+    await user.type(screen.getByPlaceholderText(/correo electr[oó]nico/i), "maestra@kobi.test");
+    await user.type(screen.getByPlaceholderText(/^contrase[nñ]a$/i), "securepass");
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
+
+    await user.click(screen.getByRole("heading", { name: "Ciencia 4to - Sección A" }));
+
+    expect(screen.getByRole("heading", { name: "Ciencia 4to - Sección A" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /monitoreo en vivo.*ciencia 4to - sección a/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /clases anteriores/i }));
+
+    expect(screen.getByText("Historial de Sesiones")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /monitoreo en vivo/i })).not.toBeInTheDocument();
+  });
+
   it("navigates to the previous classes section and opens the summary modal", async () => {
     const user = userEvent.setup();
     render(

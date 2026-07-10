@@ -89,9 +89,9 @@ export function Sidebar({ onOpenCreateClass, onOpenHelp }: SidebarProps) {
             const active = location.pathname === item.path;
 
             // The monitor item only exists while a class is being monitored,
-            // rendered as the live card.
+            // rendered as the live card on the explicit monitor route.
             if (item.path === "/teacher/monitor") {
-              if (!monitoringClass) return null;
+              if (!monitoringClass || !active) return null;
               return (
                 <button
                   key={item.label}
