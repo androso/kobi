@@ -72,6 +72,53 @@ describe("StudentDashboard", () => {
     );
   }
 
+  it("renders the shared student shell and keeps verified iframe delivery locked down", async () => {
+    renderDashboard();
+
+    expect(await screen.findByRole("heading", { name: /practica: la noticia/i })).toBeInTheDocument();
+    expect(screen.getAllByText("Kobi Labs").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/portal estudiantil/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/clase kobi7/i).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /nueva clase/i })).not.toBeInTheDocument();
+
+    const activityFrame = screen.getByTitle("Practica: La noticia");
+    expect(activityFrame).toHaveAttribute("sandbox", "allow-scripts");
+    expect(activityFrame).toHaveAttribute("referrerpolicy", "no-referrer");
+  });
+
+  it("uses dark-mode-safe student shell and pet surfaces", async () => {
+    document.documentElement.classList.add("dark");
+
+    renderDashboard();
+
+    expect(await screen.findByRole("heading", { name: /practica: la noticia/i })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: /navegación estudiante/i })).toHaveClass(
+      "student-portal-sidebar",
+    );
+    expect(document.querySelector(".student-portal-profile")).toBeInTheDocument();
+    expect(document.querySelectorAll(".kobi-pet-surface").length).toBeGreaterThan(0);
+    expect(document.querySelectorAll(".kobi-mascot").length).toBeGreaterThan(0);
+
+    document.documentElement.classList.remove("dark");
+  });
+
+  it("navigates between student assignments and completion-backed progress", async () => {
+    const user = userEvent.setup();
+
+    renderDashboard();
+    expect(await screen.findByRole("heading", { name: /practica: la noticia/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("link", { name: /progreso/i }));
+
+    expect(screen.getByRole("heading", { level: 1, name: /progreso/i })).toBeInTheDocument();
+    expect(screen.getByText(/este panel solo refleja actividades entregadas por tu docente/i)).toBeInTheDocument();
+    expect(screen.queryByText(/pts$/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /analíticas/i })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("link", { name: /artefactos/i }));
+    expect(screen.getByRole("heading", { name: /practica: la noticia/i })).toBeInTheDocument();
+  });
+
   it("dismisses a delivered assignment without falling back to seeded artifacts", async () => {
     const user = userEvent.setup();
 

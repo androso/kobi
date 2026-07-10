@@ -54,7 +54,7 @@ function teacherProfileFromSupabaseUser(user: User): UserProfile {
   };
 }
 
-function readLocalStudentAuth(): UserProfile | null {
+function readStoredStudentAuth(): UserProfile | null {
   if (typeof window === "undefined") return null;
 
   try {
@@ -65,9 +65,9 @@ function readLocalStudentAuth(): UserProfile | null {
     if (
       parsed.role !== "student" ||
       !parsed.studentId ||
-      !parsed.studentAccessToken ||
       !parsed.classId ||
-      !parsed.studentName
+      !parsed.studentName ||
+      !parsed.joinCode
     ) {
       return null;
     }
@@ -75,6 +75,11 @@ function readLocalStudentAuth(): UserProfile | null {
   } catch {
     return null;
   }
+}
+
+function readLocalStudentAuth(): UserProfile | null {
+  const profile = readStoredStudentAuth();
+  return profile?.studentAccessToken ? profile : null;
 }
 
 function writeLocalStudentAuth(profile: UserProfile) {
@@ -85,6 +90,37 @@ function writeLocalStudentAuth(profile: UserProfile) {
 function clearLocalStudentAuth() {
   if (typeof window === "undefined") return;
   window.localStorage.removeItem(localStudentAuthKey);
+}
+
+function studentProfileFromJoinedClass(joined: JoinedClassRow): UserProfile {
+  return {
+    role: "student",
+    studentId: joined.student_id,
+    studentAccessToken: joined.access_token,
+    classId: joined.class_id,
+    className: joined.class_name,
+    joinCode: joined.join_code,
+    studentName: joined.display_name,
+  };
+}
+
+async function restoreLocalStudentAuth(): Promise<UserProfile | null> {
+  const stored = readStoredStudentAuth();
+  if (!stored || stored.studentAccessToken) return stored;
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .rpc("join_class_by_code", {
+      input_code: stored.joinCode,
+      input_display_name: stored.studentName,
+    })
+    .single();
+
+  if (error || !data) return null;
+
+  const restored = studentProfileFromJoinedClass(data as JoinedClassRow);
+  writeLocalStudentAuth(restored);
+  return restored;
 }
 
 async function ensureTeacherProfile(user: User) {
@@ -110,7 +146,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const { data } = await supabase.auth.getSession();
       const session: Session | null = data.session;
-      const localStudentAuth = readLocalStudentAuth();
+      const localStudentAuth = await restoreLocalStudentAuth();
 
       if (session?.user) {
         await ensureTeacherProfile(session.user);
@@ -200,18 +236,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     const joined = joinedClass as JoinedClassRow;
 
-    const profile: UserProfile = {
-      role: "student",
-      studentId: joined.student_id,
-      studentAccessToken: joined.access_token,
-      classId: joined.class_id,
-      className: joined.class_name,
-      joinCode: joined.join_code,
-      studentName: joined.display_name,
-    };
+    const profile = studentProfileFromJoinedClass(joined);
 
-    await supabase.auth.signOut();
     writeLocalStudentAuth(profile);
+    await supabase.auth.signOut();
     set({ status: "authenticated", user: profile });
     return {};
   },

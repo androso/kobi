@@ -120,7 +120,8 @@
   .dark [class~="bg-white/70"],
   .dark [class~="bg-[#fdfcf9]"],
   .dark [class~="bg-[#f8f9ff]"],
-  .dark [class~="bg-[#f8f9fc]"] {
+  .dark [class~="bg-[#f8f9fc]"],
+  .dark [class~="bg-[#f8f9fc]/95"] {
     background-color: hsl(var(--theme-surface));
   }
 
@@ -139,6 +140,7 @@
   .dark [class~="bg-slate-50"],
   .dark [class~="bg-slate-50/50"],
   .dark [class~="bg-slate-50/60"],
+  .dark [class~="bg-slate-50/70"],
   .dark [class~="bg-slate-100"],
   .dark [class~="bg-slate-100/50"] {
     background-color: hsl(var(--theme-surface-muted));
@@ -185,12 +187,14 @@
   .dark [class~="border-slate-200"],
   .dark [class~="border-slate-200/50"],
   .dark [class~="border-slate-200/60"],
+  .dark [class~="border-slate-200/70"],
   .dark [class~="border-slate-200/80"],
   .dark [class~="border-slate-300"] {
     border-color: hsl(var(--theme-border));
   }
 
   .dark [class~="bg-blue-50"],
+  .dark [class~="bg-blue-50/70"],
   .dark [class~="bg-blue-100"],
   .dark [class~="bg-blue-100/60"],
   .dark [class~="bg-blue-100/80"],
@@ -344,6 +348,30 @@
   }
 
   .dark .teacher-brand-mascot {
+    color: #0f172a;
+  }
+
+  .dark .student-portal-header,
+  .dark .student-portal-sidebar {
+    background-color: hsl(var(--theme-surface));
+    border-color: hsl(var(--theme-border));
+    box-shadow: none;
+  }
+
+  .dark .student-portal-profile {
+    background-color: hsl(217 50% 22%);
+    border-color: hsl(213 45% 34%);
+  }
+
+  .dark .student-portal-footer {
+    border-color: hsl(var(--theme-border));
+  }
+
+  .dark .kobi-pet-surface {
+    background-color: #fce7db;
+  }
+
+  .dark .kobi-mascot {
     color: #0f172a;
   }
 
