@@ -78,6 +78,23 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /entrar/i })).toBeInTheDocument();
   });
 
+  it("keeps focused login fields on a dark surface in dark mode", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    const passwordInput = screen.getByPlaceholderText(/^contrase[nñ]a$/i);
+    const inputShell = passwordInput.parentElement;
+
+    expect(inputShell).toHaveClass(
+      "dark:focus-within:border-sky-400",
+      "dark:focus-within:bg-slate-800",
+      "dark:focus-within:ring-sky-400/25",
+    );
+
+    await user.click(passwordInput);
+    expect(passwordInput).toHaveFocus();
+  });
+
   it("switches to the student join form", async () => {
     const user = userEvent.setup();
 

@@ -22,6 +22,9 @@ const slides = [
   }
 ];
 
+const inputShellClassName =
+  "flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100 dark:hover:border-sky-600 dark:hover:bg-slate-800/60 dark:focus-within:border-sky-400 dark:focus-within:bg-slate-800 dark:focus-within:ring-sky-400/25";
+
 export function LoginPage() {
   const navigate = useNavigate();
   const loginTeacher = useAuthStore((state) => state.loginTeacher);
@@ -276,7 +279,7 @@ export function LoginPage() {
               >
                 <label className="group block">
                   <span className="sr-only">Correo electrónico</span>
-                  <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                  <div className={inputShellClassName}>
                     <Mail className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                     <input
                       className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
@@ -290,7 +293,7 @@ export function LoginPage() {
                 </label>
                 <label className="group block">
                   <span className="sr-only">Contraseña</span>
-                  <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                  <div className={inputShellClassName}>
                     <Lock className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                     <input
                       className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
@@ -318,7 +321,7 @@ export function LoginPage() {
                 {teacherAuthMode === "signup" ? (
                   <label className="group block">
                     <span className="sr-only">Confirmar contraseña</span>
-                    <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                    <div className={inputShellClassName}>
                       <Lock className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                       <input
                         className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
@@ -413,7 +416,7 @@ export function LoginPage() {
               >
                 <label className="group block">
                   <span className="sr-only">Código de clase</span>
-                  <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                  <div className={inputShellClassName}>
                     <BookOpen className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                     <input
                       className="w-full bg-transparent text-base uppercase text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:normal-case placeholder:text-slate-300"
@@ -427,7 +430,7 @@ export function LoginPage() {
                 </label>
                 <label className="group block">
                   <span className="sr-only">Nombre</span>
-                  <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                  <div className={inputShellClassName}>
                     <User className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                     <input
                       className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
