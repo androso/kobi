@@ -80,12 +80,14 @@ export function StudentSidebar({
           <CircleHelp className="h-5 w-5" strokeWidth={2} />
         </button>
         <button
-          aria-label="Salir"
-          className="flex h-10 w-10 items-center justify-center rounded-full text-[#9aa1ac] transition hover:bg-[#f0ede7] hover:text-[#5b6270]"
+          aria-label="Cambiar estudiante"
+          title="Cambiar estudiante"
+          className="flex min-h-10 items-center justify-center gap-2 rounded-full px-3 text-xs font-bold text-[#707782] transition hover:bg-[#f0ede7] hover:text-[#5b6270]"
           onClick={onLogout}
           type="button"
         >
           <LogOut className="h-5 w-5" strokeWidth={1.75} />
+          <span>Cambiar estudiante</span>
         </button>
       </div>
     </aside>

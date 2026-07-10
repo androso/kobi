@@ -8,7 +8,6 @@ interface UserProfile {
   email?: string;
   studentName?: string;
   studentId?: string;
-  studentAccessToken?: string;
   classId?: string;
   className?: string;
   joinCode?: string;
@@ -39,11 +38,11 @@ interface AuthState {
   initializeAuth: () => Promise<void>;
   loginTeacher: (email: string, password: string) => Promise<TeacherAuthResult>;
   signupTeacher: (email: string, password: string) => Promise<TeacherAuthResult>;
-  loginStudent: (code: string, studentName: string) => Promise<StudentJoinResult>;
+  loginStudent: (username: string, password: string) => Promise<StudentJoinResult>;
   logout: () => Promise<void>;
 }
 
-const localStudentAuthKey = "kobi.localStudentAuth";
+const studentEmailDomain = "students.kobi.invalid";
 
 function teacherProfileFromSupabaseUser(user: User): UserProfile {
   return {
@@ -54,37 +53,19 @@ function teacherProfileFromSupabaseUser(user: User): UserProfile {
   };
 }
 
-function readLocalStudentAuth(): UserProfile | null {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const stored = window.localStorage.getItem(localStudentAuthKey);
-    if (!stored) return null;
-    const parsed = JSON.parse(stored) as UserProfile;
-
-    if (
-      parsed.role !== "student" ||
-      !parsed.studentId ||
-      !parsed.studentAccessToken ||
-      !parsed.classId ||
-      !parsed.studentName
-    ) {
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
+function normalizeStudentUsername(value: string) {
+  return value.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9-]/g, "");
 }
 
-function writeLocalStudentAuth(profile: UserProfile) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(localStudentAuthKey, JSON.stringify(profile));
-}
-
-function clearLocalStudentAuth() {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(localStudentAuthKey);
+async function profileFromSupabaseUser(user: User): Promise<UserProfile | null> {
+  if (user.user_metadata?.role !== "student") return teacherProfileFromSupabaseUser(user);
+  if (!supabase) return null;
+  const { data } = await supabase.from("students").select("id,class_id,display_name,classes(name,join_code)")
+    .eq("auth_user_id", user.id).eq("is_active", true).maybeSingle();
+  if (!data) return null;
+  const linkedClass = (Array.isArray(data.classes) ? data.classes[0] : data.classes) as { name?: string; join_code?: string } | null;
+  return { role: "student", id: user.id, studentId: data.id, classId: data.class_id,
+    studentName: data.display_name, className: linkedClass?.name, joinCode: linkedClass?.join_code };
 }
 
 async function ensureTeacherProfile(user: User) {
@@ -110,29 +91,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const { data } = await supabase.auth.getSession();
       const session: Session | null = data.session;
-      const localStudentAuth = readLocalStudentAuth();
-
       if (session?.user) {
-        await ensureTeacherProfile(session.user);
+        if (session.user.user_metadata?.role !== "student") await ensureTeacherProfile(session.user);
         useClassStore.setState({ classes: [] });
       }
 
+      const profile = session?.user ? await profileFromSupabaseUser(session.user) : null;
+
       set({
-        status: session?.user || localStudentAuth ? "authenticated" : "unauthenticated",
-        user: session?.user ? teacherProfileFromSupabaseUser(session.user) : localStudentAuth,
+        status: profile ? "authenticated" : "unauthenticated",
+        user: profile,
       });
 
       supabase.auth.onAuthStateChange((_event, nextSession) => {
-        if (nextSession?.user) {
-          void ensureTeacherProfile(nextSession.user);
-          useClassStore.setState({ classes: [] });
-        }
-
-        const localStudentAuth = readLocalStudentAuth();
-        set({
-          status: nextSession?.user || localStudentAuth ? "authenticated" : "unauthenticated",
-          user: nextSession?.user ? teacherProfileFromSupabaseUser(nextSession.user) : localStudentAuth,
-        });
+        void (async () => {
+          if (nextSession?.user?.user_metadata?.role !== "student" && nextSession?.user) await ensureTeacherProfile(nextSession.user);
+          const nextProfile = nextSession?.user ? await profileFromSupabaseUser(nextSession.user) : null;
+          set({ status: nextProfile ? "authenticated" : "unauthenticated", user: nextProfile });
+        })();
       });
     } catch (error) {
       console.error("Unable to initialize Supabase auth.", error);
@@ -152,7 +128,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!data.user) return { error: "No se pudo iniciar sesion." };
 
     await ensureTeacherProfile(data.user);
-    clearLocalStudentAuth();
     useClassStore.setState({ classes: [] });
     set({ status: "authenticated", user: teacherProfileFromSupabaseUser(data.user) });
     return {};
@@ -173,51 +148,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
 
     await ensureTeacherProfile(data.session.user);
-    clearLocalStudentAuth();
     useClassStore.setState({ classes: [] });
     set({ status: "authenticated", user: teacherProfileFromSupabaseUser(data.session.user) });
     return {};
   },
-  loginStudent: async (code, studentName) => {
+  loginStudent: async (username, password) => {
     if (!supabase) {
       return { error: "Supabase no esta configurado. Define VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY." };
     }
 
-    const normalizedCode = code.trim().toUpperCase();
-    const normalizedName = studentName.trim();
-
-    const { data: joinedClass, error: joinError } = await supabase
-      .rpc("join_class_by_code", {
-        input_code: normalizedCode,
-        input_display_name: normalizedName,
-      })
-      .single();
-
-    if (joinError) {
-      if (joinError.code === "P0002") return { error: "No encontramos una clase con ese codigo." };
-      return { error: joinError.message };
-    }
-
-    const joined = joinedClass as JoinedClassRow;
-
-    const profile: UserProfile = {
-      role: "student",
-      studentId: joined.student_id,
-      studentAccessToken: joined.access_token,
-      classId: joined.class_id,
-      className: joined.class_name,
-      joinCode: joined.join_code,
-      studentName: joined.display_name,
-    };
-
-    await supabase.auth.signOut();
-    writeLocalStudentAuth(profile);
+    const normalizedUsername = normalizeStudentUsername(username);
+    const { data, error } = await supabase.auth.signInWithPassword({ email: `${normalizedUsername}@${studentEmailDomain}`, password });
+    if (error || !data.user) return { error: "Usuario o contraseña incorrectos." };
+    const profile = await profileFromSupabaseUser(data.user);
+    if (!profile || profile.role !== "student") { await supabase.auth.signOut(); return { error: "Usuario o contraseña incorrectos." }; }
     set({ status: "authenticated", user: profile });
     return {};
   },
   logout: async () => {
-    const currentUser = get().user;
-    if (currentUser?.role === "student") clearLocalStudentAuth();
     if (supabase) await supabase.auth.signOut();
     set({ status: "unauthenticated", user: null });
   },
