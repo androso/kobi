@@ -121,8 +121,9 @@ export function TeacherDashboard() {
             <section>
               <div className="mb-6 flex items-center justify-between">
                 <h3 className="text-xl font-bold text-slate-900 sm:text-2xl">Tus clases</h3>
-                <div className="inline-flex rounded-xl bg-slate-100 p-1">
+                <div aria-label="Vista de clases" className="inline-flex rounded-xl bg-slate-100 p-1" role="group">
                   <button
+                    aria-pressed={viewMode === "grid"}
                     className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
                       viewMode === "grid" ? "bg-white text-[#004ac6] shadow-sm" : "text-slate-500 hover:text-slate-900"
                     }`}
@@ -133,6 +134,7 @@ export function TeacherDashboard() {
                     Cuadrícula
                   </button>
                   <button
+                    aria-pressed={viewMode === "list"}
                     className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition ${
                       viewMode === "list" ? "bg-white text-[#004ac6] shadow-sm" : "text-slate-500 hover:text-slate-900"
                     }`}
@@ -162,8 +164,11 @@ export function TeacherDashboard() {
                 </button>
               </div>
 
-              {/* Grid de Clases */}
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              <div
+                aria-label="Clases"
+                className={viewMode === "grid" ? "grid gap-6 md:grid-cols-2 lg:grid-cols-3" : "grid grid-cols-1 gap-4"}
+                role="list"
+              >
                 {classes.map((item, index) => (
                   <ClassCard item={item} key={item.id} viewMode={viewMode} index={index} onShareCode={setShareClass} />
                 ))}
