@@ -51,6 +51,16 @@ describe("worker demo transcript API", () => {
     expect(response.statusCode).toBe(400);
   });
 
+  it("returns 400 for malformed JSON request bodies", async () => {
+    const req = fakeRawRequest("{not json");
+    const res = fakeResponse();
+
+    await routeRequest(req, res, fakeSupabase().client, fakeBoss().instance);
+
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toEqual({ error: "Request body must be valid JSON" });
+  });
+
   it("inserts transcribed chunks idempotently and enqueues build-lesson-state once", async () => {
     const supabase = fakeSupabase();
     const boss = fakeBoss();
@@ -146,12 +156,17 @@ async function callRoute(
 
 function fakeRequest(body: Record<string, unknown>) {
   const payload = Buffer.from(JSON.stringify(body));
+  return fakeRawRequest(payload);
+}
+
+function fakeRawRequest(payload: string | Buffer) {
+  const body = Buffer.isBuffer(payload) ? payload : Buffer.from(payload);
   return {
     method: "POST",
     url: "/api/sessions/session-1/demo-transcript-chunks",
     headers: { host: "localhost", "content-type": "application/json" },
     async *[Symbol.asyncIterator]() {
-      yield payload;
+      yield body;
     },
   } as unknown as IncomingMessage;
 }

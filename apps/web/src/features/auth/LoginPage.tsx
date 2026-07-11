@@ -22,6 +22,16 @@ const slides = [
   }
 ];
 
+const inputShellBaseClassName =
+  "flex items-center gap-3 rounded-xl border px-4 py-3 transition focus-within:ring-4";
+const fieldErrorClassName = "mt-2 text-xs font-medium text-red-600 dark:text-red-300";
+
+function inputShellClassName(hasError: boolean) {
+  return hasError
+    ? `${inputShellBaseClassName} border-red-500 hover:border-red-500 hover:bg-red-50/50 focus-within:border-red-500 focus-within:bg-red-50/50 focus-within:ring-red-200 dark:border-red-400 dark:hover:border-red-300 dark:hover:bg-red-950/30 dark:focus-within:border-red-300 dark:focus-within:bg-red-950/30 dark:focus-within:ring-red-400/25`
+    : `${inputShellBaseClassName} border-slate-200 hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-sky-100 dark:hover:border-sky-600 dark:hover:bg-slate-800/60 dark:focus-within:border-sky-400 dark:focus-within:bg-slate-800 dark:focus-within:ring-sky-400/25`;
+}
+
 export function LoginPage() {
   const navigate = useNavigate();
   const loginTeacher = useAuthStore((state) => state.loginTeacher);
@@ -276,24 +286,28 @@ export function LoginPage() {
               >
                 <label className="group block">
                   <span className="sr-only">Correo electrónico</span>
-                  <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                  <div className={inputShellClassName(Boolean(fieldErrors.email))}>
                     <Mail className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                     <input
                       className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
+                      aria-describedby={fieldErrors.email ? "login-email-error" : undefined}
+                      aria-invalid={Boolean(fieldErrors.email)}
                       onChange={(event) => setTeacherEmail(event.target.value)}
                       placeholder="Correo electrónico"
                       type="email"
                       value={teacherEmail}
                     />
                   </div>
-                  {fieldErrors.email ? <p className="mt-2 text-xs text-[#1077e5]">{fieldErrors.email}</p> : null}
+                  {fieldErrors.email ? <p className={fieldErrorClassName} id="login-email-error">{fieldErrors.email}</p> : null}
                 </label>
                 <label className="group block">
                   <span className="sr-only">Contraseña</span>
-                  <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                  <div className={inputShellClassName(Boolean(fieldErrors.password))}>
                     <Lock className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                     <input
                       className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
+                      aria-describedby={fieldErrors.password ? "login-password-error" : undefined}
+                      aria-invalid={Boolean(fieldErrors.password)}
                       onChange={(event) => setTeacherPassword(event.target.value)}
                       placeholder="Contraseña"
                       type={showTeacherPassword ? "text" : "password"}
@@ -312,16 +326,18 @@ export function LoginPage() {
                       )}
                     </button>
                   </div>
-                  {fieldErrors.password ? <p className="mt-2 text-xs text-[#1077e5]">{fieldErrors.password}</p> : null}
+                  {fieldErrors.password ? <p className={fieldErrorClassName} id="login-password-error">{fieldErrors.password}</p> : null}
                 </label>
 
                 {teacherAuthMode === "signup" ? (
                   <label className="group block">
                     <span className="sr-only">Confirmar contraseña</span>
-                    <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                    <div className={inputShellClassName(Boolean(fieldErrors.confirmPassword))}>
                       <Lock className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                       <input
                         className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
+                        aria-describedby={fieldErrors.confirmPassword ? "login-confirm-password-error" : undefined}
+                        aria-invalid={Boolean(fieldErrors.confirmPassword)}
                         onChange={(event) => setConfirmPassword(event.target.value)}
                         placeholder="Confirmar contraseña"
                         type={showConfirmPassword ? "text" : "password"}
@@ -340,7 +356,7 @@ export function LoginPage() {
                         )}
                       </button>
                     </div>
-                    {fieldErrors.confirmPassword ? <p className="mt-2 text-xs text-[#1077e5]">{fieldErrors.confirmPassword}</p> : null}
+                    {fieldErrors.confirmPassword ? <p className={fieldErrorClassName} id="login-confirm-password-error">{fieldErrors.confirmPassword}</p> : null}
                   </label>
                 ) : null}
 
@@ -364,9 +380,6 @@ export function LoginPage() {
                 <div className="mt-6 flex flex-col gap-3">
                   {teacherAuthMode === "login" ? (
                     <>
-                      <button className="self-start text-sm font-medium text-[#1077e5] hover:text-[#005cb3] transition-colors" type="button">
-                        ¿Olvidaste tu contraseña?
-                      </button>
                       <p className="text-sm text-slate-500">
                         ¿No tienes una cuenta?{" "}
                         <button
@@ -413,31 +426,35 @@ export function LoginPage() {
               >
                 <label className="group block">
                   <span className="sr-only">Código de clase</span>
-                  <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                  <div className={inputShellClassName(Boolean(fieldErrors.code))}>
                     <BookOpen className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                     <input
                       className="w-full bg-transparent text-base uppercase text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:normal-case placeholder:text-slate-300"
+                      aria-describedby={fieldErrors.code ? "student-code-error" : undefined}
+                      aria-invalid={Boolean(fieldErrors.code)}
                       onChange={(event) => setClassCode(event.target.value)}
                       placeholder="Código de clase"
                       type="text"
                       value={classCode}
                     />
                   </div>
-                  {fieldErrors.code ? <p className="mt-2 text-xs text-[#1077e5]">{fieldErrors.code}</p> : null}
+                  {fieldErrors.code ? <p className={fieldErrorClassName} id="student-code-error">{fieldErrors.code}</p> : null}
                 </label>
                 <label className="group block">
                   <span className="sr-only">Nombre</span>
-                  <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3 transition hover:border-sky-200 hover:bg-sky-50/70 focus-within:border-[#1077e5] focus-within:bg-sky-50/80 focus-within:ring-4 focus-within:ring-sky-100">
+                  <div className={inputShellClassName(Boolean(fieldErrors.name))}>
                     <User className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                     <input
                       className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
+                      aria-describedby={fieldErrors.name ? "student-name-error" : undefined}
+                      aria-invalid={Boolean(fieldErrors.name)}
                       onChange={(event) => setStudentName(event.target.value)}
                       placeholder="Nombre"
                       type="text"
                       value={studentName}
                     />
                   </div>
-                  {fieldErrors.name ? <p className="mt-2 text-xs text-[#1077e5]">{fieldErrors.name}</p> : null}
+                  {fieldErrors.name ? <p className={fieldErrorClassName} id="student-name-error">{fieldErrors.name}</p> : null}
                 </label>
 
                 <Button disabled={isStudentLoginPending} type="submit">

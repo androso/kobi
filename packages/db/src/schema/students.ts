@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { classes } from "./classes.js";
 
@@ -8,5 +9,6 @@ export const students = pgTable("students", {
     .notNull()
     .references(() => classes.id, { onDelete: "cascade" }),
   displayName: text("display_name").notNull(),
+  accessToken: text("access_token").notNull().default(sql`replace(gen_random_uuid()::text, '-', '')`),
   joinedAt: timestamp("joined_at", { withTimezone: true }).notNull().defaultNow(),
 });
