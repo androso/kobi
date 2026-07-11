@@ -11,3 +11,4 @@ build/
 
 # Stitch assets directory
 apps/web/src/features/teacher/assets/
+*.pdf
