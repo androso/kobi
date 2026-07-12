@@ -1034,6 +1034,9 @@ export function LiveClassMonitor() {
     setUploadStatus(apiSessionIdRef.current ? "Sesion enviada al worker" : uploadStatus);
 
     if (activeClass) {
+      if (apiSessionIdRef.current && supabase) {
+        void supabase.from("sessions").update({ status: "completed", ended_at: new Date().toISOString() }).eq("id", apiSessionIdRef.current);
+      }
       const session = buildSession(activeClass, elapsed, latestLessonState);
       setCompletedSessionClassId(activeClass.id);
       endSession(session); // guarda en historial + limpia el monitor activo

@@ -63,6 +63,7 @@ const mocks = vi.hoisted(() => {
       { audioChunkId: "chunk-1", chunkIndex: 1, totalChunks: 2, done: true },
     ]),
     supabaseFrom: vi.fn(() => ({
+      update: vi.fn().mockReturnThis(),
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
       order: vi.fn().mockReturnThis(),
