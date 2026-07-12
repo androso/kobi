@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildCurriculumQueryText, embedText, retrieveCurriculumMatches } from "@kobi/curriculum";
 import { lessonStateFromManualEntry, lessonStateSchema, type LessonState } from "@kobi/ai-core";
 import type PgBoss from "pg-boss";
+import { z } from "zod";
 import { demoTranscriptChunks, DEMO_TRANSCRIPT_TICK_MS } from "./demoTranscript.js";
 import { JOB_BUILD_LESSON_STATE, JOB_TRANSCRIBE_CHUNK } from "./queue.js";
 import { runGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
@@ -26,19 +27,40 @@ const DEMO_CURRICULUM = {
 
 class ApiRequestError extends Error {
   constructor(
-    message: string,
+    readonly code: string,
     readonly statusCode = 400,
   ) {
-    super(message);
+    super(code);
   }
 }
+
+interface ApiActor { id: string }
+
+const uuidSchema = z.string().uuid();
+const createSessionSchema = z.object({ classId: uuidSchema }).strict();
+const manualLessonStateSchema = z.object({
+  topic: z.string().trim().min(1).max(2_000),
+  objective: z.string().trim().max(2_000).optional(),
+}).strict();
+const demoChunkSchema = z.object({ chunk_index: z.number().int().nonnegative() }).strict();
+const MAX_JSON_BODY_BYTES = 32 * 1024;
+const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
+const RATE_WINDOW_MS = 60_000;
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 
 function logApi(message: string, details?: Record<string, unknown>) {
   console.info(`[Kobi API] ${message}`, details ?? {});
 }
 
-function getCorsOrigin() {
-  return process.env.KOBI_API_CORS_ORIGIN ?? process.env.WEB_ORIGIN ?? "*";
+function getAllowedOrigins() {
+  const configured = process.env.KOBI_API_CORS_ORIGINS ?? process.env.KOBI_API_CORS_ORIGIN ?? process.env.WEB_ORIGIN;
+  if (configured) return configured.split(",").map((origin) => origin.trim()).filter(Boolean);
+  return process.env.NODE_ENV === "production" ? [] : ["http://localhost:5173", "http://127.0.0.1:5173"];
+}
+
+function corsHeaders(req?: IncomingMessage) {
+  const origin = req?.headers.origin;
+  return origin && getAllowedOrigins().includes(origin) ? { "access-control-allow-origin": origin, vary: "origin" } : {};
 }
 
 function writeJson(
@@ -46,23 +68,24 @@ function writeJson(
   statusCode: number,
   payload: unknown,
   extraHeaders: Record<string, string> = {},
+  req?: IncomingMessage,
 ) {
   res.writeHead(statusCode, {
     "content-type": "application/json",
-    "access-control-allow-origin": getCorsOrigin(),
     "access-control-allow-methods": "GET,POST,OPTIONS",
     "access-control-allow-headers": "content-type,authorization",
+    ...corsHeaders(req),
     ...extraHeaders,
   });
   res.end(JSON.stringify(payload));
 }
 
-function handleOptions(res: ServerResponse) {
+function handleOptions(req: IncomingMessage, res: ServerResponse) {
   res.writeHead(204, {
-    "access-control-allow-origin": getCorsOrigin(),
     "access-control-allow-methods": "GET,POST,OPTIONS",
     "access-control-allow-headers": "content-type,authorization",
     "access-control-max-age": "86400",
+    ...corsHeaders(req),
   });
   res.end();
 }
@@ -73,8 +96,12 @@ function getRequestUrl(req: IncomingMessage) {
 
 async function readJsonBody(req: IncomingMessage) {
   const chunks: Buffer[] = [];
+  let bytes = 0;
   for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    bytes += buffer.length;
+    if (bytes > MAX_JSON_BODY_BYTES) throw new ApiRequestError("request_too_large", 413);
+    chunks.push(buffer);
   }
 
   if (chunks.length === 0) return {};
@@ -82,8 +109,50 @@ async function readJsonBody(req: IncomingMessage) {
   try {
     return JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
   } catch {
-    throw new ApiRequestError("Request body must be valid JSON");
+    throw new ApiRequestError("invalid_json", 400);
   }
+}
+
+function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
+  const parsed = schema.safeParse(body);
+  if (!parsed.success) throw new ApiRequestError("invalid_request", 422);
+  return parsed.data;
+}
+
+async function authenticate(req: IncomingMessage, supabase: SupabaseClient): Promise<ApiActor> {
+  const authorization = req.headers.authorization;
+  const match = typeof authorization === "string" ? authorization.match(/^Bearer\s+(.+)$/i) : null;
+  if (!match?.[1]) throw new ApiRequestError("authentication_required", 401);
+  const { data, error } = await supabase.auth.getUser(match[1]);
+  if (error || !data.user) throw new ApiRequestError("invalid_token", 401);
+  return { id: data.user.id };
+}
+
+async function authorizeClass(supabase: SupabaseClient, classId: string, actor: ApiActor) {
+  const { data, error } = await supabase.from("classes").select("teacher_id").eq("id", classId).maybeSingle();
+  if (error) throw new ApiRequestError("datastore_error", 500);
+  if (!data) throw new ApiRequestError("class_not_found", 404);
+  if (data.teacher_id !== actor.id) throw new ApiRequestError("forbidden", 403);
+}
+
+async function authorizeSession(supabase: SupabaseClient, sessionId: string, actor: ApiActor) {
+  const { data, error } = await supabase.from("sessions").select("classes(teacher_id)").eq("id", sessionId).maybeSingle();
+  if (error) throw new ApiRequestError("datastore_error", 500);
+  if (!data) throw new ApiRequestError("session_not_found", 404);
+  const value = Array.isArray(data.classes) ? data.classes[0] : data.classes;
+  const teacherId = value && typeof value === "object" ? (value as { teacher_id?: unknown }).teacher_id : null;
+  if (teacherId !== actor.id) throw new ApiRequestError("forbidden", 403);
+}
+
+function enforceRateLimit(key: string, limit: number) {
+  const now = Date.now();
+  const current = rateBuckets.get(key);
+  if (!current || current.resetAt <= now) {
+    rateBuckets.set(key, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return;
+  }
+  if (current.count >= limit) throw new ApiRequestError("rate_limit_exceeded", 429);
+  current.count += 1;
 }
 
 function toWebRequest(req: IncomingMessage, url: URL) {
@@ -124,14 +193,9 @@ function extensionForMimeType(mimeType: string) {
   return "bin";
 }
 
-async function createSession(req: IncomingMessage, res: ServerResponse, supabase: SupabaseClient) {
-  const body = await readJsonBody(req);
-  const classId = body.classId;
-
-  if (typeof classId !== "string" || classId.trim().length === 0) {
-    writeJson(res, 400, { error: "classId is required" });
-    return;
-  }
+async function createSession(req: IncomingMessage, res: ServerResponse, supabase: SupabaseClient, actor: ApiActor) {
+  const { classId } = parseBody(createSessionSchema, await readJsonBody(req));
+  await authorizeClass(supabase, classId, actor);
 
   logApi("creating session", { classId });
   if (isDemoMode()) {
@@ -145,8 +209,7 @@ async function createSession(req: IncomingMessage, res: ServerResponse, supabase
     .single();
 
   if (error) {
-    writeJson(res, 400, { error: error.message });
-    return;
+    throw new ApiRequestError("session_create_failed", 500);
   }
 
   console.log(`[api] session created: sessionId=${data.id} classId=${classId}`);
@@ -175,24 +238,17 @@ async function createManualLessonState(
   sessionId: string,
   supabase: SupabaseClient,
 ) {
-  const body = await readJsonBody(req);
-  const topic = body.topic;
-  const objective = body.objective;
-
-  if (typeof topic !== "string" || topic.trim().length === 0) {
-    writeJson(res, 400, { error: "topic is required" });
-    return;
-  }
+  const { topic, objective } = parseBody(manualLessonStateSchema, await readJsonBody(req));
 
   const lessonState = lessonStateFromManualEntry({
     topic,
-    objective: typeof objective === "string" ? objective : undefined,
+    objective,
   });
 
   logApi("creating manual lesson_state", {
     sessionId,
     topicLength: topic.length,
-    hasObjective: typeof objective === "string" && objective.trim().length > 0,
+    hasObjective: Boolean(objective),
   });
 
   const { data, error } = await supabase
@@ -207,8 +263,7 @@ async function createManualLessonState(
     .single();
 
   if (error) {
-    writeJson(res, 400, { error: error.message });
-    return;
+    throw new ApiRequestError("lesson_state_create_failed", 500);
   }
 
   logApi("manual lesson_state created", { sessionId, segmentId: data.id });
@@ -266,19 +321,11 @@ async function createDemoTranscriptChunk(
     return;
   }
 
-  const body = await readJsonBody(req);
-  let chunkIndex: number;
-  try {
-    chunkIndex = sanitizeChunkIndex(body.chunk_index);
-  } catch (error) {
-    writeJson(res, 400, { error: error instanceof Error ? error.message : "Invalid chunk_index" });
-    return;
-  }
+  const { chunk_index: chunkIndex } = parseBody(demoChunkSchema, await readJsonBody(req));
 
   const transcriptText = demoTranscriptChunks[chunkIndex];
   if (!transcriptText) {
-    writeJson(res, 400, { error: `chunk_index must be between 0 and ${demoTranscriptChunks.length - 1}` });
-    return;
+    throw new ApiRequestError("invalid_chunk_index", 422);
   }
 
   await ensureDemoCurriculumSeed(supabase);
@@ -291,8 +338,7 @@ async function createDemoTranscriptChunk(
     .maybeSingle();
 
   if (existingError) {
-    writeJson(res, 400, { error: existingError.message });
-    return;
+    throw new ApiRequestError("datastore_error", 500);
   }
 
   if (existing?.id) {
@@ -320,8 +366,7 @@ async function createDemoTranscriptChunk(
     .single();
 
   if (insertError) {
-    writeJson(res, 400, { error: insertError.message });
-    return;
+    throw new ApiRequestError("audio_chunk_create_failed", 500);
   }
 
   await boss.send(JOB_BUILD_LESSON_STATE, { sessionId });
@@ -376,6 +421,7 @@ async function uploadAudioChunk(
 
   const mimeType = audio.type || "application/octet-stream";
   const audioBytes = Buffer.from(await audio.arrayBuffer());
+  if (audioBytes.length > MAX_AUDIO_BYTES) throw new ApiRequestError("audio_too_large", 413);
 
   if (audioBytes.length < 256) {
     logApi("audio chunk suspiciously small — may be empty or corrupted", {
@@ -406,8 +452,7 @@ async function uploadAudioChunk(
   });
 
   if (uploadError) {
-    writeJson(res, 500, { error: `Audio upload failed: ${uploadError.message}` });
-    return;
+    throw new ApiRequestError("audio_upload_failed", 500);
   }
 
   const { data: chunk, error: insertError } = await supabase
@@ -424,8 +469,7 @@ async function uploadAudioChunk(
     .single();
 
   if (insertError) {
-    writeJson(res, 400, { error: insertError.message });
-    return;
+    throw new ApiRequestError("audio_chunk_create_failed", 500);
   }
 
   logApi("audio chunk row inserted", { sessionId, chunkIndex, audioChunkId: chunk.id });
@@ -435,8 +479,7 @@ async function uploadAudioChunk(
     .createSignedUrl(storagePath, 60 * 60);
 
   if (signedUrlError) {
-    writeJson(res, 500, { error: `Signed audio URL failed: ${signedUrlError.message}` });
-    return;
+    throw new ApiRequestError("audio_url_create_failed", 500);
   }
 
   console.log(
@@ -452,9 +495,7 @@ async function uploadAudioChunk(
     });
     console.log(`[api] enqueued transcribe-chunk for chunkId=${chunk.id}`);
   } catch (queueError) {
-    const message = queueError instanceof Error ? queueError.message : "Failed to enqueue transcription job";
-    writeJson(res, 500, { error: message });
-    return;
+    throw new ApiRequestError("transcription_enqueue_failed", 500);
   }
 
   writeJson(res, 201, { audioChunkId: chunk.id });
@@ -550,8 +591,9 @@ export async function routeRequest(
   boss: PgBoss,
 ) {
   try {
+    for (const [name, value] of Object.entries(corsHeaders(req))) res.setHeader?.(name, value);
     if (req.method === "OPTIONS") {
-      handleOptions(res);
+      handleOptions(req, res);
       return;
     }
 
@@ -563,40 +605,53 @@ export async function routeRequest(
       return;
     }
 
+    const actor = await authenticate(req, supabase);
+
     if (req.method === "POST" && url.pathname === "/api/sessions") {
-      await createSession(req, res, supabase);
+      await createSession(req, res, supabase, actor);
       return;
     }
 
     const audioChunkMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/audio-chunks$/);
     if (req.method === "POST" && audioChunkMatch?.[1]) {
-      await uploadAudioChunk(req, res, url, audioChunkMatch[1], supabase, boss);
+      const sessionId = parseBody(uuidSchema, audioChunkMatch[1]);
+      await authorizeSession(supabase, sessionId, actor);
+      enforceRateLimit(`audio:${actor.id}:${sessionId}`, 30);
+      await uploadAudioChunk(req, res, url, sessionId, supabase, boss);
       return;
     }
 
     const demoTranscriptChunkMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/demo-transcript-chunks$/);
     if (req.method === "POST" && demoTranscriptChunkMatch?.[1]) {
-      await createDemoTranscriptChunk(req, res, demoTranscriptChunkMatch[1], supabase, boss);
+      const sessionId = parseBody(uuidSchema, demoTranscriptChunkMatch[1]);
+      await authorizeSession(supabase, sessionId, actor);
+      await createDemoTranscriptChunk(req, res, sessionId, supabase, boss);
       return;
     }
 
     const manualLessonStateMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/manual-lesson-state$/);
     if (req.method === "POST" && manualLessonStateMatch?.[1]) {
-      await createManualLessonState(req, res, manualLessonStateMatch[1], supabase);
+      const sessionId = parseBody(uuidSchema, manualLessonStateMatch[1]);
+      await authorizeSession(supabase, sessionId, actor);
+      await createManualLessonState(req, res, sessionId, supabase);
       return;
     }
 
     const activityCandidatesMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/activity-candidates$/);
     if (req.method === "POST" && activityCandidatesMatch?.[1]) {
-      await createActivityCandidates(res, activityCandidatesMatch[1], supabase);
+      const sessionId = parseBody(uuidSchema, activityCandidatesMatch[1]);
+      await authorizeSession(supabase, sessionId, actor);
+      enforceRateLimit(`generation:${actor.id}:${sessionId}`, 5);
+      await createActivityCandidates(res, sessionId, supabase);
       return;
     }
 
-    writeJson(res, 404, { error: "Not found" });
+    writeJson(res, 404, { error: { code: "not_found" } });
   } catch (error) {
     const statusCode = error instanceof ApiRequestError ? error.statusCode : 500;
-    const message = error instanceof Error ? error.message : "Unexpected API error";
-    writeJson(res, statusCode, { error: message });
+    const code = error instanceof ApiRequestError ? error.code : "internal_error";
+    if (!(error instanceof ApiRequestError)) logApi("request failed", { error: error instanceof Error ? error.message : String(error) });
+    writeJson(res, statusCode, { error: { code } });
   }
 }
 
@@ -604,8 +659,8 @@ export function startApiServer({ supabase, boss }: ApiServerOptions) {
   const port = Number(process.env.PORT ?? process.env.API_PORT ?? 8787);
   const server = createServer((req, res) => {
     routeRequest(req, res, supabase, boss).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : "Unexpected API error";
-      writeJson(res, 500, { error: message });
+      logApi("unhandled request failure", { error: error instanceof Error ? error.message : String(error) });
+      writeJson(res, 500, { error: { code: "internal_error" } });
     });
   });
 
