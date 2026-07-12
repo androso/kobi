@@ -1,26 +1,71 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { buildLessonState, type LessonState } from "@kobi/ai-core";
+import {
+  buildLessonState,
+  type LessonClassContext,
+  type LessonState,
+} from "@kobi/ai-core";
 import type PgBoss from "pg-boss";
 
 export interface BuildLessonStateJobData {
   sessionId: string;
-  /** TODO(Area D): pull these from the session's class record once that table exists. */
-  grade?: number;
-  subject?: string;
-  unit?: string;
 }
 
+interface ClaimedRange {
+  claim_id: string;
+  from_chunk_index: number;
+  to_chunk_index: number;
+  transcript_text: string;
+  previous_lesson_state: LessonState | null;
+  grade: number;
+  subject: string;
+  unit: string;
+  locale: "es-SV";
+}
+
+type LessonStateBuilder = typeof buildLessonState;
+
 /**
- * On 1-2 newly transcribed chunks: build the rolling lesson_state and persist
- * it as a segments row. This job no longer decides when to move to the
- * Propose stage — that decision now lives in the checkpoint gate
- * (checkpointScheduler.job.ts + evaluateCheckpoint.job.ts), which runs on its
- * own timer independent of this per-chunk cadence and reads accumulated
- * segments directly.
- *
- * TODO(Area D/Realtime): push the new lesson_state to the teacher UI via
- * Supabase Realtime once apps/web subscribes to it.
+ * Claims the next contiguous range under a per-session database lock. The
+ * durable claim makes retries idempotent; finalization inserts one segment and
+ * consumes the claim atomically.
  */
+export async function processBuildLessonStateJob(
+  supabase: SupabaseClient,
+  sessionId: string,
+  builder: LessonStateBuilder = buildLessonState,
+): Promise<"processed" | "waiting" | "silent" | "stale"> {
+  const { data, error } = await supabase.rpc("claim_next_lesson_state_range", {
+    target_session_id: sessionId,
+    max_chunks: 2,
+  });
+  if (error) {
+    throw new Error(`buildLessonState job: failed to claim chunks: ${error.message}`);
+  }
+
+  const claim = normalizeClaim(Array.isArray(data) ? data[0] : null);
+  if (!claim) return "waiting";
+
+  const transcriptText = claim.transcript_text.trim();
+  if (!transcriptText) {
+    await finalizeClaim(supabase, claim, silenceLessonState());
+    return "silent";
+  }
+
+  const classContext: LessonClassContext = {
+    grade: claim.grade,
+    subject: claim.subject,
+    unit: claim.unit,
+    locale: claim.locale,
+  };
+  const lessonState = await builder({
+    transcriptText,
+    previousLessonState: claim.previous_lesson_state,
+    classContext,
+  });
+
+  return (await finalizeClaim(supabase, claim, lessonState)) ? "processed" : "stale";
+}
+
 export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClient) {
   return boss.work<BuildLessonStateJobData>(
     "build-lesson-state",
@@ -28,58 +73,56 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
     async (jobs) => {
       const job = jobs[0];
       if (!job) return;
-
-      const { sessionId } = job.data;
-
-      const { data: chunks, error: chunksError } = await supabase
-        .from("audio_chunks")
-        .select("transcript_text")
-        .eq("session_id", sessionId)
-        .eq("status", "transcribed")
-        .order("chunk_index", { ascending: false })
-        .limit(2);
-
-      if (chunksError) {
-        throw new Error(`buildLessonState job: failed to load chunks: ${chunksError.message}`);
-      }
-
-      const transcriptText = (chunks ?? [])
-        .map((chunk) => chunk.transcript_text)
-        .filter(Boolean)
-        .reverse()
-        .join("\n");
-
-      if (!transcriptText) return;
-
-      const { data: previousSegment, error: previousSegmentError } = await supabase
-        .from("segments")
-        .select("lesson_state")
-        .eq("session_id", sessionId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (previousSegmentError) {
-        throw new Error(
-          `buildLessonState job: failed to load previous segment: ${previousSegmentError.message}`,
-        );
-      }
-
-      const lessonState: LessonState = await buildLessonState({
-        transcriptText,
-        previousLessonState: (previousSegment?.lesson_state as LessonState) ?? null,
-      });
-
-      const { error: segmentError } = await supabase.from("segments").insert({
-        session_id: sessionId,
-        lesson_state: lessonState,
-        confidence: lessonState.confidence,
-        transcript_summary: lessonState.transcript_summary,
-      });
-
-      if (segmentError) {
-        throw new Error(`buildLessonState job: failed to insert segment: ${segmentError.message}`);
-      }
+      await processBuildLessonStateJob(supabase, job.data.sessionId);
     },
   );
+}
+
+async function finalizeClaim(
+  supabase: SupabaseClient,
+  claim: ClaimedRange,
+  lessonState: LessonState,
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("finalize_lesson_state_range", {
+    target_claim_id: claim.claim_id,
+    new_lesson_state: lessonState,
+    new_confidence: lessonState.confidence,
+    new_transcript_summary: lessonState.transcript_summary,
+  });
+  if (error) {
+    throw new Error(`buildLessonState job: failed to finalize chunks: ${error.message}`);
+  }
+  return data === true;
+}
+
+function normalizeClaim(value: unknown): ClaimedRange | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (
+    typeof row.claim_id !== "string" ||
+    !Number.isInteger(row.from_chunk_index) ||
+    !Number.isInteger(row.to_chunk_index) ||
+    typeof row.transcript_text !== "string" ||
+    !Number.isInteger(row.grade) ||
+    typeof row.subject !== "string" ||
+    typeof row.unit !== "string" ||
+    row.locale !== "es-SV"
+  ) {
+    throw new Error("buildLessonState job: claim returned missing or invalid class/range context");
+  }
+  return row as unknown as ClaimedRange;
+}
+
+function silenceLessonState(): LessonState {
+  return {
+    topic: "Sin contenido audible",
+    objective_guess: null,
+    key_terms: [],
+    transcript_summary: "El segmento no contiene contenido audible.",
+    confidence: 0,
+    evidence: {
+      quoted_phrases: [],
+      reason: "Los fragmentos de audio procesados no produjeron una transcripción.",
+    },
+  };
 }

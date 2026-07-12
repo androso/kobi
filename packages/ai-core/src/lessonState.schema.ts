@@ -5,17 +5,17 @@ import { z } from "zod";
  * Kept small on purpose — the teacher UI renders this directly as a card.
  */
 export const lessonStateSchema = z.object({
-  topic: z.string().describe("Short topic label, e.g. 'El sustantivo y sus tipos'"),
+  topic: z.string().trim().min(1).max(160).describe("Short topic label, e.g. 'El sustantivo y sus tipos'"),
   objective_guess: z
-    .string()
+    .string().trim().max(300)
     .nullable()
     .describe("Best-guess curriculum objective in plain language, or null if unclear"),
-  key_terms: z.array(z.string()).describe("Vocabulary/terms surfaced in this segment"),
-  transcript_summary: z.string().describe("1-3 sentence summary of what was just taught"),
+  key_terms: z.array(z.string().trim().min(1).max(80)).max(12).describe("Vocabulary/terms surfaced in this segment"),
+  transcript_summary: z.string().trim().min(1).max(800).describe("1-3 sentence summary of what was just taught"),
   confidence: z.number().min(0).max(1),
   evidence: z.object({
-    quoted_phrases: z.array(z.string()).describe("Short verbatim phrases supporting the guess"),
-    reason: z.string().describe("Why the model believes this is the topic/objective"),
+    quoted_phrases: z.array(z.string().trim().min(1).max(160)).max(8).describe("Short verbatim phrases supporting the guess"),
+    reason: z.string().trim().min(1).max(500).describe("Why the model believes this is the topic/objective"),
   }),
 });
 
