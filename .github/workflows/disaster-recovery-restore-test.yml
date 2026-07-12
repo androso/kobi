@@ -1,0 +1,44 @@
+name: Disaster recovery restore audit
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 14 1 */3 *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: disaster-recovery-restore-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    environment: disaster-recovery
+    timeout-minutes: 20
+    env:
+      RECOVERY_DATABASE_URL: ${{ secrets.RECOVERY_DATABASE_URL }}
+      RECOVERY_ENVIRONMENT: restore-quarterly
+      RECOVERY_SESSION_ID: ${{ vars.RECOVERY_SESSION_ID }}
+      RECOVERY_EVIDENCE_PATH: artifacts/recovery/restore-audit.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Audit isolated restored environment
+        run: pnpm --filter @kobi/db recovery:audit
+      - name: Upload restore evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: disaster-recovery-evidence-${{ github.run_id }}
+          path: artifacts/recovery/restore-audit.json
+          if-no-files-found: error
+          retention-days: 90
