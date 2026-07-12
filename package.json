@@ -11,7 +11,9 @@
     "dev:web": "pnpm --filter @kobi/web dev",
     "build": "pnpm --filter @kobi/web build",
     "test": "pnpm --filter @kobi/web test",
-    "typecheck": "pnpm -r --if-present run typecheck"
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "check:repo": "git ls-files -co --exclude-standard -z | node scripts/check-repository-hygiene.mjs",
+    "test:repo-hygiene": "node scripts/test-repository-hygiene.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.3"
