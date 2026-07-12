@@ -8,7 +8,7 @@ Supabase schema/migrations + shared TS types. One datastore (Postgres + pgvector
 |---|---|---|
 | `teacher_profiles` / `classes` / `students` | Auth-lite: teachers via magic link; students via join code + display name | teacher_id, join_code, display_name |
 | `sessions` | One class period | class_id, status, started_at |
-| `segments` | Rolling lesson state | session_id, lesson_state (jsonb), confidence, transcript_summary |
+| `segments` | Rolling lesson state | session_id, from_chunk_index, to_chunk_index, lesson_state (jsonb), confidence, transcript_summary |
 | `curriculum_chunks` | Ingested textbook unit, objective-level | unit, objective_code, text, embedding |
 | `activity_bundles` | Self-contained runnable HTML bundles | ref, index_html, checksum |
 | `activities` | The repository: verified activity artifacts | contract_version, manifest (jsonb), bundle_ref, evidence (jsonb), parent_id, status, embedding, curriculum_tags, source, verifier_scores, times_used, avg_score |

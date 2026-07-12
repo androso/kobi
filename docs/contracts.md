@@ -22,6 +22,8 @@ Emitted by the lesson-state builder (`apps/worker` / `packages/ai-core`, see `bu
 
 The manual-fallback path (D6) produces the same `lesson_state` shape via `lessonStateFromManualEntry()` — downstream consumers never need a second code path.
 
+Each automatically generated `segments` row also records the inclusive source boundary as `from_chunk_index` and `to_chunk_index`. The worker claims only the next contiguous transcribed range under a per-session database lock and finalizes that claim once, so duplicate, concurrent, or out-of-order jobs cannot duplicate or regress the durable sequence. Raw transcript remains confined to this builder boundary.
+
 ## 2. Checkpoint decision (Understand -> Propose gate)
 
 Produced by the checkpoint agent (`apps/worker/src/checkpoint/evaluateCheckpoint.ts`, OpenAI structured output) and consumed by `apps/worker/src/jobs/evaluateCheckpoint.job.ts`. This replaces the old static `confidence >= 0.5` threshold that used to live inline in `buildLessonState.job.ts`. It runs on an independent timer (`checkpointScheduler.job.ts`, default every `CHECKPOINT_INTERVAL_MINUTES` = 10 min), not on every `lesson_state` tick.

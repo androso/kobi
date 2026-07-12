@@ -112,7 +112,7 @@ events
 | `student_profiles` | D (Teacher) / E (Student) | Teacher-editable notes/preferences only. Difficulty is assigned per session, not stored as a lasting student label. |
 | `sessions` | A (Listening) | One row per class period; drives `audio_chunks`/`segments`. |
 | `audio_chunks` | A (Listening) | Implemented — see `packages/ai-core`, `apps/worker`. |
-| `segments` | A (Listening) | Implemented — rolling `lesson_state` snapshots (see `docs/contracts.md`). |
+| `segments` | A (Listening) | Implemented — rolling `lesson_state` snapshots with inclusive `from_chunk_index` / `to_chunk_index` source boundaries (see `docs/contracts.md`). |
 | `checkpoints` | A/B boundary (Understand -> Propose gate) | Implemented — one row per checkpoint evaluation (`ready`, `reason`, `summary`, `session_context` snapshot). Runs on its own timer, decoupled from `segments`' per-chunk cadence; see `docs/contracts.md` §2 and `docs/area-bc-contract.md`. |
 | `curriculum_chunks` | B (Curriculum) | Implemented — see `packages/curriculum`, `docs/area-bc-contract.md`. |
 | `activity_bundles` | C (Activity Generation) | Stores verified self-contained `index.html` bundles by `bundle_ref`. |
