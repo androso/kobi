@@ -1,5 +1,7 @@
 # Area C Plan: RAG-Grounded Generated Activity Artifacts
 
+Historical implementation plan: the generation and delivery code described here has been implemented in stages, so the plan below is design context rather than current status. Use `docs/product-spec.md#implementation-status`, `docs/contracts.md`, and package READMEs for the supported implementation boundary.
+
 ## Summary
 
 - Standardize MVP artifacts as single-file HTML mini-apps plus a structured manifest. This is best for the agent and for game-like activities because it supports DOM/canvas/SVG interactions without React builds, imports, or bundling failure modes.

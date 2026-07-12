@@ -16,7 +16,7 @@ Required API env: `PORT`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE
 1. **Transcription** — audio chunks (45-60s) → text (Gemini Flash, rolling async)
 2. **Lesson-state builder** — transcript → `lesson_state` JSON (topic, objective, confidence), every ~2 min
 3. **Pre-generation** — curriculum chunks + activity repository → support/core/challenge candidate `ActivityArtifact`s
-4. **Verifier** — manifest/schema checks, sandbox boot, SDK telemetry assertions, and rubric checks → auto-reject below threshold
+4. **Verifier** — manifest/schema, static bundle, SDK hook, and manifest/code consistency checks plus local rubric scoring → reject invalid artifacts before persistence
 
 ## Contracts
 
@@ -24,5 +24,8 @@ Required API env: `PORT`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE
 - Writes: `segments.lesson_state`, verified `activities`, `session_activity_candidates`, and later `assignments` variants after teacher approval
 - Uses: `packages/ai-core` for model routing, `packages/curriculum` for retrieval, `packages/activities` for manifest schema, verifier, and SDK contracts
 
-Status: transcription, lesson-state building, and curriculum retrieval jobs are wired.
-Pre-generation, verification, and variant making still need Area C/E implementation.
+## Implementation status
+
+- **Shipped in code:** the HTTP API, pg-boss registration, transcription, lesson-state building, checkpoint scheduling/evaluation, curriculum retrieval, retrieval-first OpenAI/static activity generation, deterministic verification, bundle persistence, and support/core/challenge candidate persistence.
+- **Demo-only:** `src/demoTranscript.ts` and `src/dev/` use invented lesson data for local pipeline exercises; OpenAI artifact output is written under `/tmp/kobi-artifacts`, not into production paths.
+- **Production-dependent:** startup and end-to-end processing require a migrated Supabase project, storage buckets, provider credentials, and a separately deployed worker. This repository does not claim a production deployment.

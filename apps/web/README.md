@@ -23,4 +23,9 @@ Vite + React + TypeScript app: teacher portal + student portal.
 - `ActivityArtifact` manifest + authorized `bundle_ref` (from `packages/activities`, verified before display and rendered in a sandboxed iframe)
 - telemetry events (written to `events` table, read back for live monitor / session report)
 
-Status: scaffolded with Vite, React, TypeScript, Tailwind CSS, shadcn-compatible UI utilities, React Router, TanStack Query, Zustand, React Hook Form, Zod, Supabase JS, Vitest, and Playwright.
+## Implementation status
+
+- **Shipped in code:** teacher/student authentication, class creation and joining, live/manual lesson input, candidate review and approval, authorized sandboxed artifact delivery, assignment progress/completion telemetry, and session history UI.
+- **Partial:** the live monitor and report expose the current v0 completion/correctness data, but longitudinal analytics and richer stuck-state analysis remain outside the MVP.
+- **Demo-only:** the explicit demo-project path uses invented classes/transcripts for local walkthroughs; it is isolated behind demo configuration and is not a production data fallback.
+- **Production-dependent:** real use requires the worker API plus a migrated Supabase project with Realtime, RLS/RPC policies, and the activity/audio storage buckets configured.

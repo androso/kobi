@@ -24,7 +24,6 @@ kobi/
 │  ├─ activities/            # artifact manifest schema + verifier + sandbox SDK (Area C — shared by web + worker)
 │  └─ evals/                 # eval harness/runner code
 ├─ prompts/                  # per-stage prompt/rubric text, tuned without redeploying ai-core
-├─ content/                  # pre-ingested textbook unit + 5 hand-seeded activities
 ├─ docs/
 └─ infra/
 ```
@@ -42,13 +41,17 @@ kobi/
 
 ## Quickstart
 
-The frontend is scaffolded; the worker/backend packages are still placeholder-only. To run the web app:
+The v0 implementation includes the Vite teacher/student portals, Supabase-backed auth and delivery, the worker HTTP/queue pipeline, transcription and lesson-state jobs, checkpoint evaluation, curriculum retrieval, activity generation/verification, teacher approval, sandboxed student delivery, and telemetry. Runtime use still requires Supabase plus model credentials; the repository does not include production deployment configuration, real curriculum content, or a completed eval harness. See [`docs/product-spec.md`](docs/product-spec.md#implementation-status) for the shipped, partial, demo-only, planned, and production-dependent boundaries.
+
+To run the web app:
 
 ```bash
 pnpm install
 cp .env.example .env   # fill in Supabase + model API keys
 pnpm dev
 ```
+
+Start the worker/API separately with `pnpm --filter @kobi/worker dev`. Run `pnpm check:repo` before committing; intentional generated files and demo-data boundaries are recorded in [`docs/repository-hygiene.md`](docs/repository-hygiene.md).
 
 ## Contracts
 

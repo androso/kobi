@@ -90,3 +90,13 @@ The v0 families are:
 2. **Sequence/order** — process, story, or argument steps.
 3. **Guided practice/checkpoint** — short applied questions with hints and feedback.
 Seeded runnable artifacts use the same contract and verifier path as generated artifacts. If generation or verification fails, the D6 fallback is a pre-seeded verified artifact, not a manifest-only renderer.
+
+## Implementation status
+
+This section describes repository state; the scope and contracts above remain authoritative.
+
+- **Shipped in code:** teacher/student portals, Supabase data contracts and authorization migrations, audio/manual ingestion, transcription and lesson-state jobs, checkpoint gating, curriculum retrieval, retrieval-first support/core/challenge generation, deterministic artifact verification, teacher approval, authorized sandbox delivery, and attempt/hint/completion telemetry.
+- **Partial:** the session report covers v0 completion and correctness, while live-monitor depth, production-grade browser sandbox smoke automation, real textbook ingestion, and seeded repository breadth are incomplete.
+- **Demo-only:** invented transcript/class/activity inputs under explicitly named demo, development, fixture, and test paths support local walkthroughs; they are not production classroom data.
+- **Planned:** deployment manifests and the eval harness are not implemented. Multi-school administration, learner modeling, pets, cross-school repositories, auto-delivery, and longitudinal analytics remain out of v0 scope.
+- **Production-dependent:** the shipped code requires a migrated/configured Supabase project, storage buckets, provider keys, and separately hosted web and worker processes. Repository implementation does not mean the no-mock Definition of Done has been demonstrated in production.

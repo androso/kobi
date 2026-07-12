@@ -19,4 +19,4 @@ Supabase schema/migrations + shared TS types. One datastore (Postgres + pgvector
 
 Maps to the four memory tiers: active lesson → `segments`; teacher/class → `classes` + `session_activity_candidates`; student pedagogical → per-session `assignments.variant` plus `student_profiles` notes; repository → `activities`.
 
-Status: Drizzle schema/migration scaffolding exists. Area C should write candidates to `session_activity_candidates`; Area E should create one `assignments` row per student, defaulting unselected students to the core variant.
+Status: the Drizzle schema and Supabase-specific migrations implement the v0 tables, candidate/assignment integrity checks, authorized student delivery RPCs, and session rejoin token rotation. The worker writes candidates to `session_activity_candidates`, and the web approval path creates per-student `assignments` with core as the default band. Runtime behavior remains production-dependent on applying every migration to the target Supabase project.

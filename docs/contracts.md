@@ -120,4 +120,8 @@ Written to the `events` table on every student interaction; read back for the li
 
 See [`docs/area-bc-contract.md`](area-bc-contract.md) for the full write-up shared with Androso. Returned by `retrieveCurriculumMatches()` in `packages/curriculum`.
 
-Status: `lesson_state` and `curriculum_match` are implemented (see `packages/ai-core`, `packages/curriculum`) — these are the two contracts Isaac (Areas A/B) is responsible for. Gate 0 for `ActivityArtifact` is recorded here. Area C/E/F should freeze the exact TypeScript schemas, fixtures, telemetry shape, and sandbox contract before parallel implementation starts.
+## Implementation status
+
+The `lesson_state`, checkpoint, `curriculum_match`, `ActivityArtifact`, assignment, SDK-message, and telemetry shapes are frozen as TypeScript/Zod schemas in `packages/ai-core`, `packages/curriculum`, and `packages/activities`, with matching database schema/migrations in `packages/db`. The worker produces and verifies candidates, while the web approval/delivery path consumes those contracts and records authorized telemetry.
+
+The contracts describe supported v0 behavior, but production operation still depends on applying the Supabase migrations/RPC policies, configuring storage and Realtime, and running the worker with provider credentials. Demo fixtures use the same shapes with invented data and do not establish production readiness.

@@ -61,4 +61,4 @@ Implemented exports:
 - `authorizeActivityTelemetryMessage()` for parent-owned assignment telemetry validation
 - repository ranking helpers that bias objective match, verifier score, usage, outcomes, and topic overlap
 
-The verifier currently performs deterministic checks plus local rubric scoring. Browser sandbox boot remains Area E-owned and should call these same schemas before teacher display.
+The verifier performs deterministic checks plus local rubric scoring before persistence. The web app owns sandboxed iframe delivery and validates SDK messages against these same schemas; automated production-browser sandbox smoke coverage remains partial.

@@ -13,4 +13,4 @@ Eval harness/runner code. Do not ship personalization or prompt changes without 
 
 Tracing/telemetry: use the `langsmith` TS SDK (or equivalent) — no Python/FastAPI needed for this.
 
-Status: placeholder — no harness implemented yet.
+Status: planned — this file defines the required families, but no eval harness or runner is implemented yet.
