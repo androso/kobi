@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import OpenAI from "openai";
@@ -10,6 +9,7 @@ import {
   ACTIVITY_ARTIFACT_CONTRACT_VERSION,
   ACTIVITY_SDK_VERSION,
   activityManifestSchema,
+  createUnguessableBundleRef,
   evidenceFromCurriculumMatches,
   verifyActivityArtifact,
   type ActivityArtifactCandidate,
@@ -547,9 +547,4 @@ function redactPotentialNames(value: string): string {
 
 function truncateExample(value: string): string {
   return value.length > 120 ? `${value.slice(0, 117)}...` : value;
-}
-
-export function createUnguessableBundleRef(namespace?: string): string {
-  const path = namespace ? `${namespace}/${randomUUID()}` : randomUUID();
-  return `artifact-bundles/${path}/index.html`;
 }

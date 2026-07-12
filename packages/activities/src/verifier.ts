@@ -7,6 +7,7 @@ import {
   type ActivityRubricScores,
   type ActivityVerifierScores,
 } from "./types.js";
+import { parse, type ParserError } from "parse5";
 
 export interface VerifyActivityArtifactResult {
   ok: boolean;
@@ -15,9 +16,6 @@ export interface VerifyActivityArtifactResult {
 }
 
 const forbiddenPatterns: Array<{ pattern: RegExp; reason: string }> = [
-  { pattern: /<script\b[^>]*\bsrc\s*=/i, reason: "external script sources are forbidden" },
-  { pattern: /<link\b[^>]*\bhref\s*=/i, reason: "external link assets are forbidden" },
-  { pattern: /<img\b[^>]*\bsrc\s*=\s*["']?https?:/i, reason: "external image assets are forbidden" },
   { pattern: /\bfetch\s*\(/i, reason: "network fetch is forbidden" },
   { pattern: /\bXMLHttpRequest\b/i, reason: "XMLHttpRequest is forbidden" },
   { pattern: /\bWebSocket\b/i, reason: "WebSocket is forbidden" },
@@ -31,8 +29,31 @@ const forbiddenPatterns: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bdocument\.cookie\b/i, reason: "cookie access is forbidden" },
   { pattern: /\bwindow\.open\s*\(/i, reason: "popups are forbidden" },
   { pattern: /\btop\.location\b/i, reason: "top-level navigation is forbidden" },
+  { pattern: /\bwindow\.top\b/i, reason: "top-window access is forbidden" },
+  { pattern: /\bparent\.location\b/i, reason: "parent navigation is forbidden" },
+  { pattern: /\bdocument\.write\s*\(/i, reason: "document.write is forbidden" },
   { pattern: /https?:\/\//i, reason: "absolute network URLs are forbidden" },
 ];
+
+const forbiddenElements = new Map([
+  ["base", "base URL declarations are forbidden"],
+  ["embed", "embedded content is forbidden"],
+  ["form", "forms are forbidden"],
+  ["frame", "nested browsing contexts are forbidden"],
+  ["frameset", "nested browsing contexts are forbidden"],
+  ["iframe", "nested browsing contexts are forbidden"],
+  ["link", "external link assets are forbidden"],
+  ["object", "embedded content is forbidden"],
+]);
+
+const urlAttributes = new Set(["action", "data", "formaction", "href", "poster", "src", "srcset"]);
+
+interface HtmlNode {
+  nodeName: string;
+  tagName?: string;
+  attrs?: Array<{ name: string; value: string }>;
+  childNodes?: HtmlNode[];
+}
 
 const minimumRubricScores: ActivityRubricScores = {
   curriculum_alignment: 0.8,
@@ -55,6 +76,7 @@ export function verifyActivityArtifact(
   const bundleHtml = candidate.bundle_html ?? "";
   const staticErrors = [
     ...checkHtmlShape(bundleHtml),
+    ...checkHtmlStructure(bundleHtml),
     ...checkForbiddenApis(bundleHtml),
     ...checkSdkTelemetry(bundleHtml),
     ...checkManifestCodeConsistency(candidate),
@@ -93,8 +115,56 @@ function checkHtmlShape(bundleHtml: string): string[] {
   if (!/<!doctype html>/i.test(bundleHtml)) errors.push("bundle must declare <!doctype html>");
   if (!/<html\b/i.test(bundleHtml)) errors.push("bundle must include an <html> root");
   if (!/<script\b/i.test(bundleHtml)) errors.push("bundle must include inline JavaScript");
-  if (/<iframe\b/i.test(bundleHtml)) errors.push("nested iframes are forbidden");
   return errors;
+}
+
+function checkHtmlStructure(bundleHtml: string): string[] {
+  const errors: string[] = [];
+  const parseErrors: ParserError[] = [];
+  const document = parse(bundleHtml, { onParseError: (error) => parseErrors.push(error) }) as HtmlNode;
+
+  if (parseErrors.some((error) => error.code !== "missing-doctype")) {
+    errors.push("bundle must be well-formed HTML");
+  }
+
+  visit(document, (node) => {
+    const tagName = node.tagName?.toLowerCase();
+    if (!tagName) return;
+
+    const forbiddenReason = forbiddenElements.get(tagName);
+    if (forbiddenReason) errors.push(forbiddenReason);
+
+    for (const attribute of node.attrs ?? []) {
+      const name = attribute.name.toLowerCase();
+      const value = attribute.value.trim().toLowerCase();
+      if (name.startsWith("on")) errors.push("inline event handlers are forbidden");
+      if (name === "sandbox") errors.push("artifact-controlled sandbox attributes are forbidden");
+      if (name === "target" && ["_top", "_parent", "_blank"].includes(value)) {
+        errors.push("navigation targets are forbidden");
+      }
+      if (urlAttributes.has(name) && isUnsafeUrl(value)) {
+        errors.push("external or executable URL references are forbidden");
+      }
+      if (name === "http-equiv" && value === "refresh") {
+        errors.push("meta refresh is forbidden");
+      }
+      if (name === "style" && /(?:@import|url\s*\()/i.test(attribute.value)) {
+        errors.push("CSS URL references are forbidden");
+      }
+    }
+  });
+
+  return [...new Set(errors)];
+}
+
+function visit(node: HtmlNode, callback: (node: HtmlNode) => void): void {
+  callback(node);
+  for (const child of node.childNodes ?? []) visit(child, callback);
+}
+
+function isUnsafeUrl(value: string): boolean {
+  if (value === "" || value.startsWith("#")) return false;
+  return /^(?:https?:|\/\/|javascript:|data:|blob:|file:|ftp:)/i.test(value);
 }
 
 function checkForbiddenApis(bundleHtml: string): string[] {

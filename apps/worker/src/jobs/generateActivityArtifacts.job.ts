@@ -5,6 +5,7 @@ import {
   activityVerifierScoresSchema,
   buildActivitySessionContext,
   createActivityArtifactCandidates,
+  createUnguessableBundleRef,
   hasMaterialContextChange,
   pickReusableActivitiesByBand,
   rankActivityRepositoryRows,
@@ -22,7 +23,6 @@ import type { CurriculumMatch } from "@kobi/curriculum";
 import type PgBoss from "pg-boss";
 import {
   createOpenAiActivityGeneratorFromEnv,
-  createUnguessableBundleRef,
   type GenerateOpenAiActivityCandidatesInput,
   type OpenAiActivityGenerationResult,
 } from "../activity-generation/openaiArtifactGenerator.js";

