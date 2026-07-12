@@ -32,6 +32,7 @@ const manifest = (band: DifficultyBand): ActivityManifest => ({
 
 const candidate = (band: DifficultyBand): DeliveryCandidate => ({
   id: `candidate-${band}`,
+  candidateSetVersion: "candidate-set-1",
   sessionId: "session-1",
   activityId: `activity-${band}`,
   difficultyBand: band,
@@ -60,8 +61,7 @@ function store(overrides: Partial<ActivityDeliveryStore> = {}): ActivityDelivery
     ensureActiveSession: vi.fn(async () => "session-1"),
     listCandidates: vi.fn(async () => []),
     listStudents: vi.fn(async () => []),
-    updateCandidateStatuses: vi.fn(async () => {}),
-    upsertAssignments: vi.fn(async () => []),
+    publishAssignments: vi.fn(async () => []),
     loadLatestAssignmentForStudent: vi.fn(async () => null),
     writeEvent: vi.fn(async () => {}),
     markAssignmentComplete: vi.fn(async () => {}),
@@ -142,7 +142,7 @@ describe("artifact delivery bridge", () => {
         { id: "student-1", displayName: "Ana" },
         { id: "student-2", displayName: "Luis" },
       ]),
-      upsertAssignments: vi.fn(async (rows: AssignmentUpsert[]) =>
+      publishAssignments: vi.fn(async ({ assignments: rows }) =>
         rows.map((row: AssignmentUpsert, index: number) => ({
           id: `assignment-${index}`,
           sessionId: row.session_id,
@@ -160,20 +160,47 @@ describe("artifact delivery bridge", () => {
       candidates: [candidate("support"), candidate("core"), candidate("challenge")],
       approvedBands: ["core", "support"],
       overridesByBand: { support: ["student-2"] },
+      idempotencyKey: "publish-1",
     });
 
-    expect(fakeStore.updateCandidateStatuses).toHaveBeenCalledWith(
-      "session-1",
-      expect.arrayContaining([
-        expect.objectContaining({ candidateId: "candidate-core", status: "approved" }),
-        expect.objectContaining({ candidateId: "candidate-support", status: "approved" }),
-        expect.objectContaining({ candidateId: "candidate-challenge", status: "rejected" }),
-      ]),
-    );
     expect(published.map((row) => row.variant)).toEqual(["core", "support"]);
-    expect(fakeStore.upsertAssignments).toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ dismissed_at: null })]),
-    );
+    expect(fakeStore.publishAssignments).toHaveBeenCalledWith(expect.objectContaining({
+      candidateSetVersion: "candidate-set-1",
+      idempotencyKey: "publish-1",
+      assignments: expect.arrayContaining([expect.objectContaining({ dismissed_at: null })]),
+    }));
+  });
+
+  it("calls the atomic publish RPC and maps its complete result", async () => {
+    const rpc = vi.fn(async () => ({
+      data: { assignments: [{ id: "assignment-1", session_id: "session-1", activity_id: "activity-core", student_id: "student-1", variant: "core" }] },
+      error: null,
+    }));
+    const deliveryStore = new SupabaseActivityDeliveryStore({ rpc } as never);
+
+    await expect(deliveryStore.publishAssignments({
+      classId: "class-1",
+      sessionId: "session-1",
+      candidateSetVersion: "candidate-set-1",
+      candidates: [{ candidate_id: "candidate-core", difficulty_band: "core", approved: true }],
+      assignments: [{ session_id: "session-1", candidate_id: "candidate-core", activity_id: "activity-core", student_id: "student-1", variant: "core", status: "assigned", dismissed_at: null }],
+      idempotencyKey: "publish-1",
+    })).resolves.toEqual([expect.objectContaining({ id: "assignment-1", variant: "core" })]);
+
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(rpc).toHaveBeenCalledWith("publish_session_assignments", expect.objectContaining({
+      input_candidate_set_version: "candidate-set-1",
+      input_idempotency_key: "publish-1",
+    }));
+  });
+
+  it("maps a stale candidate-set conflict to a reload message", async () => {
+    const rpc = vi.fn(async () => ({ data: null, error: { code: "40001", message: "candidate_set_version_conflict" } }));
+    const deliveryStore = new SupabaseActivityDeliveryStore({ rpc } as never);
+    await expect(deliveryStore.publishAssignments({
+      classId: "class-1", sessionId: "session-1", candidateSetVersion: "stale",
+      candidates: [], assignments: [], idempotencyKey: "publish-1",
+    })).rejects.toThrow("Las candidatas cambiaron; vuelve a cargar antes de publicar.");
   });
 
   it("dismisses an assignment for the owning student without deleting it", async () => {

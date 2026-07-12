@@ -765,6 +765,7 @@ export function LiveClassMonitor() {
   const recordingStartedAtRef = useRef<number | null>(null);
   const rotationTimerRef = useRef<number | null>(null);
   const isStoppingRef = useRef(false);
+  const publishIdempotencyKeyRef = useRef<string | null>(null);
 
   // Timer runs only while recording
   useEffect(() => {
@@ -1145,6 +1146,7 @@ export function LiveClassMonitor() {
     setPublishStatus(null);
 
     try {
+      publishIdempotencyKeyRef.current ??= crypto.randomUUID();
       const published = await publishAssignments({
         store: deliveryStore,
         sessionId: activitySessionId,
@@ -1152,7 +1154,9 @@ export function LiveClassMonitor() {
         candidates,
         approvedBands,
         overridesByBand,
+        idempotencyKey: publishIdempotencyKeyRef.current,
       });
+      publishIdempotencyKeyRef.current = null;
       setPublishStatus(`Publicado para ${published.length} estudiantes.`);
     } catch (error) {
       setActivityError(error instanceof Error ? error.message : "No se pudo publicar la actividad.");

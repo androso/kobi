@@ -14,6 +14,7 @@ type ActivitySource = "seeded" | "reused" | "new";
 
 export interface DeliveryCandidate {
   id: string;
+  candidateSetVersion: string;
   sessionId: string;
   activityId: string;
   difficultyBand: DifficultyBand;
@@ -69,11 +70,14 @@ export interface ActivityDeliveryStore {
   ensureActiveSession(classId: string): Promise<string>;
   listCandidates(sessionId: string): Promise<DeliveryCandidate[]>;
   listStudents(classId: string): Promise<StudentForAssignment[]>;
-  updateCandidateStatuses(
-    sessionId: string,
-    updates: Array<{ candidateId: string; status: CandidateStatus; approvedAt: string | null }>,
-  ): Promise<void>;
-  upsertAssignments(assignments: AssignmentUpsert[]): Promise<PublishedAssignment[]>;
+  publishAssignments(input: {
+    classId: string;
+    sessionId: string;
+    candidateSetVersion: string;
+    candidates: Array<{ candidate_id: string; difficulty_band: DifficultyBand; approved: boolean }>;
+    assignments: AssignmentUpsert[];
+    idempotencyKey: string;
+  }): Promise<PublishedAssignment[]>;
   loadLatestAssignmentForStudent(studentId: string): Promise<StudentAssignment | null>;
   dismissAssignmentForStudent(input: {
     assignmentId: string;
@@ -170,21 +174,25 @@ export async function publishAssignments(input: {
   candidates: DeliveryCandidate[];
   approvedBands: DifficultyBand[];
   overridesByBand: Partial<Record<DifficultyBand, string[]>>;
+  idempotencyKey: string;
 }) {
   const students = await input.store.listStudents(input.classId);
   const assignments = buildAssignmentUpserts({ ...input, students });
-  const approvedAt = new Date().toISOString();
+  const versions = new Set(input.candidates.map((candidate) => candidate.candidateSetVersion));
+  if (versions.size !== 1) throw new Error("La version de candidatas cambio; vuelve a cargar antes de publicar.");
 
-  await input.store.updateCandidateStatuses(
-    input.sessionId,
-    input.candidates.map((candidate) => ({
-      candidateId: candidate.id,
-      status: input.approvedBands.includes(candidate.difficultyBand) ? "approved" : "rejected",
-      approvedAt: input.approvedBands.includes(candidate.difficultyBand) ? approvedAt : null,
+  return input.store.publishAssignments({
+    classId: input.classId,
+    sessionId: input.sessionId,
+    candidateSetVersion: input.candidates[0]!.candidateSetVersion,
+    candidates: input.candidates.map((candidate) => ({
+      candidate_id: candidate.id,
+      difficulty_band: candidate.difficultyBand,
+      approved: input.approvedBands.includes(candidate.difficultyBand),
     })),
-  );
-
-  return input.store.upsertAssignments(assignments);
+    assignments,
+    idempotencyKey: input.idempotencyKey,
+  });
 }
 
 export async function handleStudentActivityMessage(input: {
@@ -251,7 +259,7 @@ export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
   async listCandidates(sessionId: string) {
     const { data: candidateRows, error } = await this.client
       .from("session_activity_candidates")
-      .select("id,session_id,activity_id,difficulty_band,status,source,evidence,verifier_scores,created_at")
+      .select("id,candidate_set_version,session_id,activity_id,difficulty_band,status,source,evidence,verifier_scores,created_at")
       .eq("session_id", sessionId)
       .in("status", ["ready", "approved"])
       .order("created_at", { ascending: true });
@@ -284,31 +292,25 @@ export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
     }));
   }
 
-  async updateCandidateStatuses(
-    _sessionId: string,
-    updates: Array<{ candidateId: string; status: CandidateStatus; approvedAt: string | null }>,
-  ) {
-    for (const update of updates) {
-      const { error } = await this.client
-        .from("session_activity_candidates")
-        .update({ status: update.status, approved_at: update.approvedAt })
-        .eq("id", update.candidateId)
-        .eq("session_id", _sessionId);
-
-      if (error) throw new Error(error.message);
+  async publishAssignments(input: {
+    classId: string; sessionId: string; candidateSetVersion: string;
+    candidates: Array<{ candidate_id: string; difficulty_band: DifficultyBand; approved: boolean }>;
+    assignments: AssignmentUpsert[]; idempotencyKey: string;
+  }) {
+    const { data, error } = await this.client.rpc("publish_session_assignments", {
+      input_class_id: input.classId,
+      input_session_id: input.sessionId,
+      input_candidate_set_version: input.candidateSetVersion,
+      input_candidates: input.candidates,
+      input_assignments: input.assignments,
+      input_idempotency_key: input.idempotencyKey,
+    });
+    if (error) {
+      if (error.code === "40001") throw new Error("Las candidatas cambiaron; vuelve a cargar antes de publicar.");
+      throw new Error(error.message);
     }
-  }
-
-  async upsertAssignments(assignments: AssignmentUpsert[]) {
-    if (assignments.length === 0) return [];
-
-    const { data, error } = await this.client
-      .from("assignments")
-      .upsert(assignments, { onConflict: "session_id,student_id" })
-      .select("id,session_id,activity_id,student_id,variant");
-
-    if (error) throw new Error(error.message);
-    return ((data ?? []) as AssignmentRow[]).map((row) => ({
+    const rows = (data as { assignments?: AssignmentRow[] } | null)?.assignments ?? [];
+    return rows.map((row) => ({
       id: row.id,
       sessionId: row.session_id,
       activityId: row.activity_id,
@@ -504,6 +506,7 @@ function candidateFromRows(
 ): DeliveryCandidate {
   return {
     id: row.id,
+    candidateSetVersion: row.candidate_set_version,
     sessionId: row.session_id,
     activityId: row.activity_id,
     difficultyBand: row.difficulty_band,
@@ -537,6 +540,7 @@ function required<T>(value: T | undefined, message: string): T {
 
 interface CandidateRow {
   id: string;
+  candidate_set_version: string;
   session_id: string;
   activity_id: string;
   difficulty_band: DifficultyBand;
