@@ -98,6 +98,7 @@ Assignment rows are only valid for approved candidates from the same session: `a
 - `content.items[]` is required and must include prompts plus answer keys; hints default to an empty list when omitted.
 - `bundle_ref` must be unguessable and authorized by assignment/class before iframe delivery.
 - Auth-lite students receive a per-student `access_token` from `join_class_by_code`; student assignment reads, dismissals, telemetry, and completion go through checked delivery RPCs using that token, not broad anonymous table access.
+- Authenticated teachers can read candidates, artifacts, bundles, assignments, and telemetry only through sessions in classes they own. They may approve candidates and publish assignments, while candidate/artifact/bundle creation and telemetry insertion remain worker/service-role or checked student-RPC operations.
 - Rejoining with the same class code and display name reuses the existing student identity and rotates its `access_token`; this recovers a lost or legacy browser session without creating a duplicate student row.
 - The parent injects only manifest, assignment id, and difficulty band. It must not inject Supabase credentials, student PII, raw transcript, or broader class/session context.
 - The iframe communicates only through the Activity SDK over `postMessage`: `getManifest()`, `getBand()`, `reportAttempt()`, `reportHint()`, and `reportComplete()`.
