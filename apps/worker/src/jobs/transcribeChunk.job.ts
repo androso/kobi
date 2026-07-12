@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { transcribeAudioChunk } from "@kobi/ai-core";
+import { classifySafeError, safeLog, transcribeAudioChunk } from "@kobi/ai-core";
 import type PgBoss from "pg-boss";
 import { JOB_BUILD_LESSON_STATE } from "../queue.js";
 
@@ -25,7 +25,7 @@ export function registerTranscribeChunkJob(boss: PgBoss, supabase: SupabaseClien
 
       const { audioChunkId, audioUrl, mimeType, sessionId } = job.data;
 
-      console.log(`[transcribeChunk] picked up chunk ${audioChunkId} for session ${sessionId}`);
+      safeLog("info", "transcription.chunk_picked_up", { audioChunkId, sessionId });
 
       const { error: statusError } = await supabase
         .from("audio_chunks")
@@ -41,7 +41,7 @@ export function registerTranscribeChunkJob(boss: PgBoss, supabase: SupabaseClien
         const result = await transcribeAudioChunk({ audioUrl, mimeType });
         transcriptText = result.transcriptText;
       } catch (error) {
-        console.error(`[transcribeChunk] transcription failed for chunk ${audioChunkId}:`, error);
+        safeLog("error", "transcription.chunk_failed", { audioChunkId, sessionId, outcome: classifySafeError(error) });
 
         const { error: failedStatusError } = await supabase
           .from("audio_chunks")
@@ -59,10 +59,7 @@ export function registerTranscribeChunkJob(boss: PgBoss, supabase: SupabaseClien
       }
 
       if (!transcriptText) {
-        console.warn(
-          `[transcribeChunk] chunk ${audioChunkId} produced an empty transcript. ` +
-            `Saving as empty and continuing — build-lesson-state will skip if all recent chunks are silent.`,
-        );
+        safeLog("warn", "transcription.chunk_empty", { audioChunkId, sessionId });
       }
 
       const { error: updateError } = await supabase
@@ -74,7 +71,7 @@ export function registerTranscribeChunkJob(boss: PgBoss, supabase: SupabaseClien
         throw new Error(`transcribeChunk job: failed to save transcript: ${updateError.message}`);
       }
 
-      console.log(`[transcribeChunk] chunk ${audioChunkId} transcribed (${transcriptText.length} chars), enqueuing build-lesson-state for session ${sessionId}`);
+      safeLog("info", "transcription.chunk_saved", { audioChunkId, sessionId, transcriptBytes: Buffer.byteLength(transcriptText, "utf8") });
 
       await boss.send(JOB_BUILD_LESSON_STATE, { sessionId });
     },
