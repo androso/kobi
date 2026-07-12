@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PlayCircle } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { Clock3, PlayCircle, ShieldCheck, Sparkles } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ACTIVITY_SDK_VERSION, activitySdkMessageSchema } from "@kobi/activities/contracts";
 import {
   findClassByCode,
@@ -16,7 +16,9 @@ import {
 } from "../activityDelivery/artifactDelivery";
 import { StudentSidebar, type StudentSidebarNavItem } from "./components/StudentSidebar";
 import { LessonList } from "./components/LessonList";
+import { ProgressDashboard } from "./components/ProgressDashboard";
 import { StudentHelpModal } from "./components/StudentHelpModal";
+import { KobiMascot, PortalCard } from "../../components/portal/PortalChrome";
 
 const studentNavItems: readonly StudentSidebarNavItem[] = [
   {
@@ -24,7 +26,18 @@ const studentNavItems: readonly StudentSidebarNavItem[] = [
     path: "/student/asignaciones",
     icon: PlayCircle,
   },
+  {
+    label: "Progreso",
+    path: "/student/progreso",
+    icon: ShieldCheck,
+  },
 ] as const;
+
+type StudentRouteSection = "asignaciones" | "progreso";
+
+function getStudentRouteSection(pathname: string): StudentRouteSection {
+  return pathname.endsWith("/progreso") ? "progreso" : "asignaciones";
+}
 
 const bandLabels = {
   support: "Apoyo",
@@ -66,6 +79,7 @@ function sameAssignment(left: StudentAssignment | null, right: StudentAssignment
 
 export function StudentDashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const classes = useClassStore((state) => state.classes);
@@ -91,6 +105,7 @@ export function StudentDashboard() {
   const classCode = user?.joinCode?.trim() || "KOBI7";
   const classId = user?.classId ?? "class-1";
   const studentId = user?.studentId;
+  const activeSection = getStudentRouteSection(location.pathname);
   const deliveryStore = useMemo(
     () => supabase ? new SupabaseActivityDeliveryStore(supabase) : null,
     [],
@@ -194,6 +209,10 @@ export function StudentDashboard() {
     () => artefactos.find((item) => item.id === selectedArtefactoId) ?? artefactos[0],
     [artefactos, selectedArtefactoId],
   );
+  const completedIds = useMemo(
+    () => (assignment?.status === "completed" ? new Set([assignment.id]) : new Set<string>()),
+    [assignment],
+  );
 
   function handleLogout() {
     logout();
@@ -229,79 +248,136 @@ export function StudentDashboard() {
   }
 
   return (
-    <main className="min-h-screen bg-[#faf8f4] text-[#2b2b2b]">
-      <div className="grid min-h-screen w-full lg:grid-cols-[6.5rem_minmax(0,1fr)]">
-        <div className="min-h-screen">
-          <StudentSidebar
-            className="sticky top-0"
-            classCode={classCode}
-            navItems={studentNavItems}
-            onHelp={() => setHelpOpen(true)}
-            onLogout={handleLogout}
-            studentName={studentName}
-          />
-        </div>
+    <main className="min-h-screen bg-[#eef5fb] text-slate-950">
+      <div className="min-h-screen lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
+        <StudentSidebar
+          classCode={classCode}
+          navItems={studentNavItems}
+          onHelp={() => setHelpOpen(true)}
+          onLogout={handleLogout}
+          studentName={studentName}
+        />
 
-        <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[20rem_minmax(0,1fr)]">
-            <div className="border-b border-[#ece8e1] bg-[#fdfcf9] px-6 py-8 lg:border-b-0 lg:border-r">
-              <LessonList
-                activeId={activeArtefacto?.id}
-                artefactos={artefactos}
-                onDismiss={assignment ? handleDismissAssignment : undefined}
-                onSelect={setSelectedArtefactoId}
-                section={studentClass?.focus ?? activeArtefacto?.section ?? "Actividades"}
-                completedIds={assignment?.status === "completed" ? new Set([assignment.id]) : new Set()}
-                title={studentClass?.title ?? user?.className ?? "Tu clase"}
-              />
-            </div>
-
-            <div className="px-6 py-10 sm:px-10">
-              {loadingAssignment && deliveryStore && !assignment ? (
-                <div className="mx-auto max-w-2xl rounded-3xl bg-white/70 p-10 text-center shadow-sm">
-                  <h2 className="text-xl font-semibold text-[#2b2b2b]">Buscando actividad...</h2>
-                  <p className="mt-2 text-sm text-[#8a8f98]">Kobi revisa si tu docente ya publicó una actividad.</p>
-                </div>
-              ) : assignment && activeArtefacto?.id === assignment.id ? (
-                <section className="mx-auto max-w-4xl rounded-3xl bg-white p-6 shadow-[0_8px_30px_rgba(43,43,43,0.05)]">
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-medium text-[#5b5bd6]">Actividad lista</p>
-                      <h2 className="mt-1 text-2xl font-bold text-[#2b2b2b]">{assignment.manifest.title}</h2>
-                      <p className="mt-2 max-w-2xl text-sm leading-6 text-[#8a8f98]">
-                        Variante {bandLabels[assignment.variant]}. Tu progreso se guarda automáticamente.
-                      </p>
+        <div className="min-w-0 pb-24 lg:h-screen lg:p-5 lg:pb-5">
+          <div className="min-h-[calc(100vh-76px)] overflow-hidden bg-[#f8f9ff] lg:h-full lg:min-h-0 lg:rounded-[30px] lg:border lg:border-slate-200/70 lg:shadow-sm">
+            {activeSection === "asignaciones" ? (
+              <div className="h-full overflow-y-auto px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+                <header className="mx-auto mb-6 flex max-w-7xl flex-col justify-between gap-5 rounded-[28px] bg-[#004ac6] p-6 text-white shadow-lg shadow-blue-900/10 sm:flex-row sm:items-center lg:p-8">
+                  <div className="max-w-2xl">
+                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-blue-200">Tu espacio de aprendizaje</p>
+                    <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Hola, {studentName}</h1>
+                    <p className="mt-2 text-sm leading-6 text-blue-100 sm:text-base">
+                      {assignment
+                        ? "Tu docente publicó una actividad. Ábrela cuando estés listo; Kobi guardará tus avances."
+                        : "Cuando tu docente publique una actividad, aparecerá aquí lista para comenzar."}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-4 self-end sm:self-auto">
+                    <div className="rounded-2xl bg-white/10 px-4 py-3 text-right backdrop-blur">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-blue-200">Código de clase</p>
+                      <p className="mt-1 font-mono text-xl font-black tracking-[0.16em]">{classCode}</p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {telemetryStatus ? (
-                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-sm font-bold text-emerald-700">
-                          {telemetryStatus}
-                        </span>
-                      ) : null}
-                      <button
-                        className="rounded-full border border-[#e2ded6] px-3 py-1 text-sm font-bold text-[#6f7280] transition hover:border-[#d34d4d] hover:text-[#b91c1c] disabled:cursor-not-allowed disabled:opacity-60"
-                        disabled={dismissingAssignment}
-                        onClick={handleDismissAssignment}
-                        type="button"
-                      >
-                        {dismissingAssignment ? "Quitando..." : "Quitar de mi lista"}
-                      </button>
+                    <div className="kobi-pet-surface flex h-20 w-20 items-center justify-center rounded-[26px] bg-[#fce7db] text-slate-900 shadow-lg shadow-blue-950/20 sm:h-24 sm:w-24">
+                      <KobiMascot className="h-14 w-14 sm:h-16 sm:w-16" />
                     </div>
                   </div>
-                  <iframe
-                    className="h-[620px] w-full rounded-2xl border border-[#ece9e2] bg-white"
-                    ref={iframeRef}
-                    sandbox="allow-scripts"
-                    srcDoc={assignment.bundleHtml}
-                    title={assignment.manifest.title}
-                  />
-                </section>
-              ) : (
-                <div className="mx-auto max-w-2xl rounded-3xl border border-dashed border-[#e0ddd5] bg-white/60 p-10 text-center text-sm text-[#8a8f98]">
-                  No tienes actividades asignadas todavía. Tu profesor las publicará aquí.
+                </header>
+
+                <div className="mx-auto grid max-w-7xl gap-6 xl:grid-cols-[300px_minmax(0,1fr)]">
+                  <PortalCard className="h-fit p-5 lg:p-6">
+                    <LessonList
+                      activeId={activeArtefacto?.id}
+                      artefactos={artefactos}
+                      onDismiss={assignment ? handleDismissAssignment : undefined}
+                      onSelect={setSelectedArtefactoId}
+                      section={studentClass?.focus ?? activeArtefacto?.section ?? "Actividades"}
+                      completedIds={completedIds}
+                      title={studentClass?.title ?? user?.className ?? "Tu clase"}
+                    />
+                  </PortalCard>
+
+                  <div className="min-w-0">
+                    {loadingAssignment && deliveryStore && !assignment ? (
+                      <PortalCard className="p-10 text-center">
+                        <div className="kobi-pet-surface mx-auto flex h-20 w-20 items-center justify-center rounded-[26px] bg-[#fce7db]">
+                          <KobiMascot className="h-14 w-14 text-slate-900" />
+                        </div>
+                        <h2 className="mt-4 text-xl font-bold text-slate-900">Buscando actividad...</h2>
+                        <p className="mt-2 text-sm text-slate-500">Kobi revisa si tu docente ya publicó una actividad.</p>
+                      </PortalCard>
+                    ) : assignment && activeArtefacto?.id === assignment.id ? (
+                      <PortalCard className="overflow-hidden">
+                        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 p-5 sm:p-6">
+                          <div>
+                            <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#004ac6]">
+                              <Sparkles className="h-4 w-4" /> Actividad lista
+                            </p>
+                            <h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">{assignment.manifest.title}</h2>
+                            <p className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
+                              <span className="flex items-center gap-1.5">
+                                <Clock3 className="h-4 w-4" /> {assignment.manifest.est_minutes} min
+                              </span>
+                              <span>Ruta {bandLabels[assignment.variant]}</span>
+                              <span>Tu progreso se guarda automáticamente</span>
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            {telemetryStatus ? (
+                              <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
+                                {telemetryStatus}
+                              </span>
+                            ) : null}
+                            <button
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                              disabled={dismissingAssignment}
+                              onClick={handleDismissAssignment}
+                              type="button"
+                            >
+                              {dismissingAssignment ? "Quitando..." : "Quitar de mi lista"}
+                            </button>
+                          </div>
+                        </div>
+                        <div className="bg-slate-50 p-3 sm:p-5">
+                          <iframe
+                            className="h-[70vh] min-h-[520px] w-full rounded-2xl border border-slate-200 bg-white"
+                            ref={iframeRef}
+                            referrerPolicy="no-referrer"
+                            sandbox="allow-scripts"
+                            srcDoc={assignment.bundleHtml}
+                            title={assignment.manifest.title}
+                          />
+                        </div>
+                      </PortalCard>
+                    ) : (
+                      <PortalCard className="border-dashed p-10 text-center">
+                        <div className="kobi-pet-surface mx-auto flex h-20 w-20 items-center justify-center rounded-[26px] bg-[#fce7db]">
+                          <KobiMascot className="h-14 w-14 text-slate-900" />
+                        </div>
+                        <h2 className="mt-5 text-xl font-bold text-slate-900">Todo tranquilo por ahora</h2>
+                        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500">
+                          No tienes actividades asignadas todavía. Tu docente las publicará aquí.
+                        </p>
+                      </PortalCard>
+                    )}
+                    {assignmentError ? (
+                      <p className="mt-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{assignmentError}</p>
+                    ) : null}
+                  </div>
                 </div>
-              )}
-              {assignmentError ? <p className="mx-auto mt-4 max-w-2xl text-sm font-bold text-red-600">{assignmentError}</p> : null}
-            </div>
+              </div>
+            ) : (
+              <div className="h-full overflow-y-auto px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+                <div className="mx-auto max-w-7xl">
+                  <header className="mb-6">
+                    <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#004ac6]">Tu clase</p>
+                    <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Progreso</h1>
+                    <p className="mt-2 text-base text-slate-500">Revisa las actividades que realmente has completado.</p>
+                  </header>
+                  <ProgressDashboard artefactos={artefactos} completedIds={completedIds} studentName={studentName} />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

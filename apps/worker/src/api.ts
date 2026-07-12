@@ -10,7 +10,8 @@ import { runGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifact
 
 interface ApiServerOptions {
   supabase: SupabaseClient;
-  boss: PgBoss;
+  boss?: PgBoss;
+  getBoss?: () => PgBoss | undefined;
 }
 
 const DEFAULT_AUDIO_BUCKET = "audio-chunks";
@@ -629,7 +630,7 @@ export async function routeRequest(
   req: IncomingMessage,
   res: ServerResponse,
   supabase: SupabaseClient,
-  boss: PgBoss,
+  boss?: PgBoss,
 ) {
   try {
     if (req.method === "OPTIONS") {
@@ -660,12 +661,14 @@ export async function routeRequest(
 
     const audioChunkMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/audio-chunks$/);
     if (req.method === "POST" && audioChunkMatch?.[1]) {
+      if (!boss) throw new ApiRequestError("The background queue is still starting", 503);
       await uploadAudioChunk(req, res, url, audioChunkMatch[1], supabase, boss);
       return;
     }
 
     const demoTranscriptChunkMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/demo-transcript-chunks$/);
     if (req.method === "POST" && demoTranscriptChunkMatch?.[1]) {
+      if (!boss) throw new ApiRequestError("The background queue is still starting", 503);
       await createDemoTranscriptChunk(req, res, demoTranscriptChunkMatch[1], supabase, boss);
       return;
     }
@@ -690,10 +693,10 @@ export async function routeRequest(
   }
 }
 
-export function startApiServer({ supabase, boss }: ApiServerOptions) {
+export function startApiServer({ supabase, boss, getBoss }: ApiServerOptions) {
   const port = Number(process.env.PORT ?? process.env.API_PORT ?? 8787);
   const server = createServer((req, res) => {
-    routeRequest(req, res, supabase, boss).catch((error: unknown) => {
+    routeRequest(req, res, supabase, getBoss?.() ?? boss).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : "Unexpected API error";
       writeJson(res, 500, { error: message });
     });

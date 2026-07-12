@@ -1,5 +1,5 @@
-import { CircleHelp, GraduationCap, LogOut, type LucideIcon } from "lucide-react";
-import { NavLink } from "react-router-dom";
+import { CircleHelp, LogOut, type LucideIcon } from "lucide-react";
+import { PortalAction, PortalBrand, PortalNavLink } from "../../../components/portal/PortalChrome";
 
 export interface StudentSidebarNavItem {
   label: string;
@@ -12,7 +12,6 @@ interface StudentSidebarProps {
   classCode: string;
   onLogout: () => void;
   onHelp: () => void;
-  className?: string;
   navItems: readonly StudentSidebarNavItem[];
 }
 
@@ -21,75 +20,47 @@ export function StudentSidebar({
   classCode,
   onLogout,
   onHelp,
-  className,
   navItems,
 }: StudentSidebarProps) {
   return (
-    <aside
-      aria-label="Navegación estudiante"
-      className={[
-        "flex h-full w-[6.5rem] flex-col items-center border-r border-[#ece8e1] bg-[#fdfcf9] px-2 py-7",
-        className,
-      ]
-        .filter(Boolean)
-        .join(" ")}
-    >
-      <div className="flex flex-col items-center">
-        <div className="flex h-11 w-11 items-center justify-center text-[#2f9e8f]">
-          <GraduationCap className="h-9 w-9" strokeWidth={1.75} />
+    <>
+      <header className="student-portal-header flex items-center justify-between border-b border-slate-200/70 bg-[#f8f9fc] px-4 py-3 lg:hidden">
+        <PortalBrand portalLabel="Portal estudiantil" />
+        <div className="min-w-0 pl-3 text-right">
+          <p className="truncate text-sm font-bold text-slate-900">{studentName}</p>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-[#004ac6]">Clase {classCode}</p>
         </div>
-        <h2 className="sr-only">{studentName}</h2>
-        <p className="sr-only">Código de clase {classCode}</p>
-      </div>
+      </header>
 
-      <nav className="mt-16 flex w-full flex-1 flex-col items-center gap-10">
-        {navItems.map((item) => {
-          const Icon = item.icon;
+      <aside
+        aria-label="Navegación estudiante"
+        className="student-portal-sidebar fixed inset-x-0 bottom-0 z-40 flex h-[76px] items-center border-t border-slate-200 bg-[#f8f9fc]/95 px-3 shadow-[0_-8px_30px_rgba(15,23,42,0.08)] backdrop-blur lg:static lg:h-screen lg:w-[240px] lg:flex-col lg:items-stretch lg:border-r lg:border-t-0 lg:px-6 lg:py-6 lg:shadow-none"
+      >
+        <div className="hidden lg:block">
+          <PortalBrand portalLabel="Portal estudiantil" />
+          <div className="student-portal-profile mt-8 rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-3">
+            <p className="truncate text-sm font-bold text-slate-900">{studentName}</p>
+            <div className="mt-1 text-[10px] font-bold uppercase tracking-wider">
+              <span className="text-[#004ac6]">Clase {classCode}</span>
+            </div>
+          </div>
+        </div>
 
-          return (
-            <NavLink
-              className="group relative flex w-full flex-col items-center gap-1.5 text-center text-[#9aa1ac] transition hover:text-[#5b6270]"
-              key={item.path}
-              to={item.path}
-            >
-              {({ isActive }) => (
-                <>
-                  <span className={`flex h-8 w-8 items-center justify-center ${isActive ? "text-[#2f9e8f]" : ""}`}>
-                    <Icon className="h-6 w-6" strokeWidth={1.75} />
-                  </span>
-                  <span className={`text-[0.8rem] font-medium leading-4 ${isActive ? "text-[#2f9e8f]" : ""}`}>
-                    {item.label}
-                  </span>
-                  {isActive ? (
-                    <span className="absolute left-[-0.5rem] top-0 h-11 w-[3px] rounded-full bg-[#2f9e8f]" />
-                  ) : null}
-                </>
-              )}
-            </NavLink>
-          );
-        })}
-      </nav>
+        <nav className="flex min-w-0 flex-1 items-center justify-around gap-1 lg:mt-7 lg:block lg:space-y-1" aria-label="Secciones del estudiante">
+          {navItems.map((item) => (
+            <PortalNavLink icon={item.icon} key={item.path} label={item.label} to={item.path} />
+          ))}
+        </nav>
 
-      <div className="mt-auto flex flex-col items-center gap-5">
-        <button
-          aria-label="Ayuda"
-          className="flex h-11 w-11 items-center justify-center rounded-full bg-[#2f9e8f] text-white shadow-sm transition hover:bg-[#278577]"
-          onClick={onHelp}
-          type="button"
-        >
-          <CircleHelp className="h-5 w-5" strokeWidth={2} />
-        </button>
-        <button
-          aria-label="Cambiar estudiante"
-          title="Cambiar estudiante"
-          className="flex min-h-10 items-center justify-center gap-2 rounded-full px-3 text-xs font-bold text-[#707782] transition hover:bg-[#f0ede7] hover:text-[#5b6270]"
-          onClick={onLogout}
-          type="button"
-        >
-          <LogOut className="h-5 w-5" strokeWidth={1.75} />
-          <span>Cambiar estudiante</span>
-        </button>
-      </div>
-    </aside>
+        <div className="student-portal-footer flex items-center gap-1 border-l border-slate-200 pl-2 lg:mt-auto lg:block lg:space-y-1 lg:border-l-0 lg:border-t lg:pl-0 lg:pt-5">
+          <div className="w-12 lg:w-auto">
+            <PortalAction compactOnMobile icon={CircleHelp} label="Ayuda" onClick={onHelp} />
+          </div>
+          <div className="w-12 lg:w-auto">
+            <PortalAction compactOnMobile icon={LogOut} label="Salir" onClick={onLogout} />
+          </div>
+        </div>
+      </aside>
+    </>
   );
 }

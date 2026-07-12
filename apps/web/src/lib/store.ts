@@ -23,15 +23,6 @@ interface StudentJoinResult {
   error?: string;
 }
 
-interface JoinedClassRow {
-  student_id: string;
-  class_id: string;
-  class_name: string;
-  join_code: string;
-  display_name: string;
-  access_token: string;
-}
-
 interface AuthState {
   status: "initializing" | "authenticated" | "unauthenticated";
   user: UserProfile | null;

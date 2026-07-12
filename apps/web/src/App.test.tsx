@@ -266,7 +266,9 @@ describe("App", () => {
     expect(await screen.findByText(/no tienes actividades asignadas todav/i)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /vocabulario en contexto: la noticia/i })).not.toBeInTheDocument();
 
-    expect(screen.queryByRole("link", { name: /progreso/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("link", { name: /progreso/i }));
+    expect(screen.getByRole("heading", { level: 1, name: /progreso/i })).toBeInTheDocument();
+    expect(screen.getByText(/aún no hay actividades para mostrar/i)).toBeInTheDocument();
   });
 
   it("shows a generic error for invalid student credentials", async () => {

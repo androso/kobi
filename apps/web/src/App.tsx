@@ -97,6 +97,14 @@ export function App() {
           </RequireRole>
         }
       />
+      <Route
+        path="/student/progreso"
+        element={
+          <RequireRole role="student">
+            <StudentDashboard />
+          </RequireRole>
+        }
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
