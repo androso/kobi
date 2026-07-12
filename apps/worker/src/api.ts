@@ -5,8 +5,10 @@ import { buildCurriculumQueryText, embedText, retrieveCurriculumMatches } from "
 import { lessonStateFromManualEntry, lessonStateSchema, type LessonState } from "@kobi/ai-core";
 import type PgBoss from "pg-boss";
 import { demoTranscriptChunks, DEMO_TRANSCRIPT_TICK_MS } from "./demoTranscript.js";
-import { JOB_BUILD_LESSON_STATE, JOB_TRANSCRIBE_CHUNK } from "./queue.js";
+import { JOB_BUILD_LESSON_STATE, JOB_TRANSCRIBE_CHUNK, queueMetricsSnapshot } from "./queue.js";
 import { runGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
+import { checkReadiness } from "./readiness.js";
+import { correlationId, incrementMetric, isAcceptingTraffic, metricsSnapshot, observeMetric } from "./operations.js";
 
 interface ApiServerOptions {
   supabase: SupabaseClient;
@@ -140,7 +142,7 @@ async function createSession(req: IncomingMessage, res: ServerResponse, supabase
 
   const { data, error } = await supabase
     .from("sessions")
-    .insert({ class_id: classId, status: "active" })
+    .insert({ class_id: classId, status: "active", correlation_id: req.headers["x-correlation-id"] })
     .select("id")
     .single();
 
@@ -324,7 +326,7 @@ async function createDemoTranscriptChunk(
     return;
   }
 
-  await boss.send(JOB_BUILD_LESSON_STATE, { sessionId });
+  await boss.send(JOB_BUILD_LESSON_STATE, { sessionId, correlationId: req.headers["x-correlation-id"] });
 
   writeJson(res, 201, {
     audioChunkId: chunk.id,
@@ -449,6 +451,7 @@ async function uploadAudioChunk(
       audioUrl: signedUrl.signedUrl,
       mimeType,
       sessionId,
+      correlationId: req.headers["x-correlation-id"],
     });
     console.log(`[api] enqueued transcribe-chunk for chunkId=${chunk.id}`);
   } catch (queueError) {
@@ -556,10 +559,33 @@ export async function routeRequest(
     }
 
     const url = getRequestUrl(req);
-    logApi("request", { method: req.method, path: url.pathname });
+    const requestCorrelationId = correlationId(req.headers["x-correlation-id"]);
+    req.headers["x-correlation-id"] = requestCorrelationId;
+    res.setHeader?.("x-correlation-id", requestCorrelationId);
+    const startedAt = performance.now();
+    res.once?.("finish", () => {
+      incrementMetric("api_requests_total", { method: req.method ?? "UNKNOWN", path: url.pathname, status: res.statusCode });
+      observeMetric("api_request_duration_ms", performance.now() - startedAt, { method: req.method ?? "UNKNOWN", path: url.pathname });
+    });
+    logApi("request", { method: req.method, path: url.pathname, correlationId: requestCorrelationId });
 
-    if (req.method === "GET" && url.pathname === "/health") {
+    if (req.method === "GET" && (url.pathname === "/live" || url.pathname === "/health")) {
       writeJson(res, 200, { ok: true });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/ready") {
+      const readiness = isAcceptingTraffic()
+        ? await checkReadiness(supabase, boss)
+        : { ok: false, checks: { intake: { ok: false, latencyMs: 0, error: "worker is shutting down" } } };
+      writeJson(res, readiness.ok ? 200 : 503, readiness);
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/metrics") {
+      writeJson(res, 200, { ...metricsSnapshot(), queue: await queueMetricsSnapshot(boss) });
+      return;
+    }
+    if (!isAcceptingTraffic()) {
+      writeJson(res, 503, { error: "Worker is shutting down" }, { connection: "close" });
       return;
     }
 

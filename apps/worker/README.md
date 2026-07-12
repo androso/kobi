@@ -4,7 +4,9 @@ Node/TS background worker (Railway/Fly). Queue: pg-boss on Postgres — no extra
 
 The worker also owns the small HTTP API used by the Vite web app for live audio:
 
-- `GET /health`
+- `GET /live` reports process liveness only (`/health` remains a compatibility alias).
+- `GET /ready` performs timeout-bounded configuration, database, queue, and storage checks without provider calls.
+- `GET /metrics` reports request/provider/generation/scheduler metrics plus queue depth, retries, dead letters, and oldest queued-job age.
 - `POST /api/sessions` with `{ "classId": "<classes.id uuid>" }`
 - `POST /api/sessions/:id/audio-chunks` as `multipart/form-data` with `audio`, `chunk_index`, `start_ms`, `end_ms`
 - `POST /api/sessions/:id/manual-lesson-state` with `{ "topic": "...", "objective": "..." }`

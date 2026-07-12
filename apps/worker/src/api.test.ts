@@ -89,7 +89,9 @@ describe("worker demo transcript API", () => {
         transcript_text: expect.stringContaining("Profesor:"),
       }),
     ]);
-    expect(boss.sent).toEqual([{ name: JOB_BUILD_LESSON_STATE, data: { sessionId: "session-1" } }]);
+    expect(boss.sent).toEqual([
+      { name: JOB_BUILD_LESSON_STATE, data: expect.objectContaining({ sessionId: "session-1" }) },
+    ]);
   });
 
   it("returns 409 when activity candidates are requested before lesson_state exists", async () => {

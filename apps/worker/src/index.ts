@@ -12,6 +12,7 @@ import {
   scheduleCheckpointSchedulerJob,
 } from "./jobs/checkpointScheduler.job.js";
 import { startApiServer } from "./api.js";
+import { stopIntake } from "./operations.js";
 
 async function main() {
   const supabaseUrl =
@@ -49,8 +50,9 @@ async function main() {
   async function shutdown(signal: string) {
     if (shuttingDown) return;
     shuttingDown = true;
+    stopIntake();
     console.log(`[worker] shutting down (${signal})...`);
-    server.closeAllConnections?.();
+    server.closeIdleConnections?.();
     await new Promise<void>((resolve) => server.close(() => resolve()));
     await stopQueue();
     process.exit(0);

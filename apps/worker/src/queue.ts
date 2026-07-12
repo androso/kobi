@@ -8,7 +8,7 @@ export const JOB_GENERATE_ACTIVITY_ARTIFACTS = "generate-activity-artifacts";
 export const JOB_CHECKPOINT_SCHEDULER = "checkpoint-scheduler";
 export const JOB_EVALUATE_CHECKPOINT = "evaluate-checkpoint";
 
-const QUEUE_NAMES = [
+export const QUEUE_NAMES = [
   JOB_TRANSCRIBE_CHUNK,
   JOB_BUILD_LESSON_STATE,
   JOB_GENERATE_ACTIVITY_ARTIFACTS,
@@ -38,4 +38,24 @@ export async function stopQueue() {
   if (!boss) return;
   await boss.stop({ graceful: true, timeout: 5000 });
   boss = undefined;
+}
+
+export async function queueMetricsSnapshot(instance: PgBoss) {
+  const queues = await Promise.all(QUEUE_NAMES.map(async (name) => {
+    const [depth, retries, failed] = await Promise.all([
+      instance.getQueueSize(name),
+      instance.getQueueSize(name, { before: "retry" }),
+      instance.getQueueSize(name, { before: "failed" }),
+    ]);
+    return [name, { depth, retries, deadLetters: failed }] as const;
+  }));
+  const { rows } = await instance.getDb().executeSql(
+    `select extract(epoch from (now() - min(createdon)))::bigint as oldest_job_age_seconds
+       from pgboss.job where state in ('created', 'retry')`,
+    [],
+  );
+  return {
+    queues: Object.fromEntries(queues),
+    oldestJobAgeSeconds: Number(rows[0]?.oldest_job_age_seconds ?? 0),
+  };
 }
