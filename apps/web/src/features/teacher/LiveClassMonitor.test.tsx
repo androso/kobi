@@ -69,10 +69,24 @@ const mocks = vi.hoisted(() => {
       limit: vi.fn().mockReturnThis(),
       maybeSingle: vi.fn(async () => ({ data: null, error: null })),
     })),
+    realtimeHandlers: [] as Array<() => void>,
+    subscribe: vi.fn(),
+    removeChannel: vi.fn(async () => "ok"),
   };
 });
 
-vi.mock("../../lib/supabase", () => ({ supabase: { from: mocks.supabaseFrom } }));
+vi.mock("../../lib/supabase", () => ({
+  supabase: {
+    from: mocks.supabaseFrom,
+    channel: vi.fn(() => ({
+      on: vi.fn((_type, _config, handler) => {
+        mocks.realtimeHandlers.push(handler);
+        return { subscribe: mocks.subscribe };
+      }),
+    })),
+    removeChannel: mocks.removeChannel,
+  },
+}));
 
 vi.mock("../../lib/audioApi", () => ({
   createBackendSession: mocks.createBackendSession,
@@ -96,6 +110,7 @@ vi.mock("../activityDelivery/artifactDelivery", () => ({
 afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
+  mocks.realtimeHandlers.length = 0;
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
     value: undefined,

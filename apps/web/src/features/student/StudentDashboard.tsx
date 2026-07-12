@@ -152,12 +152,36 @@ export function StudentDashboard() {
     }
 
     void loadAssignment(true);
-    const id = window.setInterval(() => void loadAssignment(), 5000);
+
+    if (!supabase || !studentId || !studentAccessToken) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const supabaseClient = supabase;
+    const channel = supabaseClient
+      .channel(`student-delivery:${studentAccessToken}`)
+      .on(
+        "broadcast",
+        { event: "delivery_changed" },
+        () => void loadAssignment(),
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") void loadAssignment();
+      });
+
+    function resyncWhenVisible() {
+      if (document.visibilityState === "visible") void loadAssignment();
+    }
+
+    document.addEventListener("visibilitychange", resyncWhenVisible);
     return () => {
       cancelled = true;
-      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", resyncWhenVisible);
+      void supabaseClient.removeChannel(channel);
     };
-  }, [deliveryStore, studentId]);
+  }, [deliveryStore, studentAccessToken, studentId]);
 
   useEffect(() => {
     if (!assignment || !deliveryStore) return;

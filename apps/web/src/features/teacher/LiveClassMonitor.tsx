@@ -800,18 +800,35 @@ export function LiveClassMonitor() {
     }
 
     void loadLatestSegment();
-    const intervalId = window.setInterval(loadLatestSegment, 3_000);
+    const channel = supabaseClient
+      .channel(`teacher-segments:${activeSessionId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "segments", filter: `session_id=eq.${activeSessionId}` },
+        () => void loadLatestSegment(),
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") void loadLatestSegment();
+      });
+
+    function resyncWhenVisible() {
+      if (document.visibilityState === "visible") void loadLatestSegment();
+    }
+
+    document.addEventListener("visibilitychange", resyncWhenVisible);
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", resyncWhenVisible);
+      void supabaseClient.removeChannel(channel);
     };
   }, [apiSessionId]);
 
   useEffect(() => {
-    if (!isDemoMode || !apiSessionId || !activeClass || !deliveryStore) return;
+    if (!isDemoMode || !apiSessionId || !activeClass || !deliveryStore || !supabase) return;
 
     let cancelled = false;
     const activeSessionId = apiSessionId;
+    const supabaseClient = supabase;
 
     async function loadReadyCandidates() {
       const loaded = await loadCandidatesForSession(activeSessionId, { allowEmpty: true });
@@ -821,10 +838,31 @@ export function LiveClassMonitor() {
     }
 
     void loadReadyCandidates();
-    const intervalId = window.setInterval(loadReadyCandidates, 4_000);
+    const channel = supabaseClient
+      .channel(`teacher-candidates:${activeSessionId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "session_activity_candidates",
+          filter: `session_id=eq.${activeSessionId}`,
+        },
+        () => void loadReadyCandidates(),
+      )
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") void loadReadyCandidates();
+      });
+
+    function resyncWhenVisible() {
+      if (document.visibilityState === "visible") void loadReadyCandidates();
+    }
+
+    document.addEventListener("visibilitychange", resyncWhenVisible);
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", resyncWhenVisible);
+      void supabaseClient.removeChannel(channel);
     };
   }, [apiSessionId, activeClass, deliveryStore]);
 

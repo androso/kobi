@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,9 +9,22 @@ const mocks = vi.hoisted(() => ({
   loadLatestAssignmentForStudent: vi.fn(),
   dismissAssignmentForStudent: vi.fn(async () => {}),
   handleStudentActivityMessage: vi.fn(),
+  realtimeHandlers: [] as Array<() => void>,
+  subscribe: vi.fn(),
+  removeChannel: vi.fn(async () => "ok"),
 }));
 
-vi.mock("../../lib/supabase", () => ({ supabase: {} }));
+vi.mock("../../lib/supabase", () => ({
+  supabase: {
+    channel: vi.fn(() => ({
+      on: vi.fn((_type, _config, handler) => {
+        mocks.realtimeHandlers.push(handler);
+        return { subscribe: mocks.subscribe };
+      }),
+    })),
+    removeChannel: mocks.removeChannel,
+  },
+}));
 
 vi.mock("../activityDelivery/artifactDelivery", () => ({
   SupabaseActivityDeliveryStore: class {
@@ -48,6 +61,7 @@ const assignment = {
 describe("StudentDashboard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.realtimeHandlers.length = 0;
     mocks.loadLatestAssignmentForStudent.mockResolvedValue(assignment);
     useClassStore.getState().resetClasses();
     useAuthStore.setState({
@@ -62,6 +76,18 @@ describe("StudentDashboard", () => {
         joinCode: "KOBI7",
       },
     });
+  });
+
+  it("reconciles assignments from Realtime and removes the subscription on route cleanup", async () => {
+    const view = renderDashboard();
+    expect(await screen.findByRole("heading", { name: /practica: la noticia/i })).toBeInTheDocument();
+
+    mocks.loadLatestAssignmentForStudent.mockResolvedValue(null);
+    await act(async () => mocks.realtimeHandlers[0]?.());
+
+    expect(await screen.findByText(/no tienes actividades asignadas todav/i)).toBeInTheDocument();
+    view.unmount();
+    expect(mocks.removeChannel).toHaveBeenCalledOnce();
   });
 
   function renderDashboard() {
