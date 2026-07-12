@@ -12,6 +12,7 @@ import {
   scheduleCheckpointSchedulerJob,
 } from "./jobs/checkpointScheduler.job.js";
 import { startApiServer } from "./api.js";
+import { registerRetentionCleanupJob, scheduleRetentionCleanupJob } from "./jobs/retentionCleanup.job.js";
 
 async function main() {
   const supabaseUrl =
@@ -39,6 +40,8 @@ async function main() {
   await registerEvaluateCheckpointJob(boss, supabase);
   await registerCheckpointSchedulerJob(boss, supabase);
   await scheduleCheckpointSchedulerJob(boss);
+  await registerRetentionCleanupJob(boss, supabase);
+  await scheduleRetentionCleanupJob(boss);
   const server = startApiServer({ supabase, boss });
 
   console.log(

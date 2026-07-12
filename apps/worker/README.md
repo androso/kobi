@@ -25,4 +25,6 @@ Required API env: `PORT`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE
 - Uses: `packages/ai-core` for model routing, `packages/curriculum` for retrieval, `packages/activities` for manifest schema, verifier, and SDK contracts
 
 Status: transcription, lesson-state building, and curriculum retrieval jobs are wired.
+
+Classroom log redaction and audio/transcript cleanup are mandatory production behavior; retention periods, lifecycle setup, retries, and the manual deletion endpoint are defined in [`../../docs/data-retention.md`](../../docs/data-retention.md).
 Pre-generation, verification, and variant making still need Area C/E implementation.

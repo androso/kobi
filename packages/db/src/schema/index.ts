@@ -14,3 +14,4 @@ export * from "./sessionActivityCandidates.js";
 export * from "./assignments.js";
 export * from "./events.js";
 export * from "./relations.js";
+export * from "./retentionDeletionAttempts.js";

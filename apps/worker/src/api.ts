@@ -2,11 +2,12 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { Readable } from "node:stream";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildCurriculumQueryText, embedText, retrieveCurriculumMatches } from "@kobi/curriculum";
-import { lessonStateFromManualEntry, lessonStateSchema, type LessonState } from "@kobi/ai-core";
+import { classifySafeError, lessonStateFromManualEntry, lessonStateSchema, safeLog, type LessonState } from "@kobi/ai-core";
 import type PgBoss from "pg-boss";
 import { demoTranscriptChunks, DEMO_TRANSCRIPT_TICK_MS } from "./demoTranscript.js";
 import { JOB_BUILD_LESSON_STATE, JOB_TRANSCRIBE_CHUNK } from "./queue.js";
 import { runGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
+import { runRetentionCleanup } from "./retention.js";
 
 interface ApiServerOptions {
   supabase: SupabaseClient;
@@ -34,7 +35,13 @@ class ApiRequestError extends Error {
 }
 
 function logApi(message: string, details?: Record<string, unknown>) {
-  console.info(`[Kobi API] ${message}`, details ?? {});
+  safeLog("info", `api.${message.replaceAll(" ", "_")}`, details);
+}
+
+function isRetentionAdmin(req: IncomingMessage): boolean {
+  const expected = process.env.RETENTION_ADMIN_TOKEN;
+  const supplied = req.headers.authorization?.replace(/^Bearer\s+/i, "");
+  return Boolean(expected && supplied && expected.length >= 32 && supplied === expected);
 }
 
 function getCorsOrigin() {
@@ -50,7 +57,7 @@ function writeJson(
   res.writeHead(statusCode, {
     "content-type": "application/json",
     "access-control-allow-origin": getCorsOrigin(),
-    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
     "access-control-allow-headers": "content-type,authorization",
     ...extraHeaders,
   });
@@ -60,7 +67,7 @@ function writeJson(
 function handleOptions(res: ServerResponse) {
   res.writeHead(204, {
     "access-control-allow-origin": getCorsOrigin(),
-    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
     "access-control-allow-headers": "content-type,authorization",
     "access-control-max-age": "86400",
   });
@@ -382,7 +389,6 @@ async function uploadAudioChunk(
       sessionId,
       chunkIndex,
       sizeBytes: audioBytes.length,
-      mimeType,
     });
   }
 
@@ -392,12 +398,8 @@ async function uploadAudioChunk(
   logApi("uploading audio chunk to storage", {
     sessionId,
     chunkIndex,
-    startMs,
-    endMs,
-    mimeType,
     sizeBytes: audioBytes.length,
-    bucket,
-    storagePath,
+    durationMs: endMs - startMs,
   });
 
   const { error: uploadError } = await supabase.storage.from(bucket).upload(storagePath, audioBytes, {
@@ -406,7 +408,8 @@ async function uploadAudioChunk(
   });
 
   if (uploadError) {
-    writeJson(res, 500, { error: `Audio upload failed: ${uploadError.message}` });
+    safeLog("error", "audio.upload_failed", { sessionId, outcome: classifySafeError(uploadError) });
+    writeJson(res, 500, { error: "Audio upload failed" });
     return;
   }
 
@@ -435,13 +438,12 @@ async function uploadAudioChunk(
     .createSignedUrl(storagePath, 60 * 60);
 
   if (signedUrlError) {
-    writeJson(res, 500, { error: `Signed audio URL failed: ${signedUrlError.message}` });
+    safeLog("error", "audio.signing_failed", { sessionId, audioChunkId: chunk.id, outcome: classifySafeError(signedUrlError) });
+    writeJson(res, 500, { error: "Signed audio URL failed" });
     return;
   }
 
-  console.log(
-    `[api] audio chunk received: session=${sessionId} chunkId=${chunk.id} index=${chunkIndex} mime=${mimeType} size=${audioBytes.byteLength}B range=${startMs}-${endMs}ms`,
-  );
+  safeLog("info", "audio.received", { sessionId, audioChunkId: chunk.id, chunkIndex, sizeBytes: audioBytes.byteLength, durationMs: endMs - startMs });
 
   try {
     await boss.send(JOB_TRANSCRIBE_CHUNK, {
@@ -450,7 +452,7 @@ async function uploadAudioChunk(
       mimeType,
       sessionId,
     });
-    console.log(`[api] enqueued transcribe-chunk for chunkId=${chunk.id}`);
+    safeLog("info", "audio.transcription_enqueued", { sessionId, audioChunkId: chunk.id });
   } catch (queueError) {
     const message = queueError instanceof Error ? queueError.message : "Failed to enqueue transcription job";
     writeJson(res, 500, { error: message });
@@ -592,10 +594,24 @@ export async function routeRequest(
       return;
     }
 
+    const deletionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/classroom-data$/);
+    if (req.method === "DELETE" && deletionMatch?.[1]) {
+      if (!isRetentionAdmin(req)) {
+        writeJson(res, 401, { error: "Unauthorized" });
+        return;
+      }
+      const result = await runRetentionCleanup(supabase, { sessionId: deletionMatch[1], reason: "manual" });
+      writeJson(res, 200, result);
+      return;
+    }
+
     writeJson(res, 404, { error: "Not found" });
   } catch (error) {
     const statusCode = error instanceof ApiRequestError ? error.statusCode : 500;
-    const message = error instanceof Error ? error.message : "Unexpected API error";
+    const message = error instanceof ApiRequestError ? error.message : "Unexpected API error";
+    if (!(error instanceof ApiRequestError)) {
+      safeLog("error", "api.request_failed", { outcome: classifySafeError(error) });
+    }
     writeJson(res, statusCode, { error: message });
   }
 }
@@ -604,8 +620,8 @@ export function startApiServer({ supabase, boss }: ApiServerOptions) {
   const port = Number(process.env.PORT ?? process.env.API_PORT ?? 8787);
   const server = createServer((req, res) => {
     routeRequest(req, res, supabase, boss).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : "Unexpected API error";
-      writeJson(res, 500, { error: message });
+      safeLog("error", "api.unhandled_request_failure", { outcome: classifySafeError(error) });
+      writeJson(res, 500, { error: "Unexpected API error" });
     });
   });
 
