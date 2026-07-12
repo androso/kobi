@@ -8,6 +8,7 @@ import type {
 } from "./artifactDelivery";
 import {
   buildAssignmentUpserts,
+  eventsInSlidingWindow,
   handleStudentActivityMessage,
   loadOrCreateReadyCandidates,
   publishAssignments,
@@ -64,13 +65,17 @@ function store(overrides: Partial<ActivityDeliveryStore> = {}): ActivityDelivery
     upsertAssignments: vi.fn(async () => []),
     loadLatestAssignmentForStudent: vi.fn(async () => null),
     writeEvent: vi.fn(async () => {}),
-    markAssignmentComplete: vi.fn(async () => {}),
     dismissAssignmentForStudent: vi.fn(async () => {}),
     ...overrides,
   };
 }
 
 describe("artifact delivery bridge", () => {
+  it("recovers client throttling as the sliding window advances", () => {
+    const burst = Array.from({ length: 30 }, (_, index) => index * 1_000);
+    expect(eventsInSlidingWindow(burst, 29_000)).toHaveLength(30);
+    expect(eventsInSlidingWindow(burst, 61_000)).toHaveLength(28);
+  });
   it("loads existing ready candidates without browser-side generation", async () => {
     const fakeStore = store({
       listCandidates: vi.fn(async () => [candidate("challenge"), candidate("support"), candidate("core")]),
@@ -286,9 +291,37 @@ describe("artifact delivery bridge", () => {
 
     expect(result.ok).toBe(true);
     expect(fakeStore.writeEvent).toHaveBeenCalledWith({
+      eventId: expect.any(String),
       assignmentId: "assignment-1",
       type: "attempt",
       payload: expect.objectContaining({ assignment_id: "assignment-1" }),
     });
+  });
+
+  it("retries a timed-out event with the same id", async () => {
+    const writeEvent = vi.fn()
+      .mockRejectedValueOnce(new Error("timeout"))
+      .mockResolvedValue(undefined);
+    const fakeStore = store({ writeEvent });
+    const assignment: StudentAssignment = {
+      id: "assignment-1", sessionId: "session-1", activityId: "activity-core",
+      studentId: "student-1", variant: "core", status: "assigned",
+      manifest: manifest("core"), bundleHtml: "<!doctype html><html><body>ok</body></html>",
+    };
+
+    const result = await handleStudentActivityMessage({
+      store: fakeStore,
+      assignment,
+      sourceMatches: true,
+      retryDelaysMs: [0],
+      message: {
+        sdk: "activity-sdk/v1", type: "event", method: "reportAttempt",
+        payload: { item_index: 0, correct: true },
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(writeEvent).toHaveBeenCalledTimes(2);
+    expect(writeEvent.mock.calls[0][0].eventId).toBe(writeEvent.mock.calls[1][0].eventId);
   });
 });

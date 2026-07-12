@@ -81,18 +81,18 @@ export interface ActivityDeliveryStore {
     dismissedAt: string;
   }): Promise<void>;
   writeEvent(input: {
+    eventId: string;
     assignmentId: string;
     type: "attempt" | "hint" | "complete";
     payload: Record<string, unknown>;
   }): Promise<void>;
-  markAssignmentComplete(input: {
-    assignmentId: string;
-    score: number;
-    completedAt: string;
-  }): Promise<void>;
 }
 
 const orderedBands: DifficultyBand[] = ["support", "core", "challenge"];
+
+export function eventsInSlidingWindow(timestamps: number[], now: number, windowMs = 60_000) {
+  return timestamps.filter((timestamp) => now - timestamp < windowMs);
+}
 
 export async function loadOrCreateReadyCandidates(
   store: ActivityDeliveryStore,
@@ -193,6 +193,7 @@ export async function handleStudentActivityMessage(input: {
   message: unknown;
   sourceMatches: boolean;
   eventsInRateWindow?: number;
+  retryDelaysMs?: number[];
 }) {
   const authorized = authorizeActivityTelemetryMessage(input.message, {
     assignmentId: input.assignment.id,
@@ -202,21 +203,35 @@ export async function handleStudentActivityMessage(input: {
 
   if (!authorized.ok) return authorized;
 
-  await input.store.writeEvent({
-    assignmentId: authorized.event.assignment_id,
-    type: authorized.event.type,
-    payload: authorized.event.payload,
-  });
-
-  if (authorized.event.type === "complete") {
-    await input.store.markAssignmentComplete({
+  await retryTelemetryWrite(
+    () => input.store.writeEvent({
+      eventId: authorized.event.event_id,
       assignmentId: authorized.event.assignment_id,
-      score: Number(authorized.event.payload.score ?? 0),
-      completedAt: String(authorized.event.payload.completed_at ?? new Date().toISOString()),
-    });
-  }
+      type: authorized.event.type,
+      payload: authorized.event.payload,
+    }),
+    input.retryDelaysMs ?? [200, 500, 1_000],
+  );
 
   return authorized;
+}
+
+export async function retryTelemetryWrite(
+  write: () => Promise<void>,
+  retryDelaysMs: number[],
+): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+    try {
+      await write();
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt === retryDelaysMs.length) break;
+      await new Promise((resolve) => window.setTimeout(resolve, retryDelaysMs[attempt]));
+    }
+  }
+  throw lastError;
 }
 
 export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
@@ -393,6 +408,7 @@ export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
   }
 
   async writeEvent(input: {
+    eventId: string;
     assignmentId: string;
     type: "attempt" | "hint" | "complete";
     payload: Record<string, unknown>;
@@ -400,6 +416,7 @@ export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
     if (this.studentAccess) {
       const { error } = await this.client.rpc("record_student_activity_event", {
         input_assignment_id: input.assignmentId,
+        input_event_id: input.eventId,
         input_student_id: this.studentAccess.studentId,
         input_access_token: this.studentAccess.accessToken,
         input_type: input.type,
@@ -413,36 +430,11 @@ export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
     const { error } = await this.client
       .from("events")
       .insert({
+        event_id: input.eventId,
         assignment_id: input.assignmentId,
         type: input.type,
         payload: input.payload,
       });
-
-    if (error) throw new Error(error.message);
-  }
-
-  async markAssignmentComplete(input: {
-    assignmentId: string;
-    score: number;
-    completedAt: string;
-  }) {
-    if (this.studentAccess) {
-      const { error } = await this.client.rpc("complete_assignment_for_student", {
-        input_assignment_id: input.assignmentId,
-        input_student_id: this.studentAccess.studentId,
-        input_access_token: this.studentAccess.accessToken,
-        input_score: input.score,
-        input_completed_at: input.completedAt,
-      });
-
-      if (error) throw new Error(error.message);
-      return;
-    }
-
-    const { error } = await this.client
-      .from("assignments")
-      .update({ status: "completed", score: input.score, completed_at: input.completedAt })
-      .eq("id", input.assignmentId);
 
     if (error) throw new Error(error.message);
   }

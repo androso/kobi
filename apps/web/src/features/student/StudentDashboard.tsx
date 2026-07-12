@@ -11,6 +11,7 @@ import {
 import { supabase } from "../../lib/supabase";
 import {
   handleStudentActivityMessage,
+  eventsInSlidingWindow,
   SupabaseActivityDeliveryStore,
   type StudentAssignment,
 } from "../activityDelivery/artifactDelivery";
@@ -92,7 +93,7 @@ export function StudentDashboard() {
   const [dismissingAssignment, setDismissingAssignment] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const eventsInWindowRef = useRef(0);
+  const eventTimesRef = useRef<number[]>([]);
   const pendingDismissalsRef = useRef(new Set<string>());
 
   useEffect(() => {
@@ -163,9 +164,11 @@ export function StudentDashboard() {
     if (!assignment || !deliveryStore) return;
     const currentAssignment = assignment;
     const currentStore = deliveryStore;
-    eventsInWindowRef.current = 0;
+    eventTimesRef.current = [];
 
     function handleMessage(event: MessageEvent) {
+      const now = Date.now();
+      eventTimesRef.current = eventsInSlidingWindow(eventTimesRef.current, now);
       const sourceMatches = event.source === iframeRef.current?.contentWindow;
       const parsed = activitySdkMessageSchema.safeParse(event.data);
 
@@ -189,11 +192,13 @@ export function StudentDashboard() {
         assignment: currentAssignment,
         message: event.data,
         sourceMatches,
-        eventsInRateWindow: eventsInWindowRef.current,
+        eventsInRateWindow: eventTimesRef.current.length,
       }).then((result) => {
         if (!result.ok) return;
-        eventsInWindowRef.current += 1;
+        eventTimesRef.current.push(Date.now());
         setTelemetryStatus(result.event.type === "complete" ? "Actividad completada." : "Progreso guardado.");
+      }).catch(() => {
+        setTelemetryStatus("No se pudo guardar el progreso. Inténtalo de nuevo.");
       });
     }
 
