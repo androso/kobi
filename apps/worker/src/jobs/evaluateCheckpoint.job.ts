@@ -1,18 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { lessonStateSchema, type LessonState } from "@kobi/ai-core";
 import { buildActivitySessionContext } from "@kobi/activities/server";
-import {
-  buildCurriculumQueryText,
-  retrieveCurriculumMatches,
-  type CurriculumMatch,
-} from "@kobi/curriculum";
+import type { CurriculumMatch } from "@kobi/curriculum";
 import type PgBoss from "pg-boss";
 import {
   createCheckpointEvaluatorFromEnv,
   type CheckpointDecision,
   type EvaluateCheckpointInput,
 } from "../checkpoint/evaluateCheckpoint.js";
-import { JOB_GENERATE_ACTIVITY_ARTIFACTS } from "../queue.js";
 
 export interface EvaluateCheckpointJobData {
   sessionId: string;
@@ -41,15 +36,13 @@ export interface EvaluateCheckpointJobResult {
 }
 
 export function buildGenerateActivityArtifactsJobData(input: {
-  sessionId: string;
-  lessonState: LessonState;
-  curriculumMatches: CurriculumMatch[];
+  checkpointId?: string;
+  sessionId?: string;
+  lessonState?: LessonState;
+  curriculumMatches?: CurriculumMatch[];
 }) {
-  return {
-    sessionId: input.sessionId,
-    lessonState: input.lessonState,
-    curriculumMatches: input.curriculumMatches,
-  };
+  if (input.checkpointId) return { checkpointId: input.checkpointId };
+  return { sessionId: input.sessionId, lessonState: input.lessonState, curriculumMatches: input.curriculumMatches };
 }
 
 /**
@@ -89,11 +82,11 @@ export async function runEvaluateCheckpointJob(
   options: EvaluateCheckpointJobOptions = {},
 ): Promise<EvaluateCheckpointJobResult> {
   const evaluator = options.evaluator ?? createCheckpointEvaluatorFromEnv();
-  const curriculumRetriever = options.curriculumRetriever ?? retrieveCurriculumMatches;
   const { sessionId } = data;
 
   const since = await loadLastReadyCheckpointAt(supabase, sessionId);
-  const lessonStates = await loadLessonStatesSince(supabase, sessionId, since);
+  const segments = await loadLessonStatesSince(supabase, sessionId, since);
+  const lessonStates = segments.map((segment) => segment.lessonState);
 
   if (lessonStates.length === 0) {
     return { evaluated: false, ready: null, skippedReason: "no new segments since last checkpoint" };
@@ -101,6 +94,20 @@ export async function runEvaluateCheckpointJob(
 
   const sessionContext = buildActivitySessionContext(lessonStates);
   const decision = await evaluator({ sessionContext, lessonStates });
+
+  if (decision.ready) {
+    const latestLessonState = lessonStates.at(-1)!;
+    const { error } = await supabase.rpc("persist_ready_checkpoint_with_outbox", {
+      p_session_id: sessionId,
+      p_reason: decision.reason,
+      p_summary: decision.summary,
+      p_session_context: sessionContext,
+      p_segment_ids: segments.map((segment) => segment.id),
+      p_latest_lesson_state: latestLessonState,
+    });
+    if (error) throw new Error(`evaluateCheckpoint job: failed to persist ready checkpoint and outbox: ${error.message}`);
+    return { evaluated: true, ready: true, skippedReason: null };
+  }
 
   const { error: insertError } = await supabase.from("checkpoints").insert({
     session_id: sessionId,
@@ -114,27 +121,7 @@ export async function runEvaluateCheckpointJob(
     throw new Error(`evaluateCheckpoint job: failed to insert checkpoint: ${insertError.message}`);
   }
 
-  if (!decision.ready) {
-    return { evaluated: true, ready: false, skippedReason: null };
-  }
-
-  const latestLessonState = lessonStates.at(-1)!;
-  const queryText = buildCurriculumQueryText(latestLessonState);
-  const retrievalContext = await resolveRetrievalContext(supabase, data);
-  const curriculumMatches = await curriculumRetriever(supabase, {
-    queryText,
-    grade: retrievalContext.grade,
-    subject: retrievalContext.subject,
-    unit: retrievalContext.unit,
-  });
-
-  await boss.send(JOB_GENERATE_ACTIVITY_ARTIFACTS, buildGenerateActivityArtifactsJobData({
-    sessionId,
-    lessonState: latestLessonState,
-    curriculumMatches,
-  }));
-
-  return { evaluated: true, ready: true, skippedReason: null };
+  return { evaluated: true, ready: false, skippedReason: null };
 }
 
 async function resolveRetrievalContext(
@@ -200,10 +187,10 @@ async function loadLessonStatesSince(
   supabase: SupabaseClient,
   sessionId: string,
   since: string | null,
-): Promise<LessonState[]> {
+): Promise<Array<{ id: string; lessonState: LessonState }>> {
   let query = supabase
     .from("segments")
-    .select("lesson_state")
+    .select("id, lesson_state")
     .eq("session_id", sessionId)
     .order("created_at", { ascending: true });
 
@@ -217,8 +204,8 @@ async function loadLessonStatesSince(
     throw new Error(`evaluateCheckpoint job: failed to load segments: ${error.message}`);
   }
 
-  return (data ?? [])
-    .map((row) => lessonStateSchema.safeParse(row.lesson_state))
-    .filter((result) => result.success)
-    .map((result) => result.data);
+  return (data ?? []).flatMap((row, index) => {
+    const result = lessonStateSchema.safeParse(row.lesson_state);
+    return result.success ? [{ id: String(row.id ?? `segment-${index}`), lessonState: result.data }] : [];
+  });
 }

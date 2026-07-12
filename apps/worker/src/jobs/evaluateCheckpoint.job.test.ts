@@ -94,7 +94,7 @@ describe("evaluateCheckpoint job", () => {
     expect(boss.sent).toHaveLength(0);
   });
 
-  it("records a ready checkpoint, retrieves curriculum matches, and enqueues generate-activity-artifacts", async () => {
+  it("transactionally records a ready checkpoint and outbox without doing retrieval or dispatch", async () => {
     const supabase = fakeSupabase({ lastReadyCheckpointAt: null, segments: [lessonState] });
     const boss = fakeBoss();
     let retrieverCalls = 0;
@@ -115,27 +115,13 @@ describe("evaluateCheckpoint job", () => {
     );
 
     expect(result).toEqual({ evaluated: true, ready: true, skippedReason: null });
-    expect(retrieverCalls).toBe(1);
-    const retrieverInput = retrieverInputs[0];
-    expect(retrieverInput).toMatchObject({
-      grade: 7,
-      subject: "lenguaje",
-    });
-    expect(retrieverInput.queryText).toContain(lessonState.objective_guess);
-    expect(retrieverInput.queryText).toContain(lessonState.topic);
-    expect(retrieverInput.queryText).toContain("titular");
-    expect(retrieverInput.queryText).toContain(lessonState.transcript_summary);
-    expect(supabase.insertedCheckpoints[0]).toMatchObject({ session_id: "session-1", ready: true });
-    expect(boss.sent).toHaveLength(1);
-    expect(boss.sent[0].name).toBe(JOB_GENERATE_ACTIVITY_ARTIFACTS);
-    expect(boss.sent[0].data).toMatchObject({
-      sessionId: "session-1",
-      lessonState,
-      curriculumMatches,
-    });
+    expect(retrieverCalls).toBe(0);
+    expect(supabase.rpcCalls).toHaveLength(1);
+    expect(supabase.rpcCalls[0]).toMatchObject({ name: "persist_ready_checkpoint_with_outbox", args: { p_session_id: "session-1", p_segment_ids: ["segment-0"] } });
+    expect(boss.sent).toHaveLength(0);
   });
 
-  it("uses session class metadata for curriculum retrieval when job data omits it", async () => {
+  it("does not need mutable class metadata while persisting a ready handoff", async () => {
     const supabase = fakeSupabase({
       lastReadyCheckpointAt: null,
       segments: [lessonState],
@@ -157,11 +143,7 @@ describe("evaluateCheckpoint job", () => {
       },
     );
 
-    expect(retrieverInputs[0]).toMatchObject({
-      grade: 7,
-      subject: "matematicas",
-      unit: "geometria-triangulos-cuadrilateros",
-    });
+    expect(retrieverInputs).toHaveLength(0);
   });
 
 
@@ -193,7 +175,7 @@ describe("evaluateCheckpoint job", () => {
       },
     );
 
-    expect(supabase.tablesRead).toEqual(["checkpoints", "segments", "checkpoints", "sessions"]);
+    expect(supabase.tablesRead).toEqual(["checkpoints", "segments"]);
     expect(supabase.tablesRead).not.toContain("audio_chunks");
   });
 });
@@ -206,9 +188,11 @@ interface FakeSupabaseOptions {
 
 function fakeSupabase(options: FakeSupabaseOptions) {
   const insertedCheckpoints: unknown[] = [];
+  const rpcCalls: Array<{ name: string; args: unknown }> = [];
   const state = { segmentsGtValue: null as string | null, tablesRead: [] as string[] };
 
   const client = {
+    rpc(name: string, args: unknown) { rpcCalls.push({ name, args }); return Promise.resolve({ data: "checkpoint-1", error: null }); },
     from(table: string) {
       state.tablesRead.push(table);
       if (table === "checkpoints") {
@@ -227,6 +211,7 @@ function fakeSupabase(options: FakeSupabaseOptions) {
   return {
     client,
     insertedCheckpoints,
+    rpcCalls,
     get segmentsGtValue() {
       return state.segmentsGtValue;
     },

@@ -28,9 +28,11 @@ import {
 } from "../activity-generation/openaiArtifactGenerator.js";
 
 export interface GenerateActivityArtifactsJobData {
-  sessionId: string;
-  lessonState: LessonState;
-  curriculumMatches: CurriculumMatch[];
+  checkpointId?: string;
+  /** Direct/manual generation remains supported; checkpoint handoffs use checkpointId only. */
+  sessionId?: string;
+  lessonState?: LessonState;
+  curriculumMatches?: CurriculumMatch[];
 }
 
 const activityBands: DifficultyBand[] = ["support", "core", "challenge"];
@@ -98,15 +100,19 @@ export async function runGenerateActivityArtifactsJob(
   data: GenerateActivityArtifactsJobData,
   options: GenerateActivityArtifactsJobOptions = {},
 ): Promise<GenerateActivityArtifactsJobResult> {
-  const { sessionId, lessonState, curriculumMatches } = data;
+  const workflow = data.checkpointId
+    ? await loadAndClaimCheckpoint(supabase, data.checkpointId)
+    : await loadDirectGenerationContext(supabase, data);
+  if (!workflow) return { inserted: 0, reused: 0, generated: 0, skippedReason: "checkpoint already generated" };
+  const { sessionId, lessonState, curriculumMatches, sessionContext } = workflow;
+  try {
   if (curriculumMatches.length === 0) {
+    if (data.checkpointId) await completeCheckpointGeneration(supabase, data.checkpointId);
     return { inserted: 0, reused: 0, generated: 0, skippedReason: "no curriculum matches" };
   }
 
-  const lessonStates = await loadLessonStates(supabase, sessionId, lessonState);
-  const sessionContext = buildActivitySessionContext(lessonStates);
-
   if (await hasCurrentReadyCandidates(supabase, sessionId, sessionContext)) {
+    if (data.checkpointId) await completeCheckpointGeneration(supabase, data.checkpointId);
     return { inserted: 0, reused: 0, generated: 0, skippedReason: "ready candidates are current" };
   }
 
@@ -149,6 +155,7 @@ export async function runGenerateActivityArtifactsJob(
   });
 
   if (planned.length === 0) {
+    if (data.checkpointId) await completeCheckpointGeneration(supabase, data.checkpointId);
     return { inserted: 0, reused: 0, generated: 0, skippedReason: "no candidates" };
   }
 
@@ -182,6 +189,7 @@ export async function runGenerateActivityArtifactsJob(
   }
 
   if (candidatesToInsert.length === 0) {
+    if (data.checkpointId) await completeCheckpointGeneration(supabase, data.checkpointId);
     return { inserted: 0, reused: 0, generated: 0, skippedReason: "no persisted candidates" };
   }
 
@@ -191,12 +199,47 @@ export async function runGenerateActivityArtifactsJob(
     await insertSessionCandidate(supabase, candidate);
   }
 
-  return {
+  const result = {
     inserted: candidatesToInsert.length,
     reused: candidatesToInsert.filter((candidate) => candidate.source !== "new").length,
     generated: candidatesToInsert.filter((candidate) => candidate.origin === "openai").length,
     skippedReason: null,
   };
+  if (data.checkpointId) await completeCheckpointGeneration(supabase, data.checkpointId);
+  return result;
+  } catch (cause) {
+    if (data.checkpointId) await supabase.from("checkpoint_generation_outbox").update({ status: "failed", last_error: cause instanceof Error ? cause.message : String(cause) }).eq("checkpoint_id", data.checkpointId);
+    throw cause;
+  }
+}
+
+async function loadDirectGenerationContext(supabase: SupabaseClient, data: GenerateActivityArtifactsJobData) {
+  if (!data.sessionId || !data.lessonState || !data.curriculumMatches) throw new Error("generation requires checkpointId or complete direct input");
+  const lessonStates = await loadLessonStates(supabase, data.sessionId, data.lessonState);
+  return { sessionId: data.sessionId, lessonState: data.lessonState, curriculumMatches: data.curriculumMatches, sessionContext: buildActivitySessionContext(lessonStates) };
+}
+
+async function loadAndClaimCheckpoint(supabase: SupabaseClient, checkpointId: string): Promise<{
+  sessionId: string; lessonState: LessonState; curriculumMatches: CurriculumMatch[]; sessionContext: SessionContext;
+} | null> {
+  const claim = await supabase.from("checkpoint_generation_outbox").update({ status: "running", generation_started_at: new Date().toISOString(), last_error: null })
+    .eq("checkpoint_id", checkpointId).eq("status", "delivered").select("curriculum_matches, checkpoints(session_id, session_context, segment_ids, latest_lesson_state)").maybeSingle();
+  if (claim.error) throw new Error(`generateActivityArtifacts job: failed to claim checkpoint: ${claim.error.message}`);
+  if (!claim.data) return null;
+  const checkpoint: any = Array.isArray(claim.data.checkpoints) ? claim.data.checkpoints[0] : claim.data.checkpoints;
+  const segmentIds = Array.isArray(checkpoint.segment_ids) ? checkpoint.segment_ids : [];
+  if (segmentIds.length === 0) throw new Error("generateActivityArtifacts job: checkpoint has no approved segment range");
+  return {
+    sessionId: checkpoint.session_id,
+    lessonState: lessonStateSchema.parse(checkpoint.latest_lesson_state),
+    curriculumMatches: (claim.data.curriculum_matches ?? []) as CurriculumMatch[],
+    sessionContext: checkpoint.session_context as SessionContext,
+  };
+}
+
+async function completeCheckpointGeneration(supabase: SupabaseClient, checkpointId: string) {
+  const { error } = await supabase.from("checkpoint_generation_outbox").update({ status: "completed", generation_completed_at: new Date().toISOString(), last_error: null }).eq("checkpoint_id", checkpointId).eq("status", "running");
+  if (error) throw new Error(`generateActivityArtifacts job: failed to complete checkpoint: ${error.message}`);
 }
 
 export function planSessionArtifacts(input: {

@@ -11,6 +11,7 @@ import {
   registerCheckpointSchedulerJob,
   scheduleCheckpointSchedulerJob,
 } from "./jobs/checkpointScheduler.job.js";
+import { registerCheckpointOutboxDispatcherJob, scheduleCheckpointOutboxDispatcherJob } from "./jobs/checkpointOutboxDispatcher.job.js";
 import { startApiServer } from "./api.js";
 
 async function main() {
@@ -37,8 +38,10 @@ async function main() {
   await registerBuildLessonStateJob(boss, supabase);
   await registerGenerateActivityArtifactsJob(boss, supabase);
   await registerEvaluateCheckpointJob(boss, supabase);
+  await registerCheckpointOutboxDispatcherJob(boss, supabase);
   await registerCheckpointSchedulerJob(boss, supabase);
   await scheduleCheckpointSchedulerJob(boss);
+  await scheduleCheckpointOutboxDispatcherJob(boss);
   const server = startApiServer({ supabase, boss });
 
   console.log(
