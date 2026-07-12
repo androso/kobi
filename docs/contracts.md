@@ -116,6 +116,8 @@ Written to the `events` table on every student interaction; read back for the li
 }
 ```
 
+Session reports are database-derived through `list_teacher_session_reports`: the RPC checks teacher/class ownership and combines sessions, lesson-state segments, assignments, and events into bounded, paginated results. Assignments are the canonical completion/score record, so late corrections replace the stored outcome; event rows supply hints and difficult-item counts. Activity `times_used` and `avg_score` are recomputed idempotently from current, non-dismissed assignments.
+
 ## 5. `curriculum_match` (Area B -> Area C)
 
 See [`docs/area-bc-contract.md`](area-bc-contract.md) for the full write-up shared with Androso. Returned by `retrieveCurriculumMatches()` in `packages/curriculum`.
