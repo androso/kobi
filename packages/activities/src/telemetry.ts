@@ -12,6 +12,7 @@ export interface ParentTelemetryContext {
 }
 
 export interface AuthorizedTelemetryEvent {
+  event_id: string;
   assignment_id: string;
   type: "attempt" | "hint" | "complete";
   payload: Record<string, unknown>;
@@ -66,6 +67,7 @@ export function authorizeActivityTelemetryMessage(
   return {
     ok: true,
     event: {
+      event_id: parsed.data.payload.event_id ?? crypto.randomUUID(),
       assignment_id: context.assignmentId,
       type: eventTypeFromSdkMethod(parsed.data.method),
       payload: payloadFromSdkEvent(parsed.data, context.assignmentId),
@@ -106,8 +108,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function payloadFromSdkEvent(event: ActivitySdkEvent, assignmentId: string): Record<string, unknown> {
+  const { event_id: _eventId, ...payload } = event.payload;
   return {
-    ...event.payload,
+    ...payload,
     assignment_id: assignmentId,
   };
 }

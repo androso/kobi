@@ -239,7 +239,7 @@ function renderActivityHtml(manifest: ActivityManifest): string {
     });
 
     document.getElementById("complete").addEventListener("click", () => {
-      reportComplete({ score: selected.size, total: manifest.content.items[0].answer_key.length, completed_at: new Date().toISOString() });
+      reportComplete({ score: selected.size > 0 ? 1 : 0, total: manifest.content.items.length });
       document.getElementById("feedback").textContent = "Actividad completada. Gracias.";
     });
   </script>

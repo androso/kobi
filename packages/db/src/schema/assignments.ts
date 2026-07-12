@@ -34,5 +34,6 @@ export const assignments = pgTable(
   (table) => [
     unique("assignments_session_student_unique").on(table.sessionId, table.studentId),
     index("assignments_session_student_idx").on(table.sessionId, table.studentId),
+    index("assignments_student_completed_at_idx").on(table.studentId, table.completedAt),
   ],
 );

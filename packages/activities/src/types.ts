@@ -113,6 +113,7 @@ export const activitySdkRequestSchema = z.object({
 
 export const activityAttemptPayloadSchema = z.object({
   assignment_id: z.string().min(1),
+  event_id: z.string().uuid().optional(),
   item_index: z.number().int().nonnegative(),
   correct: z.boolean(),
   answer: z.unknown().optional(),
@@ -120,15 +121,16 @@ export const activityAttemptPayloadSchema = z.object({
 
 export const activityHintPayloadSchema = z.object({
   assignment_id: z.string().min(1),
+  event_id: z.string().uuid().optional(),
   item_index: z.number().int().nonnegative(),
   hint_index: z.number().int().nonnegative(),
 });
 
 export const activityCompletePayloadSchema = z.object({
   assignment_id: z.string().min(1),
+  event_id: z.string().uuid().optional(),
   score: z.number().min(0),
-  total: z.number().min(0).optional(),
-  completed_at: z.string().datetime().optional(),
+  total: z.number().positive(),
 });
 
 export const activitySdkEventSchema = z.discriminatedUnion("method", [

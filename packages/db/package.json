@@ -5,6 +5,7 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
+    "test": "node --test test/*.test.mjs",
     "typecheck": "tsc --noEmit",
     "db:generate": "cross-env NODE_OPTIONS=--require=tsx/cjs drizzle-kit generate",
     "db:migrate": "tsx src/migrate.ts"

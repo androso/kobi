@@ -110,11 +110,20 @@ Written to the `events` table on every student interaction; read back for the li
 
 ```json
 {
+  "event_id": "7e99b7fd-6855-4452-a30e-60fc20bd2a3a",
   "type": "attempt",
   "payload": { "assignment_id": "...", "item_index": 0, "correct": true },
   "ts": "2026-07-04T20:00:00Z"
 }
 ```
+
+The parent SDK host assigns one UUID to each event and reuses it for retries. PostgreSQL
+deduplicates by assignment and event UUID, validates item and hint indexes against the stored
+manifest, and enforces a sliding limit of 30 events per assignment per minute. Completion requires
+`score` and `total`, with `total` equal to the manifest item count and `0 <= score <= total`; the
+database stores `score / total` as the bounded assignment score. Event and completion timestamps
+are server-authored, and inserting the completion event plus updating its assignment is one
+transaction.
 
 ## 5. `curriculum_match` (Area B -> Area C)
 
