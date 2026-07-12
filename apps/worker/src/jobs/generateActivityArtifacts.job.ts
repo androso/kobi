@@ -52,6 +52,7 @@ export interface GenerateActivityArtifactsJobResult {
 }
 
 interface SessionCandidateToInsert {
+  candidateSetVersion: string;
   sessionId: string;
   activityId: string;
   band: DifficultyBand;
@@ -153,9 +154,11 @@ export async function runGenerateActivityArtifactsJob(
   }
 
   const candidatesToInsert: SessionCandidateToInsert[] = [];
+  const candidateSetVersion = crypto.randomUUID();
   for (const artifact of planned) {
     if (artifact.reusable) {
       candidatesToInsert.push({
+        candidateSetVersion,
         sessionId,
         activityId: artifact.reusable.id,
         band: artifact.band,
@@ -171,6 +174,7 @@ export async function runGenerateActivityArtifactsJob(
     const persisted = await persistGeneratedArtifact(supabase, artifact.candidate);
 
     candidatesToInsert.push({
+      candidateSetVersion,
       sessionId,
       activityId: persisted.id,
       band: artifact.band,
@@ -460,6 +464,7 @@ async function insertSessionCandidate(
   input: SessionCandidateToInsert,
 ) {
   const { error } = await supabase.from("session_activity_candidates").insert({
+    candidate_set_version: input.candidateSetVersion,
     session_id: input.sessionId,
     activity_id: input.activityId,
     difficulty_band: input.band,

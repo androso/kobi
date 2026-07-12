@@ -14,6 +14,7 @@ export const sessionActivityCandidates = pgTable(
   "session_activity_candidates",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    candidateSetVersion: uuid("candidate_set_version").notNull().defaultRandom(),
     sessionId: uuid("session_id")
       .notNull()
       .references(() => sessions.id, { onDelete: "cascade" }),

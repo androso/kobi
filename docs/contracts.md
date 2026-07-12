@@ -46,6 +46,8 @@ For the teacher approval flow, Area C writes support/core/challenge rows to `ses
 
 Assignment rows are only valid for approved candidates from the same session: `assignments.candidate_id`, `activity_id`, and `variant` must match the selected `session_activity_candidates` row, and the assigned student must belong to the session's class.
 
+Publishing is one teacher-scoped database transaction through `publish_session_assignments`. Each generated support/core/challenge set shares a `candidate_set_version`; the caller submits that expected version, all three approval decisions, the complete student assignment set, and an idempotency key. The RPC rejects stale or mismatched sets and commits candidate statuses, assignment upserts, and the publish audit together, so a retry returns the original complete result without partial delivery.
+
 ```json
 {
   "contract_version": "activity-artifact/v1",
