@@ -97,12 +97,16 @@ Assignment rows are only valid for approved candidates from the same session: `a
 - Allowed families are `match_classify`, `sequence_order`, and `guided_practice`.
 - `content.items[]` is required and must include prompts plus answer keys; hints default to an empty list when omitted.
 - `bundle_ref` must be unguessable and authorized by assignment/class before iframe delivery.
+- Bundle references are generated from cryptographically random UUIDs; they are opaque locators, not bearer credentials, and possession never bypasses assignment/class authorization.
 - Auth-lite students receive a per-student `access_token` from `join_class_by_code`; student assignment reads, dismissals, telemetry, and completion go through checked delivery RPCs using that token, not broad anonymous table access.
 - Rejoining with the same class code and display name reuses the existing student identity and rotates its `access_token`; this recovers a lost or legacy browser session without creating a duplicate student row.
 - The parent injects only manifest, assignment id, and difficulty band. It must not inject Supabase credentials, student PII, raw transcript, or broader class/session context.
 - The iframe communicates only through the Activity SDK over `postMessage`: `getManifest()`, `getBand()`, `reportAttempt()`, `reportHint()`, and `reportComplete()`.
 - The parent validates message source, schema, assignment authorization, method allowlist, payload size, and telemetry rate limits.
+- The host injects a restrictive CSP and renders both teacher previews and student delivery with `sandbox="allow-scripts"` and `referrerPolicy="no-referrer"`; the artifact receives no same-origin, form, navigation, popup, frame, or network capability.
 - Teacher edits are manifest-only and must pass schema validation, escaped rendering, forbidden field checks, and manifest/code consistency smoke validation.
+
+The structural verifier and its JavaScript source checks are generation-time defense-in-depth. They reject known unsafe artifact shapes and improve diagnostics, but parser acceptance is not a security boundary by itself; runtime isolation comes from the host sandbox/CSP plus assignment-scoped delivery authorization.
 
 ## 4. Telemetry event
 

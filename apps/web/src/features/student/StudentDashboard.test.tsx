@@ -84,6 +84,8 @@ describe("StudentDashboard", () => {
     const activityFrame = screen.getByTitle("Practica: La noticia");
     expect(activityFrame).toHaveAttribute("sandbox", "allow-scripts");
     expect(activityFrame).toHaveAttribute("referrerpolicy", "no-referrer");
+    expect(activityFrame.getAttribute("srcdoc")).toContain("Content-Security-Policy");
+    expect(activityFrame.getAttribute("srcdoc")).toContain("connect-src 'none'");
   });
 
   it("uses dark-mode-safe student shell and pet surfaces", async () => {

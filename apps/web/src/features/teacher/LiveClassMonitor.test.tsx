@@ -135,6 +135,10 @@ describe("LiveClassMonitor activity delivery", () => {
     expect(await screen.findByRole("heading", { name: /aprobar y entregar actividad/i })).toBeInTheDocument();
     expect(screen.getByText("Practica: La noticia")).toBeInTheDocument();
     expect(screen.getByText(/Estructura de la noticia/i)).toBeInTheDocument();
+    const preview = screen.getByTitle(/previsualizacion practica: la noticia/i);
+    expect(preview).toHaveAttribute("sandbox", "allow-scripts");
+    expect(preview).toHaveAttribute("referrerpolicy", "no-referrer");
+    expect(preview.getAttribute("srcdoc")).toContain("Content-Security-Policy");
 
     await user.click(screen.getByRole("button", { name: /publicar a estudiantes/i }));
 

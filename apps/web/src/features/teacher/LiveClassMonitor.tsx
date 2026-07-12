@@ -18,6 +18,10 @@ import {
   type StudentForAssignment,
 } from "../activityDelivery/artifactDelivery";
 import {
+  activityIframeSecurityAttributes,
+  secureActivitySrcDoc,
+} from "../activityDelivery/activityIframeSecurity";
+import {
   createBackendSession,
   isAudioApiConfigured,
   isDemoProjectMode,
@@ -594,9 +598,9 @@ function ActivityCandidatePanel({
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
             {selectedCandidate ? (
               <iframe
+                {...activityIframeSecurityAttributes}
                 className="h-[560px] w-full bg-white"
-                sandbox="allow-scripts"
-                srcDoc={selectedCandidate.bundleHtml}
+                srcDoc={secureActivitySrcDoc(selectedCandidate.bundleHtml)}
                 title={`Previsualizacion ${selectedCandidate.manifest.title}`}
               />
             ) : (
