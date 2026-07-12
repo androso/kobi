@@ -36,7 +36,7 @@ Input is the same bounded `SessionContext` (`@kobi/activities`) built from `less
 }
 ```
 
-Every evaluation (pass or fail) is persisted as a row in the `checkpoints` table (`session_id`, `ready`, `reason`, `summary`, `session_context` snapshot, `created_at`) — see `docs/data-model.md`. When `ready` is `false`, the worker does nothing else and waits for the next scheduler tick with more accumulated segments. When `ready` is `true`, the job calls `retrieveCurriculumMatches()` and hands off to Area C's `generate-activity-artifacts` job exactly as before — that job's contract is unchanged.
+Every evaluation is persisted in `checkpoints`. A ready decision stores the exact approved segment IDs, latest lesson state, and immutable `session_context`, then creates a `checkpoint_generation_outbox` row in the same PostgreSQL transaction. A dispatcher retrieves curriculum, records failures for retry, and submits `generate-activity-artifacts` with only `checkpointId`; generation claims that checkpoint once and uses its persisted context and range. Pending, failed, running, and completed handoffs remain visible in the outbox.
 
 ## 3. `ActivityArtifact`
 

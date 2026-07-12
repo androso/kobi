@@ -18,5 +18,7 @@ export const checkpoints = pgTable("checkpoints", {
   summary: text("summary").notNull(),
   /** Snapshot of the SessionContext (@kobi/activities) considered for this decision. */
   sessionContext: jsonb("session_context").notNull(),
+  segmentIds: jsonb("segment_ids").notNull().default([]),
+  latestLessonState: jsonb("latest_lesson_state"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
