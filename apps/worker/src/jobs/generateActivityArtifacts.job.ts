@@ -26,11 +26,13 @@ import {
   type GenerateOpenAiActivityCandidatesInput,
   type OpenAiActivityGenerationResult,
 } from "../activity-generation/openaiArtifactGenerator.js";
+import { incrementMetric, measured } from "../operations.js";
 
 export interface GenerateActivityArtifactsJobData {
   sessionId: string;
   lessonState: LessonState;
   curriculumMatches: CurriculumMatch[];
+  correlationId?: string;
 }
 
 const activityBands: DifficultyBand[] = ["support", "core", "challenge"];
@@ -59,6 +61,7 @@ interface SessionCandidateToInsert {
   artifact: ActivityArtifact | ActivityRepositoryRow;
   source: ActivitySource;
   origin: "openai" | "static" | "repository";
+  correlationId?: string;
 }
 
 interface PlannedSessionArtifact {
@@ -99,6 +102,7 @@ export async function runGenerateActivityArtifactsJob(
   options: GenerateActivityArtifactsJobOptions = {},
 ): Promise<GenerateActivityArtifactsJobResult> {
   const { sessionId, lessonState, curriculumMatches } = data;
+  incrementMetric("generation_runs_total");
   if (curriculumMatches.length === 0) {
     return { inserted: 0, reused: 0, generated: 0, skippedReason: "no curriculum matches" };
   }
@@ -128,15 +132,16 @@ export async function runGenerateActivityArtifactsJob(
 
     if (generatedCount < maxOpenAiGenerationsPerSession) {
       try {
-        const result = await options.openAiGenerator({
+        const result = await measured("provider_request", { provider: "openai", operation: "activity_generation" }, () => options.openAiGenerator!({
           lessonState,
           sessionContext,
           curriculumMatches,
           bands: missingBands,
           parentIdByBand,
-        });
+        }));
         openAiCandidates = result.candidates;
       } catch {
+        incrementMetric("provider_failures_total", { provider: "openai", operation: "activity_generation" });
         openAiCandidates = [];
       }
     }
@@ -147,6 +152,8 @@ export async function runGenerateActivityArtifactsJob(
     openAiCandidates,
     staticCandidates,
   });
+  const fallbackCount = planned.filter((artifact) => artifact.origin === "static").length;
+  if (fallbackCount > 0) incrementMetric("generation_fallback_total", {}, fallbackCount);
 
   if (planned.length === 0) {
     return { inserted: 0, reused: 0, generated: 0, skippedReason: "no candidates" };
@@ -163,6 +170,7 @@ export async function runGenerateActivityArtifactsJob(
         artifact: artifact.reusable,
         source: artifact.reusable.source === "seeded" ? "seeded" : "reused",
         origin: "repository",
+        correlationId: data.correlationId,
       });
       continue;
     }
@@ -178,6 +186,7 @@ export async function runGenerateActivityArtifactsJob(
       artifact: persisted.artifact,
       source: persisted.source,
       origin: artifact.origin ?? "static",
+      correlationId: data.correlationId,
     });
   }
 
@@ -468,6 +477,7 @@ async function insertSessionCandidate(
     context_snapshot: input.sessionContext,
     evidence: input.artifact.evidence,
     verifier_scores: input.artifact.verifier_scores,
+    correlation_id: input.correlationId ?? null,
   });
 
   if (error) {

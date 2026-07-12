@@ -1,13 +1,18 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type PgBoss from "pg-boss";
 import { JOB_EVALUATE_CHECKPOINT } from "../queue.js";
+import { incrementMetric, measured } from "../operations.js";
 
 export const CHECKPOINT_SCHEDULER_JOB_NAME = "checkpoint-scheduler";
 export const CHECKPOINT_SCHEDULER_CRON = "* * * * *";
 const DEFAULT_CHECKPOINT_INTERVAL_MINUTES = 10;
+const DEFAULT_BATCH_SIZE = 50;
+const DEFAULT_CONCURRENCY = 5;
 
 export interface CheckpointSchedulerJobOptions {
   intervalMinutes?: number;
+  batchSize?: number;
+  concurrency?: number;
 }
 
 export interface DueSessionRow {
@@ -30,7 +35,10 @@ export function registerCheckpointSchedulerJob(
   const intervalMinutes = options.intervalMinutes ?? readCheckpointIntervalMinutes();
 
   return boss.work(CHECKPOINT_SCHEDULER_JOB_NAME, { batchSize: 1 }, async () => {
-    await runCheckpointSchedulerTick(supabase, boss, intervalMinutes);
+    await runCheckpointSchedulerTick(supabase, boss, intervalMinutes, {
+      batchSize: options.batchSize,
+      concurrency: options.concurrency,
+    });
   });
 }
 
@@ -43,31 +51,24 @@ export async function runCheckpointSchedulerTick(
   supabase: SupabaseClient,
   boss: PgBoss,
   intervalMinutes: number,
+  options: { batchSize?: number; concurrency?: number } = {},
 ): Promise<{ enqueued: string[] }> {
-  const activeSessions = await loadActiveSessions(supabase);
-  if (activeSessions.length === 0) return { enqueued: [] };
-
-  const lastCheckpointBySession = await loadLastCheckpointAtBySession(
-    supabase,
-    activeSessions.map((session) => session.id),
-  );
-
-  const dueSessionIds = selectDueSessionIds(
-    activeSessions,
-    lastCheckpointBySession,
-    intervalMinutes,
-    new Date(),
-  );
-
-  for (const sessionId of dueSessionIds) {
-    await boss.send(
-      JOB_EVALUATE_CHECKPOINT,
-      { sessionId },
-      { singletonKey: sessionId, singletonSeconds: Math.max(intervalMinutes * 60 - 5, 30) },
-    );
-  }
-
-  return { enqueued: dueSessionIds };
+  return measured("checkpoint_scheduler", {}, async () => {
+    const batchSize = options.batchSize ?? readPositiveIntegerEnv("CHECKPOINT_SCHEDULER_BATCH_SIZE", DEFAULT_BATCH_SIZE);
+    const concurrency = options.concurrency ?? readPositiveIntegerEnv("CHECKPOINT_SCHEDULER_CONCURRENCY", DEFAULT_CONCURRENCY);
+    const dueSessionIds = await loadDueSessionIds(supabase, intervalMinutes, batchSize);
+    for (let offset = 0; offset < dueSessionIds.length; offset += concurrency) {
+      await Promise.all(dueSessionIds.slice(offset, offset + concurrency).map(async (sessionId) => {
+        await boss.send(
+          JOB_EVALUATE_CHECKPOINT,
+          { sessionId, correlationId: `scheduler:${sessionId}:${Date.now()}` },
+          { singletonKey: sessionId, singletonSeconds: Math.max(intervalMinutes * 60 - 5, 30) },
+        );
+      }));
+    }
+    incrementMetric("checkpoint_scheduler_sessions_total", {}, dueSessionIds.length);
+    return { enqueued: dueSessionIds };
+  });
 }
 
 /** Pure selection logic, kept separate from I/O so it's cheap to unit test. */
@@ -88,44 +89,20 @@ export function selectDueSessionIds(
     .map((session) => session.id);
 }
 
-async function loadActiveSessions(supabase: SupabaseClient): Promise<DueSessionRow[]> {
-  const { data, error } = await supabase
-    .from("sessions")
-    .select("id, started_at")
-    .eq("status", "active");
-
-  if (error) {
-    throw new Error(`checkpointScheduler job: failed to load active sessions: ${error.message}`);
-  }
-
-  return (data ?? []).map((row) => ({ id: String(row.id), startedAt: String(row.started_at) }));
-}
-
-async function loadLastCheckpointAtBySession(
+async function loadDueSessionIds(
   supabase: SupabaseClient,
-  sessionIds: string[],
-): Promise<Map<string, string>> {
-  if (sessionIds.length === 0) return new Map();
-
-  const { data, error } = await supabase
-    .from("checkpoints")
-    .select("session_id, created_at")
-    .in("session_id", sessionIds)
-    .order("created_at", { ascending: false });
+  intervalMinutes: number,
+  batchSize: number,
+): Promise<string[]> {
+  const { data, error } = await supabase.rpc("get_due_checkpoint_sessions", {
+    p_interval_minutes: intervalMinutes,
+    p_limit: batchSize,
+  });
 
   if (error) {
-    throw new Error(`checkpointScheduler job: failed to load checkpoints: ${error.message}`);
+    throw new Error(`checkpointScheduler job: failed to load due sessions: ${error.message}`);
   }
-
-  const lastCheckpointBySession = new Map<string, string>();
-  for (const row of data ?? []) {
-    const sessionId = String(row.session_id);
-    if (!lastCheckpointBySession.has(sessionId)) {
-      lastCheckpointBySession.set(sessionId, String(row.created_at));
-    }
-  }
-
-  return lastCheckpointBySession;
+  return (data ?? []).map((row: { session_id: unknown }) => String(row.session_id));
 }
 
 function readCheckpointIntervalMinutes(): number {
@@ -134,4 +111,9 @@ function readCheckpointIntervalMinutes(): number {
 
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CHECKPOINT_INTERVAL_MINUTES;
+}
+
+function readPositiveIntegerEnv(name: string, fallback: number) {
+  const parsed = Number.parseInt(process.env[name] ?? "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }

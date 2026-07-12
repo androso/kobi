@@ -69,7 +69,7 @@ describe("runCheckpointSchedulerTick", () => {
     expect(result.enqueued).toEqual(["session-due"]);
     expect(boss.sent).toHaveLength(1);
     expect(boss.sent[0].name).toBe(JOB_EVALUATE_CHECKPOINT);
-    expect(boss.sent[0].data).toEqual({ sessionId: "session-due" });
+    expect(boss.sent[0].data).toMatchObject({ sessionId: "session-due" });
     expect(boss.sent[0].options).toMatchObject({ singletonKey: "session-due" });
   });
 
@@ -91,6 +91,19 @@ interface FakeSupabaseOptions {
 
 function fakeSupabase(options: FakeSupabaseOptions) {
   const client = {
+    async rpc(name: string, params: { p_interval_minutes: number; p_limit: number }) {
+      if (name !== "get_due_checkpoint_sessions") throw new Error(`unexpected rpc ${name}`);
+      const latest = new Map<string, string>();
+      for (const checkpoint of [...options.checkpoints].sort((a, b) => b.created_at.localeCompare(a.created_at))) {
+        if (!latest.has(checkpoint.session_id)) latest.set(checkpoint.session_id, checkpoint.created_at);
+      }
+      const now = Date.now();
+      const data = options.activeSessions
+        .filter((session) => now - new Date(latest.get(session.id) ?? session.started_at).getTime() >= params.p_interval_minutes * 60_000)
+        .slice(0, params.p_limit)
+        .map((session) => ({ session_id: session.id }));
+      return { data, error: null };
+    },
     from(table: string) {
       if (table === "sessions") {
         return new SessionsQuery(options.activeSessions);

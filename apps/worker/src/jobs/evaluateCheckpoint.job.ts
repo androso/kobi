@@ -16,6 +16,7 @@ import { JOB_GENERATE_ACTIVITY_ARTIFACTS } from "../queue.js";
 
 export interface EvaluateCheckpointJobData {
   sessionId: string;
+  correlationId?: string;
   /** TODO(Area D): pull these from the session's class record once that table exists. */
   grade?: number;
   subject?: string;
@@ -44,11 +45,13 @@ export function buildGenerateActivityArtifactsJobData(input: {
   sessionId: string;
   lessonState: LessonState;
   curriculumMatches: CurriculumMatch[];
+  correlationId?: string;
 }) {
   return {
     sessionId: input.sessionId,
     lessonState: input.lessonState,
     curriculumMatches: input.curriculumMatches,
+    correlationId: input.correlationId,
   };
 }
 
@@ -108,6 +111,7 @@ export async function runEvaluateCheckpointJob(
     reason: decision.reason,
     summary: decision.summary,
     session_context: sessionContext,
+    correlation_id: data.correlationId ?? null,
   });
 
   if (insertError) {
@@ -132,6 +136,7 @@ export async function runEvaluateCheckpointJob(
     sessionId,
     lessonState: latestLessonState,
     curriculumMatches,
+    correlationId: data.correlationId,
   }));
 
   return { evaluated: true, ready: true, skippedReason: null };
