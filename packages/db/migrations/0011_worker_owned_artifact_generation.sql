@@ -15,6 +15,8 @@ drop policy if exists session_activity_candidates_teacher_write on session_activ
 revoke insert, update, delete on session_activity_candidates from authenticated;
 grant update (status, approved_at) on session_activity_candidates to authenticated;
 
+drop policy if exists session_activity_candidates_teacher_approve on session_activity_candidates;
+
 create policy session_activity_candidates_teacher_approve
   on session_activity_candidates
   for update
