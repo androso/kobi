@@ -48,6 +48,21 @@ after insert or update or delete on assignments
 for each row execute function broadcast_student_delivery_change();
 
 drop trigger if exists events_broadcast_delivery_change on events;
-create trigger events_broadcast_delivery_change
-after insert or update or delete on events
-for each row execute function broadcast_student_delivery_change();
+drop trigger if exists events_broadcast_delivery_change_insert on events;
+drop trigger if exists events_broadcast_delivery_change_update on events;
+drop trigger if exists events_broadcast_delivery_change_delete on events;
+
+create trigger events_broadcast_delivery_change_insert
+after insert on events
+for each row when (new.type = 'complete')
+execute function broadcast_student_delivery_change();
+
+create trigger events_broadcast_delivery_change_update
+after update on events
+for each row when (new.type = 'complete')
+execute function broadcast_student_delivery_change();
+
+create trigger events_broadcast_delivery_change_delete
+after delete on events
+for each row when (old.type = 'complete')
+execute function broadcast_student_delivery_change();
