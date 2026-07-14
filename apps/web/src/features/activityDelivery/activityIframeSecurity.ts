@@ -18,9 +18,12 @@ export const activityIframeSecurityAttributes = {
 } as const;
 
 export function secureActivitySrcDoc(bundleHtml: string): string {
-  const csp = `<meta http-equiv="Content-Security-Policy" content="${activityIframeCsp}">`;
-  if (/<head(?:\s[^>]*)?>/i.test(bundleHtml)) {
-    return bundleHtml.replace(/<head(?:\s[^>]*)?>/i, (head) => `${head}${csp}`);
-  }
-  return `${csp}${bundleHtml}`;
+  const document = new DOMParser().parseFromString(bundleHtml, "text/html");
+  const meta = document.createElement("meta");
+  meta.httpEquiv = "Content-Security-Policy";
+  meta.content = activityIframeCsp;
+  document.head.prepend(meta);
+
+  const doctype = document.doctype ? `<!doctype ${document.doctype.name}>` : "";
+  return `${doctype}${document.documentElement.outerHTML}`;
 }
