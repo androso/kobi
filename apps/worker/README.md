@@ -9,7 +9,7 @@ The worker also owns the small HTTP API used by the Vite web app for live audio:
 - `POST /api/sessions/:id/audio-chunks` as `multipart/form-data` with `audio`, `chunk_index`, `start_ms`, `end_ms`
 - `POST /api/sessions/:id/manual-lesson-state` with `{ "topic": "...", "objective": "..." }`
 
-Required API env: `PORT`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `AUDIO_BUCKET`, plus `KOBI_API_CORS_ORIGIN` when web runs on a different origin.
+Required API env: `PORT`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `AUDIO_BUCKET`, plus an explicit comma-separated `KOBI_API_CORS_ORIGINS` allowlist in production.
 
 ## Stages
 
