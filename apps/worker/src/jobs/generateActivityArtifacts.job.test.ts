@@ -361,6 +361,11 @@ class FakeQuery {
     return this;
   }
 
+  maybeSingle() {
+    if (this.table === "sessions") return Promise.resolve({ data: null, error: null });
+    return Promise.resolve({ data: null, error: null });
+  }
+
   like(column: string, pattern: string) {
     this.state.likeFilters.push(`${column}=${pattern}`);
     return this;
@@ -387,6 +392,10 @@ class FakeQuery {
         data: this.state.segments.map((lessonState) => ({ lesson_state: lessonState })),
         error: null,
       };
+    }
+
+    if (this.table === "sessions") {
+      return { data: null, error: null };
     }
 
     if (this.table === "activities" && this.operation === "select") {

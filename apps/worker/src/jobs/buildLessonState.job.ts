@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildLessonState, type LessonState } from "@kobi/ai-core";
 import type PgBoss from "pg-boss";
+import { isSessionDeletionRequested } from "../retention.js";
 
 export interface BuildLessonStateJobData {
   sessionId: string;
@@ -30,6 +31,8 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
       if (!job) return;
 
       const { sessionId } = job.data;
+
+      if (await isSessionDeletionRequested(supabase, sessionId)) return;
 
       const { data: chunks, error: chunksError } = await supabase
         .from("audio_chunks")
@@ -69,6 +72,8 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
         transcriptText,
         previousLessonState: (previousSegment?.lesson_state as LessonState) ?? null,
       });
+
+      if (await isSessionDeletionRequested(supabase, sessionId)) return;
 
       const { error: segmentError } = await supabase.from("segments").insert({
         session_id: sessionId,

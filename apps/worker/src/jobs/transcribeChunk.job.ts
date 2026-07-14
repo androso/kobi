@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { classifySafeError, safeLog, transcribeAudioChunk } from "@kobi/ai-core";
 import type PgBoss from "pg-boss";
 import { JOB_BUILD_LESSON_STATE } from "../queue.js";
+import { isSessionDeletionRequested } from "../retention.js";
 
 export interface TranscribeChunkJobData {
   audioChunkId: string;
@@ -24,6 +25,8 @@ export function registerTranscribeChunkJob(boss: PgBoss, supabase: SupabaseClien
       if (!job) return;
 
       const { audioChunkId, audioUrl, mimeType, sessionId } = job.data;
+
+      if (await isSessionDeletionRequested(supabase, sessionId)) return;
 
       safeLog("info", "transcription.chunk_picked_up", { audioChunkId, sessionId });
 
@@ -60,6 +63,11 @@ export function registerTranscribeChunkJob(boss: PgBoss, supabase: SupabaseClien
 
       if (!transcriptText) {
         safeLog("warn", "transcription.chunk_empty", { audioChunkId, sessionId });
+      }
+
+      if (await isSessionDeletionRequested(supabase, sessionId)) {
+        await supabase.from("audio_chunks").update({ status: "failed" }).eq("id", audioChunkId);
+        return;
       }
 
       const { error: updateError } = await supabase

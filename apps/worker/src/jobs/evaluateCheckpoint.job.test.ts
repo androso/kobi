@@ -193,7 +193,7 @@ describe("evaluateCheckpoint job", () => {
       },
     );
 
-    expect(supabase.tablesRead).toEqual(["checkpoints", "segments", "checkpoints", "sessions"]);
+    expect(supabase.tablesRead).toEqual(["sessions", "checkpoints", "segments", "sessions", "checkpoints", "sessions"]);
     expect(supabase.tablesRead).not.toContain("audio_chunks");
   });
 });

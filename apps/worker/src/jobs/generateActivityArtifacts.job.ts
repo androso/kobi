@@ -26,6 +26,7 @@ import {
   type GenerateOpenAiActivityCandidatesInput,
   type OpenAiActivityGenerationResult,
 } from "../activity-generation/openaiArtifactGenerator.js";
+import { isSessionDeletionRequested } from "../retention.js";
 
 export interface GenerateActivityArtifactsJobData {
   sessionId: string;
@@ -99,6 +100,9 @@ export async function runGenerateActivityArtifactsJob(
   options: GenerateActivityArtifactsJobOptions = {},
 ): Promise<GenerateActivityArtifactsJobResult> {
   const { sessionId, lessonState, curriculumMatches } = data;
+  if (await isSessionDeletionRequested(supabase, sessionId)) {
+    return { inserted: 0, reused: 0, generated: 0, skippedReason: "session data deletion requested" };
+  }
   if (curriculumMatches.length === 0) {
     return { inserted: 0, reused: 0, generated: 0, skippedReason: "no curriculum matches" };
   }
@@ -183,6 +187,10 @@ export async function runGenerateActivityArtifactsJob(
 
   if (candidatesToInsert.length === 0) {
     return { inserted: 0, reused: 0, generated: 0, skippedReason: "no persisted candidates" };
+  }
+
+  if (await isSessionDeletionRequested(supabase, sessionId)) {
+    return { inserted: 0, reused: 0, generated: 0, skippedReason: "session data deletion requested" };
   }
 
   await markSessionCandidatesSuperseded(supabase, sessionId);
