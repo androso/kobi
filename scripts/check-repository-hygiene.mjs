@@ -1,5 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
+import { execFile as execFileCallback } from "node:child_process";
 import { relative, resolve, sep } from "node:path";
+import { promisify } from "node:util";
 
 const root = resolve(import.meta.dirname, "..");
 const maxGeneratedBytes = 1_000_000;
@@ -28,30 +30,83 @@ const suspiciousRootNames = new Set([
 const ansiPattern = /\x1b\[[0-?]*[ -/]*[@-~]/;
 const secretPatterns = [
   ["private key", /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/],
-  ["GitHub token", /\b(?:ghp|github_pat)_[A-Za-z0-9_]{20,}\b/],
+  ["GitHub token", /\b(?:ghp|github_pat|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{20,}\b/],
   ["OpenAI key", /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/],
   ["Supabase service-role JWT", /\beyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/],
 ];
+const execFile = promisify(execFileCallback);
 
-export async function inspectFiles(paths) {
+async function readStagedBlob(repoPath) {
+  const { stdout: sizeOutput } = await execFile("git", ["cat-file", "-s", `:${repoPath}`], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  const size = Number(sizeOutput.trim());
+  if (!Number.isSafeInteger(size)) {
+    throw new Error(`Unable to determine staged blob size for ${repoPath}`);
+  }
+  if (size > maxGeneratedBytes && !allowedLargeFiles.has(repoPath)) {
+    return { size, bytes: null };
+  }
+
+  const { stdout: bytes } = await execFile("git", ["cat-file", "blob", `:${repoPath}`], {
+    cwd: root,
+    encoding: "buffer",
+    maxBuffer: maxGeneratedBytes + 1,
+  });
+  return { size, bytes };
+}
+
+async function cachedFiles() {
+  const { stdout } = await execFile("git", ["ls-files", "--cached", "-z"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  return new Set(stdout.split("\0").filter(Boolean));
+}
+
+export async function inspectFiles(
+  paths,
+  {
+    stagedPaths = new Set(),
+    readStagedBlob: loadStagedBlob = readStagedBlob,
+    readWorkingTreeFile = readFile,
+    statWorkingTreeFile = stat,
+  } = {},
+) {
   const violations = [];
   for (const inputPath of paths) {
     const absolutePath = resolve(root, inputPath);
     const repoPath = relative(root, absolutePath).split(sep).join("/");
-    const metadata = await stat(absolutePath).catch((error) => {
-      if (error?.code === "ENOENT") return null;
-      throw error;
-    });
-    if (!metadata) continue;
+    let metadata;
+    let bytes;
+    if (stagedPaths.has(repoPath)) {
+      const staged = await loadStagedBlob(repoPath);
+      metadata = { size: staged.size };
+      if (staged.size > maxGeneratedBytes && !allowedLargeFiles.has(repoPath)) {
+        violations.push(`${repoPath}: unexpectedly large tracked file (${staged.size} bytes)`);
+        continue;
+      }
+      bytes = staged.bytes;
+    } else {
+      metadata = await statWorkingTreeFile(absolutePath).catch((error) => {
+        if (error?.code === "ENOENT") return null;
+        throw error;
+      });
+      if (!metadata) continue;
+
+      if (metadata.size > maxGeneratedBytes && !allowedLargeFiles.has(repoPath)) {
+        violations.push(`${repoPath}: unexpectedly large tracked file (${metadata.size} bytes)`);
+        continue;
+      }
+      bytes = await readWorkingTreeFile(absolutePath);
+    }
 
     if (!repoPath.includes("/") && suspiciousRootNames.has(repoPath.toLowerCase())) {
       violations.push(`${repoPath}: suspicious root artifact name`);
     }
-    if (metadata.size > maxGeneratedBytes && !allowedLargeFiles.has(repoPath)) {
-      violations.push(`${repoPath}: unexpectedly large tracked file (${metadata.size} bytes)`);
-    }
 
-    const bytes = await readFile(absolutePath);
+    if (!bytes) continue;
     if (bytes.includes(0)) continue;
     const text = bytes.toString("utf8");
     if (ansiPattern.test(text)) violations.push(`${repoPath}: terminal ANSI escape sequence`);
@@ -65,9 +120,10 @@ export async function inspectFiles(paths) {
 async function trackedFiles() {
   let input = "";
   for await (const chunk of process.stdin) input += chunk;
-  return input
-    .split("\0")
-    .filter((path) => path && !path.startsWith(fixturePrefix));
+  return {
+    paths: input.split("\0").filter((path) => path && !path.startsWith(fixturePrefix)),
+    stagedPaths: await cachedFiles(),
+  };
 }
 
 function assertGeneratedFilesAreDocumented(paths) {
@@ -78,9 +134,9 @@ function assertGeneratedFilesAreDocumented(paths) {
 }
 
 if (process.argv[1] === import.meta.filename) {
-  const paths = await trackedFiles();
+  const { paths, stagedPaths } = await trackedFiles();
   const violations = [
-    ...(await inspectFiles(paths)),
+    ...(await inspectFiles(paths, { stagedPaths })),
     ...assertGeneratedFilesAreDocumented(paths),
   ];
   if (violations.length > 0) {
