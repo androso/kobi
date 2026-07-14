@@ -97,9 +97,8 @@ Assignment rows are only valid for approved candidates from the same session: `a
 - Allowed families are `match_classify`, `sequence_order`, and `guided_practice`.
 - `content.items[]` is required and must include prompts plus answer keys; hints default to an empty list when omitted.
 - `bundle_ref` must be unguessable and authorized by assignment/class before iframe delivery.
-- Auth-lite students receive a per-student `access_token` from `join_class_by_code`; student assignment reads, dismissals, telemetry, and completion go through checked delivery RPCs using that token, not broad anonymous table access.
-- Authenticated teachers can read candidates, artifacts, bundles, assignments, and telemetry only through sessions in classes they own. They may approve candidates and publish assignments, while candidate/artifact/bundle creation and telemetry insertion remain worker/service-role or checked student-RPC operations.
-- Rejoining with the same class code and display name reuses the existing student identity and rotates its `access_token`; this recovers a lost or legacy browser session without creating a duplicate student row.
+- Students authenticate with teacher-managed username/password accounts. Delivery derives the student mapping from `auth.uid()`; assignment reads, dismissals, telemetry, and completion are restricted to that mapping by RLS. `join_class_by_code` and browser-held student bearer tokens are not part of the active contract.
+- Authenticated teachers can read candidates, artifacts, bundles, assignments, and telemetry only through sessions in classes they own. They may approve candidates and publish assignments, while candidate/artifact/bundle creation and telemetry insertion remain worker/service-role or student-owned operations.
 - The parent injects only manifest, assignment id, and difficulty band. It must not inject Supabase credentials, student PII, raw transcript, or broader class/session context.
 - The iframe communicates only through the Activity SDK over `postMessage`: `getManifest()`, `getBand()`, `reportAttempt()`, `reportHint()`, and `reportComplete()`.
 - The parent validates message source, schema, assignment authorization, method allowlist, payload size, and telemetry rate limits.
@@ -121,4 +120,4 @@ Written to the `events` table on every student interaction; read back for the li
 
 See [`docs/area-bc-contract.md`](area-bc-contract.md) for the full write-up shared with Androso. Returned by `retrieveCurriculumMatches()` in `packages/curriculum`.
 
-Status: `lesson_state` and `curriculum_match` are implemented (see `packages/ai-core`, `packages/curriculum`) — these are the two contracts Isaac (Areas A/B) is responsible for. Gate 0 for `ActivityArtifact` is recorded here. Area C/E/F should freeze the exact TypeScript schemas, fixtures, telemetry shape, and sandbox contract before parallel implementation starts.
+Status: `lesson_state` and `curriculum_match` are **shipped** (see `packages/ai-core`, `packages/curriculum`). `ActivityArtifact`, telemetry, and sandbox contracts are **shipped** in `packages/activities` and consumed by `apps/web` and `apps/worker`; Gate 0 for the artifact contract is recorded here.
