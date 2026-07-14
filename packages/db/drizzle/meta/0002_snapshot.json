@@ -398,6 +398,18 @@
           "primaryKey": false,
           "notNull": true
         },
+        "from_chunk_index": {
+          "name": "from_chunk_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "to_chunk_index": {
+          "name": "to_chunk_index",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
         "lesson_state": {
           "name": "lesson_state",
           "type": "jsonb",
@@ -424,7 +436,35 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "segments_session_chunk_range_unique": {
+          "name": "segments_session_chunk_range_unique",
+          "columns": [
+            {
+              "expression": "session_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "from_chunk_index",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "to_chunk_index",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "segments_session_id_sessions_id_fk": {
           "name": "segments_session_id_sessions_id_fk",
@@ -443,7 +483,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "segments_chunk_range_valid": {
+          "name": "segments_chunk_range_valid",
+          "value": "\"segments\".\"from_chunk_index\" <= \"segments\".\"to_chunk_index\""
+        }
+      },
       "isRLSEnabled": false
     },
     "public.checkpoints": {

@@ -1,4 +1,4 @@
-import { check, integer, jsonb, pgTable, real, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { check, integer, jsonb, pgTable, real, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { sessions } from "./sessions.js";
 
@@ -18,7 +18,11 @@ export const segments = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    unique().on(table.sessionId, table.fromChunkIndex, table.toChunkIndex),
+    uniqueIndex("segments_session_chunk_range_unique").on(
+      table.sessionId,
+      table.fromChunkIndex,
+      table.toChunkIndex,
+    ),
     check("segments_chunk_range_valid", sql`${table.fromChunkIndex} <= ${table.toChunkIndex}`),
   ],
 );

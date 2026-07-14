@@ -3,9 +3,11 @@ alter table public.segments
   add column if not exists to_chunk_index integer;
 
 -- Existing rows predate durable source boundaries. They cannot be reconstructed,
--- so use negative, row-ordered synthetic ranges that never overlap real chunks.
+-- so use negative synthetic ranges with the latest legacy row at -1. The worker
+-- uses the greatest preceding boundary for continuity, so this preserves the
+-- latest lesson_state after migration.
 with legacy as (
-  select id, -row_number() over (partition by session_id order by created_at, id) as synthetic_index
+  select id, -row_number() over (partition by session_id order by created_at desc, id desc) as synthetic_index
   from public.segments
   where from_chunk_index is null or to_chunk_index is null
 )
@@ -66,9 +68,9 @@ begin
   join sessions se on se.id = c.session_id
   join classes cl on cl.id = se.class_id
   left join lateral (
-    select lesson_state from segments
-    where session_id = target_session_id and to_chunk_index < c.from_chunk_index
-    order by to_chunk_index desc limit 1
+    select seg.lesson_state from segments seg
+    where seg.session_id = target_session_id and seg.to_chunk_index < c.from_chunk_index
+    order by seg.to_chunk_index desc limit 1
   ) s on true
   where c.session_id = target_session_id;
   if found then return; end if;
@@ -113,9 +115,9 @@ begin
   join sessions se on se.id = c.session_id
   join classes cl on cl.id = se.class_id
   left join lateral (
-    select lesson_state from segments
-    where session_id = target_session_id and to_chunk_index < next_index
-    order by to_chunk_index desc limit 1
+    select seg.lesson_state from segments seg
+    where seg.session_id = target_session_id and seg.to_chunk_index < next_index
+    order by seg.to_chunk_index desc limit 1
   ) s on true
   where c.id = claim_id;
 end;
@@ -156,3 +158,8 @@ begin
   return true;
 end;
 $$;
+
+revoke all on function public.claim_next_lesson_state_range(uuid, integer) from public;
+revoke all on function public.finalize_lesson_state_range(uuid, jsonb, real, text) from public;
+grant execute on function public.claim_next_lesson_state_range(uuid, integer) to service_role;
+grant execute on function public.finalize_lesson_state_range(uuid, jsonb, real, text) to service_role;
