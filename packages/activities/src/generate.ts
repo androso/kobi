@@ -239,7 +239,8 @@ function renderActivityHtml(manifest: ActivityManifest): string {
     });
 
     document.getElementById("complete").addEventListener("click", () => {
-      reportComplete({ score: selected.size > 0 ? 1 : 0, total: manifest.content.items.length });
+      const selectedAnswerCount = answers.filter((answer) => selected.has(answer)).length;
+      reportComplete({ score: selectedAnswerCount / answers.length, total: manifest.content.items.length });
       document.getElementById("feedback").textContent = "Actividad completada. Gracias.";
     });
   </script>

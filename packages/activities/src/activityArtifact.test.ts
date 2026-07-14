@@ -295,4 +295,21 @@ describe("activity artifact contracts", () => {
       "bundle completion total must equal manifest.content.items.length",
     );
   });
+
+  it("scores static fallback completion against every expected answer", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+    });
+
+    expect(candidate.bundle_html).toContain(
+      "const selectedAnswerCount = answers.filter((answer) => selected.has(answer)).length;",
+    );
+    expect(candidate.bundle_html).toContain(
+      "score: selectedAnswerCount / answers.length",
+    );
+    expect(candidate.bundle_html).not.toContain("selected.size > 0 ? 1 : 0");
+  });
 });
