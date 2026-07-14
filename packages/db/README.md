@@ -6,7 +6,7 @@ Supabase schema/migrations + shared TS types. One datastore (Postgres + pgvector
 
 | Table | Purpose | Key fields |
 |---|---|---|
-| `teacher_profiles` / `classes` / `students` | Auth-lite: teachers via magic link; students via join code + display name | teacher_id, join_code, display_name |
+| `teacher_profiles` / `classes` / `students` | Teachers use Supabase Auth; teachers provision durable student Auth accounts | teacher_id, username, auth_user_id, is_active |
 | `sessions` | One class period | class_id, status, started_at |
 | `segments` | Rolling lesson state | session_id, lesson_state (jsonb), confidence, transcript_summary |
 | `curriculum_chunks` | Ingested textbook unit, objective-level | unit, objective_code, text, embedding |
