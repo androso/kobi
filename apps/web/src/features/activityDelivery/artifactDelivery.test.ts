@@ -9,7 +9,6 @@ import type {
 import {
   buildAssignmentUpserts,
   handleStudentActivityMessage,
-  loadOrCreateReadyCandidates,
   publishAssignments,
   SupabaseActivityDeliveryStore,
 } from "./artifactDelivery";
@@ -57,7 +56,6 @@ const candidate = (band: DifficultyBand): DeliveryCandidate => ({
 
 function store(overrides: Partial<ActivityDeliveryStore> = {}): ActivityDeliveryStore {
   return {
-    ensureActiveSession: vi.fn(async () => "session-1"),
     listCandidates: vi.fn(async () => []),
     listStudents: vi.fn(async () => []),
     updateCandidateStatuses: vi.fn(async () => {}),
@@ -71,17 +69,6 @@ function store(overrides: Partial<ActivityDeliveryStore> = {}): ActivityDelivery
 }
 
 describe("artifact delivery bridge", () => {
-  it("loads existing ready candidates without browser-side generation", async () => {
-    const fakeStore = store({
-      listCandidates: vi.fn(async () => [candidate("challenge"), candidate("support"), candidate("core")]),
-    });
-
-    const result = await loadOrCreateReadyCandidates(fakeStore, "class-1");
-
-    expect(result.created).toBe(false);
-    expect(result.candidates.map((row) => row.difficultyBand)).toEqual(["support", "core", "challenge"]);
-  });
-
   it("builds assignment upserts with approved core fallback", () => {
     const students: StudentForAssignment[] = [
       { id: "student-1", displayName: "Ana" },

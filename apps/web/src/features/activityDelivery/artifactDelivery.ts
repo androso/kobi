@@ -11,6 +11,7 @@ import {
 
 type CandidateStatus = "ready" | "approved" | "rejected" | "superseded";
 type ActivitySource = "seeded" | "reused" | "new";
+const orderedBands: DifficultyBand[] = ["support", "core", "challenge"];
 
 export interface DeliveryCandidate {
   id: string;
@@ -61,7 +62,6 @@ export interface StudentAssignment {
 }
 
 export interface ActivityDeliveryStore {
-  ensureActiveSession(classId: string): Promise<string>;
   listCandidates(sessionId: string): Promise<DeliveryCandidate[]>;
   listStudents(classId: string): Promise<StudentForAssignment[]>;
   updateCandidateStatuses(
@@ -85,25 +85,6 @@ export interface ActivityDeliveryStore {
     score: number;
     completedAt: string;
   }): Promise<void>;
-}
-
-const orderedBands: DifficultyBand[] = ["support", "core", "challenge"];
-
-export async function loadOrCreateReadyCandidates(
-  store: ActivityDeliveryStore,
-  classId: string,
-) {
-  const sessionId = await store.ensureActiveSession(classId);
-  const existing = await store.listCandidates(sessionId);
-  const hasAllBands = orderedBands.every((band) =>
-    existing.some((candidate) => candidate.difficultyBand === band),
-  );
-
-  if (hasAllBands) {
-    return { sessionId, candidates: sortCandidates(existing), created: false };
-  }
-
-  return { sessionId, candidates: sortCandidates(existing), created: false };
 }
 
 export function buildAssignmentUpserts(input: {
@@ -216,29 +197,6 @@ export async function handleStudentActivityMessage(input: {
 
 export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
   constructor(private readonly client: SupabaseClient) {}
-
-  async ensureActiveSession(classId: string) {
-    const { data: existing, error: selectError } = await this.client
-      .from("sessions")
-      .select("id")
-      .eq("class_id", classId)
-      .eq("status", "active")
-      .order("started_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (selectError) throw new Error(selectError.message);
-    if (existing?.id) return String(existing.id);
-
-    const { data, error } = await this.client
-      .from("sessions")
-      .insert({ class_id: classId, status: "active" })
-      .select("id")
-      .single();
-
-    if (error) throw new Error(error.message);
-    return String(data.id);
-  }
 
   async listCandidates(sessionId: string) {
     const { data: candidateRows, error } = await this.client
