@@ -36,7 +36,7 @@ Input is the same bounded `SessionContext` (`@kobi/activities`) built from `less
 }
 ```
 
-Every evaluation is persisted in `checkpoints`. A ready decision stores the exact approved segment IDs, latest lesson state, and immutable `session_context`, then creates a `checkpoint_generation_outbox` row in the same PostgreSQL transaction. A dispatcher retrieves curriculum, records failures for retry, and submits `generate-activity-artifacts` with only `checkpointId`; generation claims that checkpoint once and uses its persisted context and range. Pending, failed, running, and completed handoffs remain visible in the outbox.
+Every evaluation is persisted in `checkpoints`. A ready decision stores the exact approved segment IDs, latest lesson state, and immutable `session_context`, then creates a `checkpoint_generation_outbox` row in the same PostgreSQL transaction. A dispatcher claims the handoff as `dispatching`, retrieves curriculum, and prepares it as `delivered` before submitting `generate-activity-artifacts` with only `checkpointId`; a delivered row without a durable `queue_job_id` is recovered on the next dispatch cycle, so a process exit cannot lose the enqueue. Generation claims that checkpoint once and uses its persisted context and range, and completion or failure updates apply only to that generation claim. Pending, failed, dispatching, delivered, running, and completed handoffs remain visible in the outbox.
 
 ## 3. `ActivityArtifact`
 

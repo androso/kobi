@@ -53,6 +53,21 @@ export interface GenerateActivityArtifactsJobResult {
   skippedReason: string | null;
 }
 
+interface CheckpointGenerationClaim {
+  checkpointId: string;
+  generationStartedAt: string;
+}
+
+class CheckpointClaimValidationError extends Error {
+  constructor(
+    readonly claim: CheckpointGenerationClaim,
+    cause: unknown,
+  ) {
+    super(errorMessage(cause), { cause });
+    this.name = "CheckpointClaimValidationError";
+  }
+}
+
 interface SessionCandidateToInsert {
   sessionId: string;
   activityId: string;
@@ -100,115 +115,121 @@ export async function runGenerateActivityArtifactsJob(
   data: GenerateActivityArtifactsJobData,
   options: GenerateActivityArtifactsJobOptions = {},
 ): Promise<GenerateActivityArtifactsJobResult> {
-  const workflow = data.checkpointId
-    ? await loadAndClaimCheckpoint(supabase, data.checkpointId)
-    : await loadDirectGenerationContext(supabase, data);
-  if (!workflow) return { inserted: 0, reused: 0, generated: 0, skippedReason: "checkpoint already generated" };
-  const { sessionId, lessonState, curriculumMatches, sessionContext } = workflow;
+  let claim: CheckpointGenerationClaim | null = null;
   try {
-  if (curriculumMatches.length === 0) {
-    if (data.checkpointId) await completeCheckpointGeneration(supabase, data.checkpointId);
-    return { inserted: 0, reused: 0, generated: 0, skippedReason: "no curriculum matches" };
-  }
+    let workflow;
+    if (data.checkpointId) {
+      workflow = await loadAndClaimCheckpoint(supabase, data.checkpointId);
+      if (workflow) claim = workflow.claim;
+    } else {
+      workflow = await loadDirectGenerationContext(supabase, data);
+    }
+    if (!workflow) return { inserted: 0, reused: 0, generated: 0, skippedReason: "checkpoint already generated" };
+    const { sessionId, lessonState, curriculumMatches, sessionContext } = workflow;
+    if (curriculumMatches.length === 0) {
+      if (claim) await completeCheckpointGeneration(supabase, claim);
+      return { inserted: 0, reused: 0, generated: 0, skippedReason: "no curriculum matches" };
+    }
 
-  if (await hasCurrentReadyCandidates(supabase, sessionId, sessionContext)) {
-    if (data.checkpointId) await completeCheckpointGeneration(supabase, data.checkpointId);
-    return { inserted: 0, reused: 0, generated: 0, skippedReason: "ready candidates are current" };
-  }
+    if (await hasCurrentReadyCandidates(supabase, sessionId, sessionContext)) {
+      if (claim) await completeCheckpointGeneration(supabase, claim);
+      return { inserted: 0, reused: 0, generated: 0, skippedReason: "ready candidates are current" };
+    }
 
-  const repositoryRows = await loadRepositoryRows(supabase, curriculumMatches);
-  const rankedRows = rankActivityRepositoryRows(repositoryRows, curriculumMatches, sessionContext);
-  const reusableByBand = pickReusableActivitiesByBand(rankedRows);
-  const parentIdByBand = parentIdsByBand(rankedRows);
-  const missingBands = activityBands.filter((band) => !reusableByBand[band]);
-  const staticCandidates = createActivityArtifactCandidates({
-    lessonState,
-    sessionContext,
-    curriculumMatches,
-  }).map((candidate) => withServerDerivedCandidateFields(candidate, parentIdByBand));
+    const repositoryRows = await loadRepositoryRows(supabase, curriculumMatches);
+    const rankedRows = rankActivityRepositoryRows(repositoryRows, curriculumMatches, sessionContext);
+    const reusableByBand = pickReusableActivitiesByBand(rankedRows);
+    const parentIdByBand = parentIdsByBand(rankedRows);
+    const missingBands = activityBands.filter((band) => !reusableByBand[band]);
+    const staticCandidates = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext,
+      curriculumMatches,
+    }).map((candidate) => withServerDerivedCandidateFields(candidate, parentIdByBand));
 
-  let openAiCandidates: ActivityArtifactCandidate[] = [];
-  if (missingBands.length > 0 && options.openAiGenerator) {
-    const generatedCount = await countGeneratedSessionCandidates(supabase, sessionId);
-    const maxOpenAiGenerationsPerSession = options.maxOpenAiGenerationsPerSession ?? 3;
+    let openAiCandidates: ActivityArtifactCandidate[] = [];
+    if (missingBands.length > 0 && options.openAiGenerator) {
+      const generatedCount = await countGeneratedSessionCandidates(supabase, sessionId);
+      const maxOpenAiGenerationsPerSession = options.maxOpenAiGenerationsPerSession ?? 3;
 
-    if (generatedCount < maxOpenAiGenerationsPerSession) {
-      try {
-        const result = await options.openAiGenerator({
-          lessonState,
-          sessionContext,
-          curriculumMatches,
-          bands: missingBands,
-          parentIdByBand,
-        });
-        openAiCandidates = result.candidates;
-      } catch {
-        openAiCandidates = [];
+      if (generatedCount < maxOpenAiGenerationsPerSession) {
+        try {
+          const result = await options.openAiGenerator({
+            lessonState,
+            sessionContext,
+            curriculumMatches,
+            bands: missingBands,
+            parentIdByBand,
+          });
+          openAiCandidates = result.candidates;
+        } catch {
+          openAiCandidates = [];
+        }
       }
     }
-  }
 
-  const planned = planSessionArtifacts({
-    reusableByBand,
-    openAiCandidates,
-    staticCandidates,
-  });
+    const planned = planSessionArtifacts({
+      reusableByBand,
+      openAiCandidates,
+      staticCandidates,
+    });
 
-  if (planned.length === 0) {
-    if (data.checkpointId) await completeCheckpointGeneration(supabase, data.checkpointId);
-    return { inserted: 0, reused: 0, generated: 0, skippedReason: "no candidates" };
-  }
-
-  const candidatesToInsert: SessionCandidateToInsert[] = [];
-  for (const artifact of planned) {
-    if (artifact.reusable) {
-      candidatesToInsert.push({
-        sessionId,
-        activityId: artifact.reusable.id,
-        band: artifact.band,
-        sessionContext,
-        artifact: artifact.reusable,
-        source: artifact.reusable.source === "seeded" ? "seeded" : "reused",
-        origin: "repository",
-      });
-      continue;
+    if (planned.length === 0) {
+      if (claim) await completeCheckpointGeneration(supabase, claim);
+      return { inserted: 0, reused: 0, generated: 0, skippedReason: "no candidates" };
     }
 
-    if (!artifact.candidate) continue;
-    const persisted = await persistGeneratedArtifact(supabase, artifact.candidate);
+    const candidatesToInsert: SessionCandidateToInsert[] = [];
+    for (const artifact of planned) {
+      if (artifact.reusable) {
+        candidatesToInsert.push({
+          sessionId,
+          activityId: artifact.reusable.id,
+          band: artifact.band,
+          sessionContext,
+          artifact: artifact.reusable,
+          source: artifact.reusable.source === "seeded" ? "seeded" : "reused",
+          origin: "repository",
+        });
+        continue;
+      }
 
-    candidatesToInsert.push({
-      sessionId,
-      activityId: persisted.id,
-      band: artifact.band,
-      sessionContext,
-      artifact: persisted.artifact,
-      source: persisted.source,
-      origin: artifact.origin ?? "static",
-    });
-  }
+      if (!artifact.candidate) continue;
+      const persisted = await persistGeneratedArtifact(supabase, artifact.candidate);
 
-  if (candidatesToInsert.length === 0) {
-    if (data.checkpointId) await completeCheckpointGeneration(supabase, data.checkpointId);
-    return { inserted: 0, reused: 0, generated: 0, skippedReason: "no persisted candidates" };
-  }
+      candidatesToInsert.push({
+        sessionId,
+        activityId: persisted.id,
+        band: artifact.band,
+        sessionContext,
+        artifact: persisted.artifact,
+        source: persisted.source,
+        origin: artifact.origin ?? "static",
+      });
+    }
 
-  await markSessionCandidatesSuperseded(supabase, sessionId);
+    if (candidatesToInsert.length === 0) {
+      if (claim) await completeCheckpointGeneration(supabase, claim);
+      return { inserted: 0, reused: 0, generated: 0, skippedReason: "no persisted candidates" };
+    }
 
-  for (const candidate of candidatesToInsert) {
-    await insertSessionCandidate(supabase, candidate);
-  }
+    await markSessionCandidatesSuperseded(supabase, sessionId);
 
-  const result = {
-    inserted: candidatesToInsert.length,
-    reused: candidatesToInsert.filter((candidate) => candidate.source !== "new").length,
-    generated: candidatesToInsert.filter((candidate) => candidate.origin === "openai").length,
-    skippedReason: null,
-  };
-  if (data.checkpointId) await completeCheckpointGeneration(supabase, data.checkpointId);
-  return result;
+    for (const candidate of candidatesToInsert) {
+      await insertSessionCandidate(supabase, candidate);
+    }
+
+    const result = {
+      inserted: candidatesToInsert.length,
+      reused: candidatesToInsert.filter((candidate) => candidate.source !== "new").length,
+      generated: candidatesToInsert.filter((candidate) => candidate.origin === "openai").length,
+      skippedReason: null,
+    };
+    if (claim) await completeCheckpointGeneration(supabase, claim);
+    return result;
   } catch (cause) {
-    if (data.checkpointId) await supabase.from("checkpoint_generation_outbox").update({ status: "failed", last_error: cause instanceof Error ? cause.message : String(cause) }).eq("checkpoint_id", data.checkpointId);
+    const failedClaim = claim ?? (cause instanceof CheckpointClaimValidationError ? cause.claim : null);
+    if (failedClaim) await markCheckpointGenerationFailed(supabase, failedClaim, errorMessage(cause));
     throw cause;
   }
 }
@@ -220,26 +241,61 @@ async function loadDirectGenerationContext(supabase: SupabaseClient, data: Gener
 }
 
 async function loadAndClaimCheckpoint(supabase: SupabaseClient, checkpointId: string): Promise<{
-  sessionId: string; lessonState: LessonState; curriculumMatches: CurriculumMatch[]; sessionContext: SessionContext;
+  sessionId: string;
+  lessonState: LessonState;
+  curriculumMatches: CurriculumMatch[];
+  sessionContext: SessionContext;
+  claim: CheckpointGenerationClaim;
 } | null> {
-  const claim = await supabase.from("checkpoint_generation_outbox").update({ status: "running", generation_started_at: new Date().toISOString(), last_error: null })
+  const generationStartedAt = new Date().toISOString();
+  const claim = await supabase.from("checkpoint_generation_outbox").update({ status: "running", generation_started_at: generationStartedAt, last_error: null })
     .eq("checkpoint_id", checkpointId).eq("status", "delivered").select("curriculum_matches, checkpoints(session_id, session_context, segment_ids, latest_lesson_state)").maybeSingle();
   if (claim.error) throw new Error(`generateActivityArtifacts job: failed to claim checkpoint: ${claim.error.message}`);
   if (!claim.data) return null;
-  const checkpoint: any = Array.isArray(claim.data.checkpoints) ? claim.data.checkpoints[0] : claim.data.checkpoints;
-  const segmentIds = Array.isArray(checkpoint.segment_ids) ? checkpoint.segment_ids : [];
-  if (segmentIds.length === 0) throw new Error("generateActivityArtifacts job: checkpoint has no approved segment range");
-  return {
-    sessionId: checkpoint.session_id,
-    lessonState: lessonStateSchema.parse(checkpoint.latest_lesson_state),
-    curriculumMatches: (claim.data.curriculum_matches ?? []) as CurriculumMatch[],
-    sessionContext: checkpoint.session_context as SessionContext,
-  };
+
+  const generationClaim = { checkpointId, generationStartedAt };
+  try {
+    const checkpoint: any = Array.isArray(claim.data.checkpoints) ? claim.data.checkpoints[0] : claim.data.checkpoints;
+    const segmentIds = Array.isArray(checkpoint.segment_ids) ? checkpoint.segment_ids : [];
+    if (segmentIds.length === 0) throw new Error("generateActivityArtifacts job: checkpoint has no approved segment range");
+    return {
+      sessionId: checkpoint.session_id,
+      lessonState: lessonStateSchema.parse(checkpoint.latest_lesson_state),
+      curriculumMatches: (claim.data.curriculum_matches ?? []) as CurriculumMatch[],
+      sessionContext: checkpoint.session_context as SessionContext,
+      claim: generationClaim,
+    };
+  } catch (cause) {
+    throw new CheckpointClaimValidationError(generationClaim, cause);
+  }
 }
 
-async function completeCheckpointGeneration(supabase: SupabaseClient, checkpointId: string) {
-  const { error } = await supabase.from("checkpoint_generation_outbox").update({ status: "completed", generation_completed_at: new Date().toISOString(), last_error: null }).eq("checkpoint_id", checkpointId).eq("status", "running");
+async function completeCheckpointGeneration(supabase: SupabaseClient, claim: CheckpointGenerationClaim) {
+  const { error } = await supabase
+    .from("checkpoint_generation_outbox")
+    .update({ status: "completed", generation_completed_at: new Date().toISOString(), last_error: null })
+    .eq("checkpoint_id", claim.checkpointId)
+    .eq("status", "running")
+    .eq("generation_started_at", claim.generationStartedAt);
   if (error) throw new Error(`generateActivityArtifacts job: failed to complete checkpoint: ${error.message}`);
+}
+
+async function markCheckpointGenerationFailed(
+  supabase: SupabaseClient,
+  claim: CheckpointGenerationClaim,
+  message: string,
+) {
+  const { error } = await supabase
+    .from("checkpoint_generation_outbox")
+    .update({ status: "failed", last_error: message })
+    .eq("checkpoint_id", claim.checkpointId)
+    .eq("status", "running")
+    .eq("generation_started_at", claim.generationStartedAt);
+  if (error) throw new Error(`generateActivityArtifacts job: failed to record failure: ${error.message}`);
+}
+
+function errorMessage(cause: unknown) {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
 export function planSessionArtifacts(input: {
