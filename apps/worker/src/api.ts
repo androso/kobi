@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { Readable } from "node:stream";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildCurriculumQueryText, embedText, retrieveCurriculumMatches } from "@kobi/curriculum";
-import { lessonStateFromManualEntry, lessonStateSchema, type LessonState } from "@kobi/ai-core";
+import { classifySafeError, lessonStateFromManualEntry, lessonStateSchema, safeLog, type LessonState } from "@kobi/ai-core";
 import type PgBoss from "pg-boss";
 import { demoTranscriptChunks, DEMO_TRANSCRIPT_TICK_MS } from "./demoTranscript.js";
 import { JOB_BUILD_LESSON_STATE, JOB_TRANSCRIBE_CHUNK } from "./queue.js";
@@ -35,7 +35,7 @@ class ApiRequestError extends Error {
 }
 
 function logApi(message: string, details?: Record<string, unknown>) {
-  console.info(`[Kobi API] ${message}`, details ?? {});
+  safeLog("info", `api.${message.replaceAll(" ", "_")}`, details);
 }
 
 function getCorsOrigin() {
@@ -511,7 +511,6 @@ async function uploadAudioChunk(
       sessionId,
       chunkIndex,
       sizeBytes: audioBytes.length,
-      mimeType,
     });
   }
 
@@ -521,12 +520,8 @@ async function uploadAudioChunk(
   logApi("uploading audio chunk to storage", {
     sessionId,
     chunkIndex,
-    startMs,
-    endMs,
-    mimeType,
     sizeBytes: audioBytes.length,
-    bucket,
-    storagePath,
+    durationMs: endMs - startMs,
   });
 
   const { error: uploadError } = await supabase.storage.from(bucket).upload(storagePath, audioBytes, {
@@ -535,7 +530,8 @@ async function uploadAudioChunk(
   });
 
   if (uploadError) {
-    writeJson(res, 500, { error: `Audio upload failed: ${uploadError.message}` });
+    safeLog("error", "audio.upload_failed", { sessionId, outcome: classifySafeError(uploadError) });
+    writeJson(res, 500, { error: "Audio upload failed" });
     return;
   }
 
@@ -564,13 +560,12 @@ async function uploadAudioChunk(
     .createSignedUrl(storagePath, 60 * 60);
 
   if (signedUrlError) {
-    writeJson(res, 500, { error: `Signed audio URL failed: ${signedUrlError.message}` });
+    safeLog("error", "audio.signing_failed", { sessionId, audioChunkId: chunk.id, outcome: classifySafeError(signedUrlError) });
+    writeJson(res, 500, { error: "Signed audio URL failed" });
     return;
   }
 
-  console.log(
-    `[api] audio chunk received: session=${sessionId} chunkId=${chunk.id} index=${chunkIndex} mime=${mimeType} size=${audioBytes.byteLength}B range=${startMs}-${endMs}ms`,
-  );
+  safeLog("info", "audio.received", { sessionId, audioChunkId: chunk.id, chunkIndex, sizeBytes: audioBytes.byteLength, durationMs: endMs - startMs });
 
   try {
     await boss.send(JOB_TRANSCRIBE_CHUNK, {
@@ -579,7 +574,7 @@ async function uploadAudioChunk(
       mimeType,
       sessionId,
     });
-    console.log(`[api] enqueued transcribe-chunk for chunkId=${chunk.id}`);
+    safeLog("info", "audio.transcription_enqueued", { sessionId, audioChunkId: chunk.id });
   } catch (queueError) {
     const message = queueError instanceof Error ? queueError.message : "Failed to enqueue transcription job";
     writeJson(res, 500, { error: message });
@@ -734,7 +729,10 @@ export async function routeRequest(
     writeJson(res, 404, { error: "Not found" });
   } catch (error) {
     const statusCode = error instanceof ApiRequestError ? error.statusCode : 500;
-    const message = error instanceof Error ? error.message : "Unexpected API error";
+    const message = error instanceof ApiRequestError ? error.message : "Unexpected API error";
+    if (!(error instanceof ApiRequestError)) {
+      safeLog("error", "api.request_failed", { outcome: classifySafeError(error) });
+    }
     writeJson(res, statusCode, { error: message });
   }
 }
@@ -743,8 +741,8 @@ export function startApiServer({ supabase, boss, getBoss }: ApiServerOptions) {
   const port = Number(process.env.PORT ?? process.env.API_PORT ?? 8787);
   const server = createServer((req, res) => {
     routeRequest(req, res, supabase, getBoss?.() ?? boss).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : "Unexpected API error";
-      writeJson(res, 500, { error: message });
+      safeLog("error", "api.unhandled_request_failure", { outcome: classifySafeError(error) });
+      writeJson(res, 500, { error: "Unexpected API error" });
     });
   });
 
