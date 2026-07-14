@@ -10,6 +10,7 @@ create table if not exists public.checkpoint_generation_outbox (
   curriculum_matches jsonb,
   queue_job_id text,
   last_error text,
+  dispatch_started_at timestamptz,
   delivered_at timestamptz,
   generation_started_at timestamptz,
   generation_completed_at timestamptz,
@@ -17,6 +18,9 @@ create table if not exists public.checkpoint_generation_outbox (
   updated_at timestamptz not null default now(),
   unique (checkpoint_id)
 );
+
+alter table public.checkpoint_generation_outbox
+  add column if not exists dispatch_started_at timestamptz;
 
 create or replace function public.persist_ready_checkpoint_with_outbox(
   p_session_id uuid, p_reason text, p_summary text, p_session_context jsonb,

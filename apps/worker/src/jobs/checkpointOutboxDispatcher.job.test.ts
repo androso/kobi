@@ -78,6 +78,36 @@ describe("checkpoint outbox dispatcher", () => {
     ]);
   });
 
+  it("reclaims a stale dispatching handoff", async () => {
+    vi.mocked(retrieveCurriculumMatches).mockResolvedValue(matches);
+    const now = new Date("2026-07-13T12:00:00.000Z");
+    const supabase = fakeSupabase({ retryableRows: [outboxRow("stale-dispatch", "dispatching")] });
+    const boss = fakeBoss();
+
+    await dispatchCheckpointOutbox(supabase.client, boss.instance, { now: () => now, generationLeaseMs: 60_000 });
+
+    expect(supabase.orFilters.some((filter) => filter.includes("status.eq.dispatching,dispatch_started_at.lt.2026-07-13T11:59:00.000Z"))).toBe(true);
+    expect(supabase.updatesFor("stale-dispatch").filter((update) => update.status).map((update) => update.status)).toEqual([
+      "dispatching",
+      "delivered",
+    ]);
+  });
+
+  it("retries a delivered handoff that has no durable queue job", async () => {
+    vi.mocked(retrieveCurriculumMatches).mockResolvedValue(matches);
+    const supabase = fakeSupabase({ retryableRows: [outboxRow("unqueued", "delivered")] });
+    const boss = fakeBoss();
+
+    await dispatchCheckpointOutbox(supabase.client, boss.instance);
+
+    expect(supabase.orFilters.some((filter) => filter.includes("status.eq.delivered,queue_job_id.is.null"))).toBe(true);
+    expect(supabase.updatesFor("unqueued").filter((update) => update.status).map((update) => update.status)).toEqual([
+      "dispatching",
+      "delivered",
+    ]);
+    expect(supabase.updatesFor("unqueued").at(-1)).toMatchObject({ queue_job_id: "job-1" });
+  });
+
   it("surfaces a real claim error instead of treating it as a lost race", async () => {
     vi.mocked(retrieveCurriculumMatches).mockResolvedValue(matches);
     const supabase = fakeSupabase({
@@ -96,7 +126,9 @@ type OutboxRow = {
   checkpoint_id: string;
   status: string;
   attempts: number;
+  dispatch_started_at: string | null;
   generation_started_at: string | null;
+  queue_job_id: string | null;
   checkpoints: { latest_lesson_state: typeof lessonState; sessions: { classes: { grade: number; subject: string; unit: string } } };
 };
 
@@ -106,7 +138,9 @@ function outboxRow(id: string, status: string): OutboxRow {
     checkpoint_id: `checkpoint-${id}`,
     status,
     attempts: 0,
+    dispatch_started_at: status === "dispatching" ? "2026-07-13T11:00:00.000Z" : null,
     generation_started_at: status === "running" ? "2026-07-13T11:00:00.000Z" : null,
+    queue_job_id: null,
     checkpoints: {
       latest_lesson_state: lessonState,
       sessions: { classes: { grade: 7, subject: "lenguaje", unit: "U4" } },

@@ -114,7 +114,7 @@ events
 | `audio_chunks` | A (Listening) | Implemented — see `packages/ai-core`, `apps/worker`. |
 | `segments` | A (Listening) | Implemented — rolling `lesson_state` snapshots (see `docs/contracts.md`). |
 | `checkpoints` | A/B boundary (Understand -> Propose gate) | Implemented — one row per checkpoint evaluation (`ready`, `reason`, `summary`, `session_context` snapshot). Runs on its own timer, decoupled from `segments`' per-chunk cadence; see `docs/contracts.md` §2 and `docs/area-bc-contract.md`. |
-| `checkpoint_generation_outbox` | Durable Understand -> Propose handoff | One row per ready checkpoint, transactionally created with it. Tracks retrieval/dispatch attempts, queue job ID, errors, and generation execution state for recovery and idempotency. |
+| `checkpoint_generation_outbox` | Durable Understand -> Propose handoff | One row per ready checkpoint, transactionally created with it. Tracks dispatch and generation leases, retrieval attempts, queue job ID, errors, and generation execution state for recovery and idempotency; delivered rows without a queue job ID remain recoverable. |
 | `curriculum_chunks` | B (Curriculum) | Implemented — see `packages/curriculum`, `docs/area-bc-contract.md`. |
 | `activity_bundles` | C (Activity Generation) | Stores verified self-contained `index.html` bundles by `bundle_ref`. |
 | `activities` | C (Activity Generation) | Verified artifact repository. `manifest` internals are owned by `packages/activities`; evidence/status/source are queryable for shortlist and reuse. |

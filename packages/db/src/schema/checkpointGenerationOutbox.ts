@@ -11,6 +11,7 @@ export const checkpointGenerationOutbox = pgTable(
     curriculumMatches: jsonb("curriculum_matches"),
     queueJobId: text("queue_job_id"),
     lastError: text("last_error"),
+    dispatchStartedAt: timestamp("dispatch_started_at", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
     generationStartedAt: timestamp("generation_started_at", { withTimezone: true }),
     generationCompletedAt: timestamp("generation_completed_at", { withTimezone: true }),

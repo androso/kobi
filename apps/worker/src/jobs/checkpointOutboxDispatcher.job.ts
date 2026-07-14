@@ -7,14 +7,16 @@ import { JOB_CHECKPOINT_OUTBOX_DISPATCHER, JOB_GENERATE_ACTIVITY_ARTIFACTS } fro
 export const CHECKPOINT_GENERATION_LEASE_MS = 15 * 60 * 1000;
 const OUTBOX_BATCH_SIZE = 10;
 const OUTBOX_SELECT =
-  "id, checkpoint_id, status, attempts, generation_started_at, checkpoints(session_id, latest_lesson_state, sessions(classes(grade, subject, unit)))";
+  "id, checkpoint_id, status, attempts, dispatch_started_at, generation_started_at, queue_job_id, checkpoints(session_id, latest_lesson_state, sessions(classes(grade, subject, unit)))";
 
 type CheckpointOutboxRow = {
   id: string;
   checkpoint_id: string;
   status: string;
   attempts: number;
+  dispatch_started_at: string | null;
   generation_started_at: string | null;
+  queue_job_id: string | null;
   checkpoints: unknown;
 };
 
@@ -40,8 +42,9 @@ export async function dispatchCheckpointOutbox(
   options: CheckpointOutboxDispatcherOptions = {},
 ) {
   const batchSize = options.batchSize ?? OUTBOX_BATCH_SIZE;
+  const now = (options.now ?? (() => new Date()))();
   const staleBefore = new Date(
-    (options.now ?? (() => new Date()))().getTime() - (options.generationLeaseMs ?? CHECKPOINT_GENERATION_LEASE_MS),
+    now.getTime() - (options.generationLeaseMs ?? CHECKPOINT_GENERATION_LEASE_MS),
   ).toISOString();
   const rows = await loadDispatchRows(supabase, staleBefore, batchSize);
   let delivered = 0;
@@ -49,9 +52,23 @@ export async function dispatchCheckpointOutbox(
   for (const row of rows) {
     const claimed = await supabase
       .from("checkpoint_generation_outbox")
-      .update({ status: "dispatching", attempts: Number(row.attempts) + 1, last_error: null })
+      .update({
+        status: "dispatching",
+        attempts: Number(row.attempts) + 1,
+        dispatch_started_at: now.toISOString(),
+        last_error: null,
+      })
       .eq("id", row.id)
-      .or(`status.eq.pending,status.eq.failed,and(status.eq.running,generation_started_at.lt.${staleBefore})`)
+      .or(
+        [
+          "status.eq.pending",
+          "status.eq.failed",
+          `and(status.eq.running,generation_started_at.lt.${staleBefore})`,
+          `and(status.eq.dispatching,dispatch_started_at.lt.${staleBefore})`,
+          "and(status.eq.dispatching,dispatch_started_at.is.null)",
+          "and(status.eq.delivered,queue_job_id.is.null)",
+        ].join(","),
+      )
       .select("id")
       .maybeSingle();
 
@@ -130,7 +147,15 @@ async function loadDispatchRows(supabase: SupabaseClient, staleBefore: string, b
   const retryable = await supabase
     .from("checkpoint_generation_outbox")
     .select(OUTBOX_SELECT)
-    .or(`status.eq.failed,and(status.eq.running,generation_started_at.lt.${staleBefore})`)
+    .or(
+      [
+        "status.eq.failed",
+        `and(status.eq.running,generation_started_at.lt.${staleBefore})`,
+        `and(status.eq.dispatching,dispatch_started_at.lt.${staleBefore})`,
+        "and(status.eq.dispatching,dispatch_started_at.is.null)",
+        "and(status.eq.delivered,queue_job_id.is.null)",
+      ].join(","),
+    )
     .order("created_at", { ascending: true })
     .limit(remaining);
   if (retryable.error) {
