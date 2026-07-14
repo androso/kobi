@@ -161,6 +161,25 @@ describe("generateActivityArtifacts job planning", () => {
     expect(openAiCalls).toBe(0);
     expect(supabase.likeFilters).toContain("activities.bundle_ref=artifact-bundles/openai/%");
   });
+
+  it("checks the deletion marker before persisting each generated artifact", async () => {
+    const supabase = fakeSupabase({ deletionRequestedAfterChecks: 1 });
+
+    const result = await runGenerateActivityArtifactsJob(
+      supabase.client,
+      { sessionId: "session-1", lessonState, curriculumMatches },
+      { openAiGenerator: null },
+    );
+
+    expect(result).toEqual({
+      inserted: 0,
+      reused: 0,
+      generated: 0,
+      skippedReason: "session data deletion requested",
+    });
+    expect(supabase.bundleRefs).toHaveLength(0);
+    expect(supabase.insertedCandidates).toHaveLength(0);
+  });
 });
 
 const lessonState: LessonState = {
@@ -271,7 +290,11 @@ function manifest(band: "support" | "core" | "challenge", title: string): Activi
   };
 }
 
-function fakeSupabase(options: { openAiGenerationCount?: number; segments?: LessonState[] } = {}) {
+function fakeSupabase(options: {
+  openAiGenerationCount?: number;
+  segments?: LessonState[];
+  deletionRequestedAfterChecks?: number;
+} = {}) {
   const insertedCandidates: Array<{
     context_snapshot: { latest_topic: string; vocabulary: string[]; segment_count: number };
     evidence: unknown;
@@ -279,20 +302,23 @@ function fakeSupabase(options: { openAiGenerationCount?: number; segments?: Less
   const bundleRefs: string[] = [];
   const likeFilters: string[] = [];
   let nextActivityId = 0;
+  const state: FakeQueryState = {
+    insertedCandidates,
+    bundleRefs,
+    likeFilters,
+    nextActivityId: () => {
+      nextActivityId += 1;
+      return `activity-${nextActivityId}`;
+    },
+    openAiGenerationCount: options.openAiGenerationCount ?? 0,
+    segments: options.segments ?? [],
+    deletionRequestedAfterChecks: options.deletionRequestedAfterChecks,
+    sessionDeletionChecks: 0,
+  };
 
   const client = {
     from(table: string) {
-      return new FakeQuery(table, {
-        insertedCandidates,
-        bundleRefs,
-        likeFilters,
-        nextActivityId: () => {
-          nextActivityId += 1;
-          return `activity-${nextActivityId}`;
-        },
-        openAiGenerationCount: options.openAiGenerationCount ?? 0,
-        segments: options.segments ?? [],
-      });
+      return new FakeQuery(table, state);
     },
   } as unknown as SupabaseClient;
 
@@ -306,6 +332,8 @@ interface FakeQueryState {
   nextActivityId: () => string;
   openAiGenerationCount: number;
   segments: LessonState[];
+  deletionRequestedAfterChecks?: number;
+  sessionDeletionChecks: number;
 }
 
 class FakeQuery {
@@ -362,7 +390,17 @@ class FakeQuery {
   }
 
   maybeSingle() {
-    if (this.table === "sessions") return Promise.resolve({ data: null, error: null });
+    if (this.table === "sessions") {
+      this.state.sessionDeletionChecks += 1;
+      return Promise.resolve({
+        data:
+          this.state.deletionRequestedAfterChecks !== undefined &&
+          this.state.sessionDeletionChecks > this.state.deletionRequestedAfterChecks
+            ? { classroom_data_deletion_requested_at: "2026-07-13T00:00:00.000Z" }
+            : null,
+        error: null,
+      });
+    }
     return Promise.resolve({ data: null, error: null });
   }
 

@@ -172,6 +172,9 @@ export async function runGenerateActivityArtifactsJob(
     }
 
     if (!artifact.candidate) continue;
+    if (await isSessionDeletionRequested(supabase, sessionId)) {
+      return { inserted: 0, reused: 0, generated: 0, skippedReason: "session data deletion requested" };
+    }
     const persisted = await persistGeneratedArtifact(supabase, artifact.candidate);
 
     candidatesToInsert.push({
