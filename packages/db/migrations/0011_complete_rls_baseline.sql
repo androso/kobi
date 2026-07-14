@@ -34,26 +34,44 @@ grant select, update on session_activity_candidates to authenticated;
 grant select, insert, update on assignments to authenticated;
 grant select on events to authenticated;
 
--- Remove every policy introduced by the temporary artifact bridge and the
--- narrower student-delivery migration before installing the final matrix.
-drop policy if exists activity_bundles_read_for_delivery on activity_bundles;
-drop policy if exists activity_bundles_authenticated_insert on activity_bundles;
-drop policy if exists activity_bundles_authenticated_update on activity_bundles;
-drop policy if exists activities_read_for_delivery on activities;
-drop policy if exists activities_authenticated_insert on activities;
-drop policy if exists activities_authenticated_update on activities;
-drop policy if exists sessions_teacher_select on sessions;
-drop policy if exists sessions_teacher_insert on sessions;
-drop policy if exists students_teacher_select on students;
-drop policy if exists session_activity_candidates_teacher_select on session_activity_candidates;
-drop policy if exists session_activity_candidates_teacher_write on session_activity_candidates;
-drop policy if exists assignments_read_for_delivery on assignments;
-drop policy if exists assignments_teacher_read on assignments;
-drop policy if exists assignments_teacher_write on assignments;
-drop policy if exists assignments_teacher_update on assignments;
-drop policy if exists assignments_student_complete_update on assignments;
-drop policy if exists events_insert_for_delivery on events;
-drop policy if exists events_teacher_insert on events;
+-- Remove every existing policy from the repository-owned tables before
+-- installing the final matrix. This also removes dashboard-created policies
+-- with unknown names whose permissive predicates would otherwise combine with
+-- these policies under PostgreSQL's OR semantics.
+do $$
+declare
+  policy_record record;
+begin
+  for policy_record in
+    select schemaname, tablename, policyname
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = any (array[
+        'teacher_profiles',
+        'classes',
+        'students',
+        'student_profiles',
+        'sessions',
+        'audio_chunks',
+        'segments',
+        'checkpoints',
+        'curriculum_chunks',
+        'activity_bundles',
+        'activities',
+        'session_activity_candidates',
+        'assignments',
+        'events'
+      ]::text[])
+  loop
+    execute format(
+      'drop policy if exists %I on %I.%I',
+      policy_record.policyname,
+      policy_record.schemaname,
+      policy_record.tablename
+    );
+  end loop;
+end
+$$;
 
 create policy teacher_profiles_own_select
   on teacher_profiles for select to authenticated
