@@ -31,10 +31,6 @@ async function main() {
     // since curriculum_chunks/activities declare `vector(768)` columns.
     await client.unsafe("create extension if not exists vector;");
 
-    const rawHistoryTableState = await client<{ exists: boolean }[]>`
-      select to_regclass('public.kobi_raw_migrations') is not null as exists
-    `;
-    const rawHistoryTableExisted = rawHistoryTableState[0]?.exists ?? false;
     const drizzleHistoryTableState = await client<{ exists: boolean }[]>`
       select to_regclass('drizzle.__drizzle_migrations') is not null as exists
     `;
@@ -77,7 +73,7 @@ async function main() {
 
     await migrate(db, { migrationsFolder: path.join(__dirname, "..", "drizzle") });
 
-    if (shouldBaselineRawMigrations(rawHistoryTableExisted, applied, preexistingDrizzleMigrationCount)) {
+    if (shouldBaselineRawMigrations(applied, preexistingDrizzleMigrationCount)) {
       await client.begin(async (transaction) => {
         for (const migration of rawMigrations) {
           await transaction`

@@ -74,9 +74,8 @@ export function pendingRawMigrations(
 }
 
 export function shouldBaselineRawMigrations(
-  rawHistoryTableExisted: boolean,
   appliedMigrations: AppliedRawMigration[],
   preexistingDrizzleMigrationCount: number,
 ): boolean {
-  return !rawHistoryTableExisted && appliedMigrations.length === 0 && preexistingDrizzleMigrationCount > 0;
+  return appliedMigrations.length === 0 && preexistingDrizzleMigrationCount > 0;
 }

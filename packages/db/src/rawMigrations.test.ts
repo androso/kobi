@@ -58,10 +58,12 @@ describe("raw migration tracking", () => {
     ).toThrow(/0009_fix\.sql was added before.*0010_existing\.sql/);
   });
 
-  it("baselines only an upgrade with existing Drizzle history", () => {
-    expect(shouldBaselineRawMigrations(false, [], 3)).toBe(true);
-    expect(shouldBaselineRawMigrations(false, [], 0)).toBe(false);
-    expect(shouldBaselineRawMigrations(true, [], 3)).toBe(false);
-    expect(shouldBaselineRawMigrations(false, [{ fileName: "0001.sql", checksum: "one" }], 3)).toBe(false);
+  it("baselines an existing database when the tracking table is empty after an interrupted first deployment", () => {
+    expect(shouldBaselineRawMigrations([], 3)).toBe(true);
+  });
+
+  it("does not baseline a fresh database or one with tracked migrations", () => {
+    expect(shouldBaselineRawMigrations([], 0)).toBe(false);
+    expect(shouldBaselineRawMigrations([{ fileName: "0001.sql", checksum: "one" }], 3)).toBe(false);
   });
 });
