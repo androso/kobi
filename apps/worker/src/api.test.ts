@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { retrieveCurriculumMatches } from "@kobi/curriculum";
 import type PgBoss from "pg-boss";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { routeRequest } from "./api.js";
+import { acceptUploadedAudioChunk, routeRequest } from "./api.js";
 import { JOB_BUILD_LESSON_STATE } from "./queue.js";
 import { runGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
 
@@ -130,6 +130,35 @@ describe("worker demo transcript API", () => {
       lessonState,
       curriculumMatches: [curriculumMatch],
     });
+  });
+});
+
+describe("audio upload deletion boundary", () => {
+  it("removes the uploaded object when the atomic row acceptance sees deletion", async () => {
+    const remove = vi.fn(async () => ({ error: null }));
+    const rpc = vi.fn(async () => ({ data: [], error: null }));
+    const supabase = {
+      rpc,
+      storage: { from: vi.fn(() => ({ remove })) },
+    } as unknown as SupabaseClient;
+
+    const result = await acceptUploadedAudioChunk(supabase, "audio-chunks", "session-1/audio.webm", {
+      sessionId: "session-1",
+      chunkIndex: 2,
+      storagePath: "session-1/audio.webm",
+      startMs: 1000,
+      endMs: 2000,
+    });
+
+    expect(result).toBeNull();
+    expect(rpc).toHaveBeenCalledWith("insert_audio_chunk_if_not_deleted", {
+      p_session_id: "session-1",
+      p_chunk_index: 2,
+      p_storage_path: "session-1/audio.webm",
+      p_start_ms: 1000,
+      p_end_ms: 2000,
+    });
+    expect(remove).toHaveBeenCalledWith(["session-1/audio.webm"]);
   });
 });
 

@@ -141,6 +141,59 @@ function extensionForMimeType(mimeType: string) {
   return "bin";
 }
 
+interface AudioChunkInsertInput {
+  sessionId: string;
+  chunkIndex: number;
+  storagePath: string;
+  startMs: number;
+  endMs: number;
+}
+
+export async function insertAudioChunkIfSessionActive(
+  supabase: SupabaseClient,
+  input: AudioChunkInsertInput,
+): Promise<{ id: string } | null> {
+  const { data, error } = await supabase.rpc("insert_audio_chunk_if_not_deleted", {
+    p_session_id: input.sessionId,
+    p_chunk_index: input.chunkIndex,
+    p_storage_path: input.storagePath,
+    p_start_ms: input.startMs,
+    p_end_ms: input.endMs,
+  });
+
+  if (error) throw new Error(`Audio chunk acceptance failed: ${error.message}`);
+
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || typeof row !== "object" || !("id" in row)) return null;
+  return { id: String(row.id) };
+}
+
+export async function acceptUploadedAudioChunk(
+  supabase: SupabaseClient,
+  bucket: string,
+  storagePath: string,
+  input: AudioChunkInsertInput,
+): Promise<{ id: string } | null> {
+  try {
+    const chunk = await insertAudioChunkIfSessionActive(supabase, input);
+    if (!chunk) await removeUploadedAudio(supabase, bucket, storagePath);
+    return chunk;
+  } catch (error) {
+    await removeUploadedAudio(supabase, bucket, storagePath);
+    throw error;
+  }
+}
+
+async function removeUploadedAudio(supabase: SupabaseClient, bucket: string, storagePath: string) {
+  const { error } = await supabase.storage.from(bucket).remove([storagePath]);
+  if (error) {
+    safeLog("error", "audio.rejected_object_cleanup_failed", {
+      bucket,
+      outcome: classifySafeError(error),
+    });
+  }
+}
+
 async function createSession(req: IncomingMessage, res: ServerResponse, supabase: SupabaseClient) {
   const body = await readJsonBody(req);
   const classId = body.classId;
@@ -431,27 +484,23 @@ async function uploadAudioChunk(
     return;
   }
 
-  if (await isSessionDeletionRequested(supabase, sessionId)) {
-    await supabase.storage.from(bucket).remove([storagePath]);
-    writeJson(res, 409, { error: "Session classroom data deletion is in progress." });
+  let chunk: { id: string } | null;
+  try {
+    chunk = await acceptUploadedAudioChunk(supabase, bucket, storagePath, {
+      sessionId,
+      chunkIndex,
+      storagePath,
+      startMs,
+      endMs,
+    });
+  } catch (error) {
+    safeLog("error", "audio.chunk_acceptance_failed", { sessionId, outcome: classifySafeError(error) });
+    writeJson(res, 500, { error: "Audio chunk acceptance failed" });
     return;
   }
 
-  const { data: chunk, error: insertError } = await supabase
-    .from("audio_chunks")
-    .insert({
-      session_id: sessionId,
-      chunk_index: chunkIndex,
-      storage_path: storagePath,
-      start_ms: startMs,
-      end_ms: endMs,
-      status: "pending",
-    })
-    .select("id")
-    .single();
-
-  if (insertError) {
-    writeJson(res, 400, { error: insertError.message });
+  if (!chunk) {
+    writeJson(res, 409, { error: "Session classroom data deletion is in progress." });
     return;
   }
 
