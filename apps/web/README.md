@@ -26,6 +26,7 @@ Vite + React + TypeScript app: teacher portal + student portal.
 ## Implementation status
 
 - **Shipped in code:** teacher/student authentication, class creation and joining, live/manual lesson input, candidate review and approval, authorized sandboxed artifact delivery, assignment progress/completion telemetry, and session history UI.
-- **Partial:** the live monitor and report expose the current v0 completion/correctness data, but longitudinal analytics and richer stuck-state analysis remain outside the MVP.
+- **Partial:** the live monitor and session report are incomplete because current report surfaces use in-memory or seeded summaries instead of reading `events` and assignment scores for telemetry-backed completion/correctness; longitudinal analytics and richer stuck-state analysis remain outside the MVP.
+- **Planned:** telemetry-backed session-report aggregation from persisted events and assignment scores.
 - **Demo-only:** the explicit demo-project path uses invented classes/transcripts for local walkthroughs; it is isolated behind demo configuration and is not a production data fallback.
 - **Production-dependent:** real use requires the worker API plus a migrated Supabase project with Realtime, RLS/RPC policies, and the activity/audio storage buckets configured.
