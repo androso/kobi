@@ -152,7 +152,7 @@ function inspectHtmlNodeTree(root: HtmlNode, inspectScriptMarkup: boolean): stri
       if (name === "target" && ["_top", "_parent", "_blank"].includes(value)) {
         errors.push("navigation targets are forbidden");
       }
-      if (urlAttributes.has(name) && isUnsafeUrl(value, name)) {
+      if (urlAttributes.has(name) && isUnsafeUrl(value, name, tagName)) {
         errors.push("external or executable URL references are forbidden");
       }
       if (name === "http-equiv" && value === "refresh") {
@@ -198,12 +198,26 @@ function visit(node: HtmlNode, callback: (node: HtmlNode) => void): void {
   for (const child of node.childNodes ?? []) visit(child, callback);
 }
 
-function isUnsafeUrl(value: string, attributeName?: string): boolean {
-  if (attributeName === "srcset") {
-    return extractSrcsetUrls(value).some((url) => isUnsafeUrl(url));
+function isUnsafeUrl(
+  value: string,
+  attributeName?: string,
+  tagName?: string,
+  isSrcsetCandidate = false,
+): boolean {
+  if (attributeName === "srcset" && !isSrcsetCandidate) {
+    return extractSrcsetUrls(value).some((url) =>
+      isUnsafeUrl(url, attributeName, tagName, true),
+    );
   }
 
-  if (value === "" || value.startsWith("#") || value.startsWith("data:")) return false;
+  if (value === "" || value.startsWith("#")) return false;
+  if (value.startsWith("data:")) {
+    return !(
+      tagName === "img" &&
+      (attributeName === "src" || attributeName === "srcset") &&
+      /^data:image\//i.test(value)
+    );
+  }
   return true;
 }
 
