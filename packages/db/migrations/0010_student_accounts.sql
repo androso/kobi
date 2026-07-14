@@ -25,9 +25,12 @@ create policy students_teacher_select on students for select to authenticated us
   auth_user_id = auth.uid() or exists (select 1 from classes where classes.id = students.class_id and classes.teacher_id = auth.uid())
 );
 
+drop policy if exists assignments_student_read on assignments;
 create policy assignments_student_read on assignments for select to authenticated using (student_id = current_student_id());
+drop policy if exists assignments_student_update on assignments;
 create policy assignments_student_update on assignments for update to authenticated
   using (student_id = current_student_id()) with check (student_id = current_student_id());
+drop policy if exists events_student_insert on events;
 create policy events_student_insert on events for insert to authenticated with check (
   exists (select 1 from assignments where assignments.id = events.assignment_id and assignments.student_id = current_student_id())
 );

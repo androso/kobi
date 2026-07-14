@@ -114,6 +114,17 @@ async function createRosterStudent(req: IncomingMessage, res: ServerResponse, cl
   const password = typeof body.password === "string" ? body.password : "";
   if (!displayName) throw new ApiRequestError("displayName is required");
   if (password.length < MIN_STUDENT_PASSWORD_LENGTH) throw new ApiRequestError(`Password must be at least ${MIN_STUDENT_PASSWORD_LENGTH} characters`);
+  const { data: existingStudent, error: existingStudentError } = await supabase
+    .from("students")
+    .select("id,auth_user_id")
+    .eq("class_id", classId)
+    .ilike("display_name", displayName)
+    .maybeSingle();
+  if (existingStudentError) throw new ApiRequestError(existingStudentError.message);
+  if (existingStudent?.auth_user_id) {
+    throw new ApiRequestError("A student account with this name already exists", 409);
+  }
+
   const base = normalizeUsername(displayName).replace(/^-+|-+$/g, "") || "estudiante";
   let authUserId: string | undefined;
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -122,16 +133,51 @@ async function createRosterStudent(req: IncomingMessage, res: ServerResponse, cl
       email: usernameEmail(username), password, email_confirm: true,
       user_metadata: { role: "student", username, display_name: displayName },
     });
-    if (authError) continue;
+    if (authError) {
+      logApi("student Auth account creation failed", {
+        classId,
+        attempt: attempt + 1,
+        username,
+        error: authError.message,
+        status: authError.status,
+        code: authError.code,
+      });
+      continue;
+    }
     authUserId = authData.user.id;
-    const { data, error } = await supabase.from("students").insert({
+    const studentValues = {
       class_id: classId, display_name: displayName, username, auth_user_id: authUserId,
       is_active: true, activated_at: new Date().toISOString(), access_token: null,
-    }).select("id,class_id,display_name,username,is_active,activated_at,joined_at").single();
+    };
+    const { data, error } = existingStudent?.id
+      ? await supabase.from("students").update(studentValues).eq("id", existingStudent.id).select("id,class_id,display_name,username,is_active,activated_at,joined_at").single()
+      : await supabase.from("students").insert(studentValues).select("id,class_id,display_name,username,is_active,activated_at,joined_at").single();
     if (!error) { writeJson(res, 201, { student: data }); return; }
-    await supabase.auth.admin.deleteUser(authUserId);
+    logApi("student database row creation failed", {
+      classId,
+      attempt: attempt + 1,
+      username,
+      authUserId,
+      error: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+    });
+    const { error: cleanupError } = await supabase.auth.admin.deleteUser(authUserId);
+    if (cleanupError) {
+      logApi("student Auth account cleanup failed", {
+        classId,
+        attempt: attempt + 1,
+        username,
+        authUserId,
+        error: cleanupError.message,
+        status: cleanupError.status,
+        code: cleanupError.code,
+      });
+    }
     authUserId = undefined;
   }
+  logApi("student account provisioning exhausted retries", { classId, displayName, attempts: 5 });
   throw new ApiRequestError("Unable to provision student account", 409);
 }
 
