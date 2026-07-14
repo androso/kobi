@@ -52,7 +52,9 @@ interface HtmlNode {
   nodeName: string;
   tagName?: string;
   attrs?: Array<{ name: string; value: string }>;
+  content?: HtmlNode;
   childNodes?: HtmlNode[];
+  value?: string;
 }
 
 const minimumRubricScores: ActivityRubricScores = {
@@ -159,6 +161,7 @@ function checkHtmlStructure(bundleHtml: string): string[] {
 
 function visit(node: HtmlNode, callback: (node: HtmlNode) => void): void {
   callback(node);
+  if (node.content) visit(node.content, callback);
   for (const child of node.childNodes ?? []) visit(child, callback);
 }
 
