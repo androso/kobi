@@ -108,7 +108,7 @@ events
 |---|---|---|
 | `teacher_profiles` | F (Platform) | Mirrors `auth.users.id` (Supabase Auth magic link); no cross-schema FK, just a matching UUID convention. |
 | `classes` | F (Platform) / D (Teacher) | v0: one class = one grade/subject/unit. `join_code` is what students use to enter. |
-| `students` | F (Platform) | No Supabase Auth row at all — join code + display name only (auth-lite: no student accounts). |
+| `students` | F (Platform) | Active rows map unique `username` and `auth_user_id` to a teacher-managed Supabase Auth account, with `is_active` and `activated_at`. Rows without `auth_user_id` are preserved historical auth-lite records and are excluded from the active roster. |
 | `student_profiles` | D (Teacher) / E (Student) | Teacher-editable notes/preferences only. Difficulty is assigned per session, not stored as a lasting student label. |
 | `sessions` | A (Listening) | One row per class period; drives `audio_chunks`/`segments`. |
 | `audio_chunks` | A (Listening) | Implemented — see `packages/ai-core`, `apps/worker`. |
