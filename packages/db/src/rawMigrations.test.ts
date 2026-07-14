@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadRawMigrations, pendingRawMigrations } from "./rawMigrations";
+import { loadRawMigrations, pendingRawMigrations, shouldBaselineRawMigrations } from "./rawMigrations";
 
 describe("raw migration tracking", () => {
   it("loads SQL files in filename order with stable SHA-256 checksums", () => {
@@ -35,5 +35,33 @@ describe("raw migration tracking", () => {
         [{ fileName: "0001.sql", checksum: "original" }],
       ),
     ).toThrow(/0001\.sql was already applied.*immutable.*add a new migration/);
+  });
+
+  it("fails when an applied migration file is missing", () => {
+    expect(() =>
+      pendingRawMigrations(
+        [{ fileName: "0002.sql", checksum: "two", sql: "select 2" }],
+        [{ fileName: "0001.sql", checksum: "one" }],
+      ),
+    ).toThrow(/0001\.sql is missing.*deleting or renaming/);
+  });
+
+  it("fails when a new migration sorts before an applied migration", () => {
+    expect(() =>
+      pendingRawMigrations(
+        [
+          { fileName: "0009_fix.sql", checksum: "nine", sql: "select 9" },
+          { fileName: "0010_existing.sql", checksum: "ten", sql: "select 10" },
+        ],
+        [{ fileName: "0010_existing.sql", checksum: "ten" }],
+      ),
+    ).toThrow(/0009_fix\.sql was added before.*0010_existing\.sql/);
+  });
+
+  it("baselines only an upgrade with existing Drizzle history", () => {
+    expect(shouldBaselineRawMigrations(false, [], 3)).toBe(true);
+    expect(shouldBaselineRawMigrations(false, [], 0)).toBe(false);
+    expect(shouldBaselineRawMigrations(true, [], 3)).toBe(false);
+    expect(shouldBaselineRawMigrations(false, [{ fileName: "0001.sql", checksum: "one" }], 3)).toBe(false);
   });
 });

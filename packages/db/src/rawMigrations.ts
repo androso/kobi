@@ -31,9 +31,19 @@ export function pendingRawMigrations(
   migrations: RawMigration[],
   appliedMigrations: AppliedRawMigration[],
 ): RawMigration[] {
+  const migrationByFileName = new Map(migrations.map((migration) => [migration.fileName, migration]));
   const appliedByFileName = new Map(
     appliedMigrations.map((migration) => [migration.fileName, migration.checksum]),
   );
+
+  for (const appliedMigration of appliedMigrations) {
+    if (!migrationByFileName.has(appliedMigration.fileName)) {
+      throw new Error(
+        `Applied raw migration ${appliedMigration.fileName} is missing from the migrations directory; ` +
+          "restore the original file instead of deleting or renaming an applied migration.",
+      );
+    }
+  }
 
   for (const migration of migrations) {
     const appliedChecksum = appliedByFileName.get(migration.fileName);
@@ -46,5 +56,27 @@ export function pendingRawMigrations(
     }
   }
 
-  return migrations.filter((migration) => !appliedByFileName.has(migration.fileName));
+  const highestAppliedFileName = appliedMigrations.reduce(
+    (highest, migration) => (migration.fileName > highest ? migration.fileName : highest),
+    "",
+  );
+  const pending = migrations.filter((migration) => !appliedByFileName.has(migration.fileName));
+  const outOfOrderMigration = pending.find((migration) => migration.fileName < highestAppliedFileName);
+  if (outOfOrderMigration) {
+    throw new Error(
+      `Raw migration ${outOfOrderMigration.fileName} was added before the highest applied migration ` +
+        `${highestAppliedFileName}; add new raw migrations with a higher filename so clean installs and ` +
+        "upgrades execute the same sequence.",
+    );
+  }
+
+  return pending;
+}
+
+export function shouldBaselineRawMigrations(
+  rawHistoryTableExisted: boolean,
+  appliedMigrations: AppliedRawMigration[],
+  preexistingDrizzleMigrationCount: number,
+): boolean {
+  return !rawHistoryTableExisted && appliedMigrations.length === 0 && preexistingDrizzleMigrationCount > 0;
 }
