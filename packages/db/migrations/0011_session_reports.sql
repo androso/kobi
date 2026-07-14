@@ -20,6 +20,8 @@ as $$
    where activities.id = input_activity_id;
 $$;
 
+revoke all on function refresh_activity_repository_stats(uuid) from public;
+
 create or replace function refresh_assignment_activity_stats()
 returns trigger
 language plpgsql
@@ -46,6 +48,39 @@ for each row execute function refresh_assignment_activity_stats();
 update activities set times_used = 0, avg_score = null;
 select refresh_activity_repository_stats(id) from activities;
 
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public'
+      and tablename = 'sessions'
+      and policyname = 'sessions_teacher_update'
+  ) then
+    create policy sessions_teacher_update
+      on sessions
+      for update
+      to authenticated
+      using (
+        exists (
+          select 1
+            from classes
+           where classes.id = sessions.class_id
+             and classes.teacher_id = auth.uid()
+        )
+      )
+      with check (
+        status = 'ended'
+        and ended_at is not null
+        and exists (
+          select 1
+            from classes
+           where classes.id = sessions.class_id
+             and classes.teacher_id = auth.uid()
+        )
+      );
+  end if;
+end $$;
+
 create or replace function list_teacher_session_reports(
   input_class_id uuid default null,
   input_from timestamptz default now() - interval '90 days',
@@ -61,6 +96,9 @@ as $$
 begin
   if auth.uid() is null then
     raise insufficient_privilege using message = 'Teacher authentication is required';
+  end if;
+  if input_limit is null or input_offset is null then
+    raise invalid_parameter_value using message = 'Report pagination is required';
   end if;
   if input_from >= input_to or input_to - input_from > interval '366 days' then
     raise invalid_parameter_value using message = 'Report range must be positive and at most 366 days';
@@ -90,40 +128,77 @@ begin
            (array_agg(seg.lesson_state->>'objective_guess' order by seg.created_at desc)
              filter (where seg.lesson_state->>'objective_guess' is not null))[1] objective
       from owned_sessions os left join segments seg on seg.session_id = os.id group by os.id
-  ), assignment_summary as (
+  ), assignment_scores as (
+    select a.id, a.session_id, a.variant, a.status, a.score,
+           case
+             when a.status <> 'completed' or a.score is null then null::real
+             when completion.total_score > 0 then least(greatest(a.score / completion.total_score, 0), 1)
+             else least(greatest(a.score, 0), 1)
+           end normalized_score
+      from owned_sessions os
+      join assignments a on a.session_id = os.id and a.dismissed_at is null
+      left join lateral (
+        select nullif(e.payload->>'total', '')::real total_score
+          from events e
+         where e.assignment_id = a.id and e.type = 'complete'
+         order by e.ts desc, e.id desc
+         limit 1
+      ) completion on true
+  ), band_summary as (
+    select session_id, variant,
+           jsonb_build_object(
+             'assigned', count(*)::integer,
+             'completed', count(*) filter (where status = 'completed')::integer,
+             'average_score', coalesce(avg(normalized_score) filter (where status = 'completed'), 0)::real
+           ) outcome
+      from assignment_scores
+     group by session_id, variant
+  ), assignment_totals as (
     select os.id, count(a.id)::integer assignment_count,
            count(a.id) filter (where a.status = 'completed')::integer completed_count,
-           coalesce(avg(a.score) filter (where a.status = 'completed'), 0)::real average_score,
+           coalesce(avg(a.normalized_score) filter (where a.status = 'completed'), 0)::real average_score,
            jsonb_build_object(
-             'low', count(a.id) filter (where a.status = 'completed' and a.score < .6),
-             'middle', count(a.id) filter (where a.status = 'completed' and a.score >= .6 and a.score < .85),
-             'high', count(a.id) filter (where a.status = 'completed' and a.score >= .85)
-           ) score_distribution,
-           coalesce(jsonb_object_agg(a.variant, band.outcome) filter (where a.variant is not null), '{}'::jsonb) band_outcomes
+             'low', count(a.id) filter (where a.status = 'completed' and a.normalized_score < .6),
+             'middle', count(a.id) filter (where a.status = 'completed' and a.normalized_score >= .6 and a.normalized_score < .85),
+             'high', count(a.id) filter (where a.status = 'completed' and a.normalized_score >= .85)
+           ) score_distribution
       from owned_sessions os
-      left join assignments a on a.session_id = os.id and a.dismissed_at is null
-      left join lateral (
-        select jsonb_build_object('assigned', count(*)::integer,
-          'completed', count(*) filter (where x.status='completed')::integer,
-          'average_score', coalesce(avg(x.score) filter (where x.status='completed'),0)::real) outcome
-        from assignments x where x.session_id=os.id and x.variant=a.variant and x.dismissed_at is null
-      ) band on true
+      left join assignment_scores a on a.session_id = os.id
+      group by os.id
+  ), band_outcomes as (
+    select os.id,
+           coalesce(jsonb_object_agg(b.variant, b.outcome) filter (where b.variant is not null), '{}'::jsonb) band_outcomes
+      from owned_sessions os
+      left join band_summary b on b.session_id = os.id
      group by os.id
+  ), assignment_summary as (
+    select totals.id, totals.assignment_count, totals.completed_count, totals.average_score,
+           totals.score_distribution, bands.band_outcomes
+      from assignment_totals totals
+      join band_outcomes bands on bands.id = totals.id
+  ), hint_summary as (
+    select a.session_id, count(*)::integer hints
+      from owned_sessions os
+      join assignments a on a.session_id = os.id and a.dismissed_at is null
+      join events e on e.assignment_id = a.id and e.type = 'hint'
+     group by a.session_id
+  ), difficult_item_summary as (
+    select a.session_id, (e.payload->>'item_index')::integer item_index, count(*)::integer incorrect_attempts
+      from owned_sessions os
+      join assignments a on a.session_id = os.id and a.dismissed_at is null
+      join events e on e.assignment_id = a.id and e.type = 'attempt'
+     where coalesce((e.payload->>'correct')::boolean, false) = false
+       and e.payload ? 'item_index'
+     group by a.session_id, e.payload->>'item_index'
   ), event_summary as (
     select os.id,
-      count(e.id) filter (where e.type='hint')::integer hints,
-      coalesce(jsonb_agg(jsonb_build_object('item_index', difficult.item_index, 'incorrect_attempts', difficult.incorrect_attempts)
-        order by difficult.incorrect_attempts desc) filter (where difficult.item_index is not null), '[]'::jsonb) difficult_items
+      coalesce(h.hints, 0) hints,
+      coalesce(jsonb_agg(jsonb_build_object('item_index', d.item_index, 'incorrect_attempts', d.incorrect_attempts)
+        order by d.incorrect_attempts desc) filter (where d.item_index is not null), '[]'::jsonb) difficult_items
     from owned_sessions os
-    left join assignments a on a.session_id=os.id and a.dismissed_at is null
-    left join events e on e.assignment_id=a.id
-    left join lateral (
-      select (x.payload->>'item_index')::integer item_index, count(*)::integer incorrect_attempts
-      from events x where x.assignment_id=a.id and x.type='attempt'
-        and coalesce((x.payload->>'correct')::boolean,false)=false and x.payload ? 'item_index'
-      group by x.payload->>'item_index'
-    ) difficult on true
-    group by os.id
+    left join hint_summary h on h.session_id = os.id
+    left join difficult_item_summary d on d.session_id = os.id
+    group by os.id, h.hints
   )
   select jsonb_build_object(
     'id', os.id, 'class_id', os.class_id, 'class_name', os.name, 'subject', os.subject,
