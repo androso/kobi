@@ -92,7 +92,7 @@ Assignment rows are only valid for approved candidates from the same session: `a
 
 ### Artifact bundle rules
 
-- Bundle format is one self-contained `index.html` with inline CSS/JS.
+- Bundle format is one self-contained `index.html` with inline CSS/JS; URL-bearing subresource attributes must not point to relative paths or external schemes, while `data:` URLs remain available for inline assets such as images.
 - No external imports, assets, network calls, credentialed requests, storage APIs, top navigation, popups, or same-origin assumptions.
 - Allowed families are `match_classify`, `sequence_order`, and `guided_practice`.
 - `content.items[]` is required and must include prompts plus answer keys; hints default to an empty list when omitted.

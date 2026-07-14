@@ -152,7 +152,7 @@ function inspectHtmlNodeTree(root: HtmlNode, inspectScriptMarkup: boolean): stri
       if (name === "target" && ["_top", "_parent", "_blank"].includes(value)) {
         errors.push("navigation targets are forbidden");
       }
-      if (urlAttributes.has(name) && isUnsafeUrl(value)) {
+      if (urlAttributes.has(name) && isUnsafeUrl(value, name)) {
         errors.push("external or executable URL references are forbidden");
       }
       if (name === "http-equiv" && value === "refresh") {
@@ -198,9 +198,38 @@ function visit(node: HtmlNode, callback: (node: HtmlNode) => void): void {
   for (const child of node.childNodes ?? []) visit(child, callback);
 }
 
-function isUnsafeUrl(value: string): boolean {
-  if (value === "" || value.startsWith("#")) return false;
-  return /^(?:https?:|\/\/|javascript:|data:|blob:|file:|ftp:)/i.test(value);
+function isUnsafeUrl(value: string, attributeName?: string): boolean {
+  if (attributeName === "srcset") {
+    return extractSrcsetUrls(value).some((url) => isUnsafeUrl(url));
+  }
+
+  if (value === "" || value.startsWith("#") || value.startsWith("data:")) return false;
+  return true;
+}
+
+function extractSrcsetUrls(value: string): string[] {
+  const urls: string[] = [];
+  let index = 0;
+
+  while (index < value.length) {
+    while (index < value.length && (value[index] === "," || /\s/.test(value[index]))) index += 1;
+    if (index >= value.length) break;
+
+    const start = index;
+    const isDataUrl = /^data:/i.test(value.slice(start));
+    while (
+      index < value.length &&
+      (isDataUrl ? !/\s/.test(value[index]) : !/[\s,]/.test(value[index]))
+    ) {
+      index += 1;
+    }
+    urls.push(value.slice(start, index));
+
+    while (index < value.length && value[index] !== ",") index += 1;
+    if (index < value.length) index += 1;
+  }
+
+  return urls;
 }
 
 function checkForbiddenApis(bundleHtml: string): string[] {

