@@ -21,7 +21,7 @@ jobs:
       RECOVERY_DATABASE_URL: ${{ secrets.RECOVERY_DATABASE_URL }}
       RECOVERY_ENVIRONMENT: restore-quarterly
       RECOVERY_SESSION_ID: ${{ vars.RECOVERY_SESSION_ID }}
-      RECOVERY_EVIDENCE_PATH: artifacts/recovery/restore-audit.json
+      RECOVERY_EVIDENCE_PATH: ${{ github.workspace }}/artifacts/recovery/restore-audit.json
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
