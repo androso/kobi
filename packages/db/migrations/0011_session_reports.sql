@@ -11,11 +11,31 @@ as $$
          avg_score = stats.avg_score,
          updated_at = now()
     from (
+      with assignment_scores as (
+        select a.status, a.score,
+               case
+                 when a.status <> 'completed' or a.score is null then null::real
+                 when completion.total_score > 0 then least(greatest(a.score / completion.total_score, 0), 1)
+                 else least(greatest(a.score, 0), 1)
+               end normalized_score
+          from assignments a
+          left join lateral (
+            select case
+                     when jsonb_typeof(e.payload->'total') = 'number'
+                      and (e.payload->>'total')::numeric > 0
+                     then (e.payload->>'total')::real
+                   end total_score
+              from events e
+             where e.assignment_id = a.id and e.type = 'complete'
+             order by e.ts desc, e.id desc
+             limit 1
+          ) completion on true
+         where a.activity_id = input_activity_id
+           and a.dismissed_at is null
+      )
       select count(*)::integer as times_used,
-             avg(score) filter (where status = 'completed' and score is not null)::real as avg_score
-        from assignments
-       where activity_id = input_activity_id
-         and dismissed_at is null
+             avg(normalized_score) filter (where status = 'completed')::real as avg_score
+        from assignment_scores
     ) stats
    where activities.id = input_activity_id;
 $$;
@@ -81,6 +101,31 @@ begin
   end if;
 end $$;
 
+create or replace function close_teacher_session(input_session_id uuid)
+returns table(id uuid, ended_at timestamptz)
+language plpgsql
+security invoker
+set search_path = public
+as $$
+begin
+  return query
+  update sessions as s
+     set status = 'ended', ended_at = now()
+   where s.id = input_session_id
+     and s.status = 'active'
+     and exists (
+       select 1
+         from classes c
+        where c.id = s.class_id
+          and c.teacher_id = auth.uid()
+     )
+  returning s.id, s.ended_at;
+end;
+$$;
+
+revoke all on function close_teacher_session(uuid) from public;
+grant execute on function close_teacher_session(uuid) to authenticated;
+
 create or replace function list_teacher_session_reports(
   input_class_id uuid default null,
   input_from timestamptz default now() - interval '90 days',
@@ -120,6 +165,7 @@ begin
      where c.teacher_id = auth.uid()
        and (input_class_id is null or c.id = input_class_id)
        and s.started_at >= input_from and s.started_at < input_to
+       and s.status = 'ended' and s.ended_at is not null
      order by s.started_at desc
      limit input_limit offset input_offset
   ), segment_summary as (
@@ -138,7 +184,11 @@ begin
       from owned_sessions os
       join assignments a on a.session_id = os.id and a.dismissed_at is null
       left join lateral (
-        select nullif(e.payload->>'total', '')::real total_score
+        select case
+                 when jsonb_typeof(e.payload->'total') = 'number'
+                  and (e.payload->>'total')::numeric > 0
+                 then (e.payload->>'total')::real
+               end total_score
           from events e
          where e.assignment_id = a.id and e.type = 'complete'
          order by e.ts desc, e.id desc
@@ -183,13 +233,22 @@ begin
       join events e on e.assignment_id = a.id and e.type = 'hint'
      group by a.session_id
   ), difficult_item_summary as (
-    select a.session_id, (e.payload->>'item_index')::integer item_index, count(*)::integer incorrect_attempts
+    select a.session_id, attempt.item_index, count(*)::integer incorrect_attempts
       from owned_sessions os
       join assignments a on a.session_id = os.id and a.dismissed_at is null
       join events e on e.assignment_id = a.id and e.type = 'attempt'
-     where coalesce((e.payload->>'correct')::boolean, false) = false
-       and e.payload ? 'item_index'
-     group by a.session_id, e.payload->>'item_index'
+      join lateral (
+        select case
+                 when jsonb_typeof(e.payload->'item_index') = 'number'
+                  and (e.payload->>'item_index') ~ '^[0-9]+$'
+                  and (e.payload->>'item_index')::numeric between 0 and 2147483647
+                 then (e.payload->>'item_index')::integer
+               end item_index
+      ) attempt on true
+     where jsonb_typeof(e.payload->'correct') = 'boolean'
+       and (e.payload->>'correct')::boolean = false
+       and attempt.item_index is not null
+     group by a.session_id, attempt.item_index
   ), event_summary as (
     select os.id,
       coalesce(h.hints, 0) hints,
