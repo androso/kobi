@@ -114,7 +114,7 @@ export async function runRecoveryAudit(sql: RecoverySql, { environment, sessionI
     select c.relname as tablename, c.relrowsecurity as rowsecurity, count(p.policyname)::int as policy_count
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
     left join pg_policies p on p.schemaname = n.nspname and p.tablename = c.relname
-    where n.nspname = 'public' and c.relname = any(${requiredRlsTables})
+    where n.nspname = 'public' and c.relname = any(${sql.array(requiredRlsTables, 25)})
     group by c.relname, c.relrowsecurity
   `;
   const invalidRls = requiredRlsTables.filter((table) => {
@@ -139,7 +139,7 @@ export async function runRecoveryAudit(sql: RecoverySql, { environment, sessionI
     });
   } else {
     const queueRows = await sql<{ name: string }[]>`
-      select name from pgboss.queue where name = any(${requiredQueues}) order by name
+      select name from pgboss.queue where name = any(${sql.array(requiredQueues, 25)}) order by name
     `;
     const missingQueues = requiredQueues.filter((name) => !queueRows.some((row) => row.name === name));
     checks.push({ name: "queue_registrations", ok: missingQueues.length === 0, details: { missing_queues: missingQueues, queues: queueRows } });

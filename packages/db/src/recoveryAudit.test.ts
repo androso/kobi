@@ -83,6 +83,14 @@ test("audits missing audio objects across the restored backup", async () => {
   const audioQuery = calls.find((call) => call.text.includes("select count(*)::int as count from audio_chunks ac"));
   assert.ok(audioQuery);
   assert.doesNotMatch(audioQuery.text, /where ac\.session_id/);
+
+  const arrayBindings = calls.flatMap((call) => call.values.filter((value) => {
+    return typeof value === "object" && value !== null && "kind" in value;
+  }));
+  assert.deepEqual(arrayBindings, [
+    { kind: "postgres-array", values: ["students", "sessions", "session_activity_candidates", "activity_bundles", "activities", "assignments", "events"], type: 25 },
+    { kind: "postgres-array", values: requiredQueues, type: 25 },
+  ]);
 });
 
 test("records a missing pg-boss table without skipping the evidence result", async () => {
