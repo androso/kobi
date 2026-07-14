@@ -48,7 +48,9 @@ export async function processBuildLessonStateJob(
 
   const transcriptText = claim.transcript_text.trim();
   if (!transcriptText) {
-    const finalized = await finalizeClaim(supabase, claim, silenceLessonState());
+    // Silence advances the durable source cursor without creating a newer
+    // lesson_state that would hide the last meaningful teaching context.
+    const finalized = await finalizeClaim(supabase, claim, null);
     return finalized ? "silent" : "stale";
   }
 
@@ -87,13 +89,13 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
 async function finalizeClaim(
   supabase: SupabaseClient,
   claim: ClaimedRange,
-  lessonState: LessonState,
+  lessonState: LessonState | null,
 ): Promise<boolean> {
   const { data, error } = await supabase.rpc("finalize_lesson_state_range", {
     target_claim_id: claim.claim_id,
     new_lesson_state: lessonState,
-    new_confidence: lessonState.confidence,
-    new_transcript_summary: lessonState.transcript_summary,
+    new_confidence: lessonState?.confidence ?? 0,
+    new_transcript_summary: lessonState?.transcript_summary ?? "",
   });
   if (error) {
     throw new Error(`buildLessonState job: failed to finalize chunks: ${error.message}`);
@@ -117,18 +119,4 @@ function normalizeClaim(value: unknown): ClaimedRange | null {
     throw new Error("buildLessonState job: claim returned missing or invalid class/range context");
   }
   return row as unknown as ClaimedRange;
-}
-
-function silenceLessonState(): LessonState {
-  return {
-    topic: "Sin contenido audible",
-    objective_guess: null,
-    key_terms: [],
-    transcript_summary: "El segmento no contiene contenido audible.",
-    confidence: 0,
-    evidence: {
-      quoted_phrases: [],
-      reason: "Los fragmentos de audio procesados no produjeron una transcripción.",
-    },
-  };
 }

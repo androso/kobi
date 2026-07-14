@@ -76,7 +76,19 @@ describe("processBuildLessonStateJob", () => {
     await expect(processBuildLessonStateJob(client, "session-1", builder)).resolves.toBe("silent");
     expect(builder).not.toHaveBeenCalled();
     expect(client.rpc).toHaveBeenLastCalledWith("finalize_lesson_state_range", expect.objectContaining({
+      new_lesson_state: null,
       new_confidence: 0,
+    }));
+  });
+
+  it("processes a range that starts after the database skipped a failed chunk", async () => {
+    const client = fakeClient([claim({ from_chunk_index: 1, to_chunk_index: 1 }), true]);
+    const builder = vi.fn().mockResolvedValue(state);
+
+    await expect(processBuildLessonStateJob(client, "session-1", builder)).resolves.toBe("processed");
+    expect(builder).toHaveBeenCalledWith(expect.objectContaining({ transcriptText: "chunk zero\nchunk one" }));
+    expect(client.rpc).toHaveBeenLastCalledWith("finalize_lesson_state_range", expect.objectContaining({
+      target_claim_id: "claim-1",
     }));
   });
 
