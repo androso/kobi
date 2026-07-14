@@ -7,7 +7,7 @@ import {
   type ActivityRubricScores,
   type ActivityVerifierScores,
 } from "./types.js";
-import { parse, type ParserError } from "parse5";
+import { parse, parseFragment, type ParserError } from "parse5";
 
 export interface VerifyActivityArtifactResult {
   ok: boolean;
@@ -129,7 +129,15 @@ function checkHtmlStructure(bundleHtml: string): string[] {
     errors.push("bundle must be well-formed HTML");
   }
 
-  visit(document, (node) => {
+  errors.push(...inspectHtmlNodeTree(document, true));
+
+  return [...new Set(errors)];
+}
+
+function inspectHtmlNodeTree(root: HtmlNode, inspectScriptMarkup: boolean): string[] {
+  const errors: string[] = [];
+
+  visit(root, (node) => {
     const tagName = node.tagName?.toLowerCase();
     if (!tagName) return;
 
@@ -154,9 +162,34 @@ function checkHtmlStructure(bundleHtml: string): string[] {
         errors.push("CSS URL references are forbidden");
       }
     }
+
+    if (inspectScriptMarkup && tagName === "script") {
+      errors.push(...checkScriptMarkup(node));
+    }
   });
 
-  return [...new Set(errors)];
+  return errors;
+}
+
+function checkScriptMarkup(scriptNode: HtmlNode): string[] {
+  const errors: string[] = [];
+  for (const literal of extractScriptStringLiterals(textContent(scriptNode))) {
+    errors.push(...inspectHtmlNodeTree(parseFragment(literal) as HtmlNode, false));
+  }
+  return errors;
+}
+
+function extractScriptStringLiterals(scriptText: string): string[] {
+  const stringLiteralPattern = /(["'`])(?:\\[\s\S]|(?!\1)[\s\S])*\1/g;
+  return (scriptText.match(stringLiteralPattern) ?? []).map((literal) => literal.slice(1, -1));
+}
+
+function textContent(node: HtmlNode): string {
+  if (node.nodeName === "#text") return node.value ?? "";
+  return [
+    ...(node.childNodes ?? []).map(textContent),
+    ...(node.content ? [textContent(node.content)] : []),
+  ].join("");
 }
 
 function visit(node: HtmlNode, callback: (node: HtmlNode) => void): void {

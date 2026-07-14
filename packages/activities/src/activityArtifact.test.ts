@@ -88,6 +88,7 @@ describe("activity artifact contracts", () => {
     ["layout replacement", "<script>document.write('<main>replacement</main>')</script>", "document.write is forbidden"],
     ["sandbox escape", "<iframe sandbox='allow-same-origin allow-top-navigation' srcdoc='<p>escape</p>'></iframe>", "nested browsing contexts are forbidden"],
     ["template descendants", "<template><iframe srcdoc='<p>escape</p>'></iframe></template>", "nested browsing contexts are forbidden"],
+    ["script markup string", "<script>document.body.insertAdjacentHTML('beforeend', '<iframe srcdoc=\"<p>escape</p>\"></iframe>')</script>", "nested browsing contexts are forbidden"],
     ["meta navigation", "<meta http-equiv='refresh' content='0;url=https://evil.test'>", "meta refresh is forbidden"],
   ])("rejects adversarial %s artifacts with a specific reason", (_name, payload, reason) => {
     const context = buildActivitySessionContext([lessonState]);
