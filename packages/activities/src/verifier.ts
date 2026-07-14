@@ -163,6 +163,10 @@ function inspectHtmlNodeTree(root: HtmlNode, inspectScriptMarkup: boolean): stri
       }
     }
 
+    if (tagName === "style" && /(?:@import|url\s*\()/i.test(textContent(node))) {
+      errors.push("CSS URL references are forbidden");
+    }
+
     if (inspectScriptMarkup && tagName === "script") {
       errors.push(...checkScriptMarkup(node));
     }
