@@ -28,7 +28,10 @@ set search_path = public
 as $$
 declare
   activity_manifest jsonb;
+  activity_bundle_html text;
   item_count integer;
+  legacy_answer_total integer;
+  legacy_total_allowed boolean;
   item_index integer;
   hint_index integer;
   raw_score numeric;
@@ -38,10 +41,11 @@ begin
   perform assert_student_delivery_access(input_student_id, input_access_token);
 
   -- The row lock serializes the rate check and completion update for this assignment.
-  select activities.manifest
-    into activity_manifest
+  select activities.manifest, activity_bundles.index_html
+    into activity_manifest, activity_bundle_html
     from assignments
     join activities on activities.id = assignments.activity_id
+    join activity_bundles on activity_bundles.ref = activities.bundle_ref
    where assignments.id = input_assignment_id
      and assignments.student_id = input_student_id
    for update of assignments;
@@ -68,6 +72,13 @@ begin
   end if;
 
   item_count := jsonb_array_length(activity_manifest #> '{content,items}');
+  legacy_answer_total := jsonb_array_length(
+    activity_manifest #> '{content,items,0,answer_key}'
+  );
+  -- Bundles created before the item-count contract used the answer-key length.
+  -- Keep those assignments completable while new candidates are held to the
+  -- canonical expression by the generator prompt and deterministic verifier.
+  legacy_total_allowed := activity_bundle_html ~* E'total\\s*:\\s*manifest\\s*\\.\\s*content\\s*\\.\\s*items\\s*\\[\\s*0\\s*\\]\\s*\\.\\s*answer_key\\s*\\.\\s*length';
 
   if activity_manifest #> '{content,telemetry_events}' is not null
      and not (activity_manifest #> '{content,telemetry_events}') ? input_type::text then
@@ -75,7 +86,7 @@ begin
   end if;
 
   if input_type in ('attempt', 'hint') then
-    if jsonb_typeof(input_payload -> 'item_index') <> 'number'
+    if jsonb_typeof(input_payload -> 'item_index') is distinct from 'number'
        or (input_payload ->> 'item_index')::numeric <> trunc((input_payload ->> 'item_index')::numeric) then
       raise exception using errcode = '22023', message = 'item_index must be an integer';
     end if;
@@ -90,7 +101,7 @@ begin
   end if;
 
   if input_type = 'hint' then
-    if jsonb_typeof(input_payload -> 'hint_index') <> 'number'
+    if jsonb_typeof(input_payload -> 'hint_index') is distinct from 'number'
        or (input_payload ->> 'hint_index')::numeric <> trunc((input_payload ->> 'hint_index')::numeric) then
       raise exception using errcode = '22023', message = 'hint_index must be an integer';
     end if;
@@ -101,13 +112,19 @@ begin
   end if;
 
   if input_type = 'complete' then
-    if jsonb_typeof(input_payload -> 'score') <> 'number'
-       or jsonb_typeof(input_payload -> 'total') <> 'number' then
+    if jsonb_typeof(input_payload -> 'score') is distinct from 'number'
+       or jsonb_typeof(input_payload -> 'total') is distinct from 'number' then
       raise exception using errcode = '22023', message = 'completion score and total must be numeric';
     end if;
     raw_score := (input_payload ->> 'score')::numeric;
     raw_total := (input_payload ->> 'total')::numeric;
-    if raw_total <= 0 or raw_total <> item_count or raw_score < 0 or raw_score > raw_total then
+    if raw_total <= 0
+       or (
+         raw_total <> item_count
+         and not (legacy_total_allowed and raw_total = legacy_answer_total)
+       )
+       or raw_score < 0
+       or raw_score > raw_total then
       raise exception using errcode = '22023', message = 'completion score is outside the activity manifest bounds';
     end if;
     normalized_score := raw_score / raw_total;

@@ -17,11 +17,21 @@ test("burst limits recover and retries do not consume capacity", () => {
 });
 
 test("manifest bounds and authoritative score semantics are enforced", () => {
+  assert.match(sql, /jsonb_typeof\(input_payload -> 'item_index'\) is distinct from 'number'/i);
+  assert.match(sql, /jsonb_typeof\(input_payload -> 'score'\) is distinct from 'number'/i);
+  assert.match(sql, /jsonb_typeof\(input_payload -> 'total'\) is distinct from 'number'/i);
   assert.match(sql, /item_index < 0 or item_index >= item_count/);
   assert.match(sql, /hint_index < 0 or hint_index >= jsonb_array_length/);
   assert.match(sql, /event type is not enabled by the activity manifest/);
-  assert.match(sql, /raw_total <= 0 or raw_total <> item_count or raw_score < 0 or raw_score > raw_total/);
+  assert.match(sql, /raw_total <> item_count/);
+  assert.match(sql, /legacy_total_allowed and raw_total = legacy_answer_total/);
   assert.match(sql, /normalized_score := raw_score \/ raw_total/);
+});
+
+test("legacy stored bundles may use answer-key totals during migration", () => {
+  assert.match(sql, /join activity_bundles on activity_bundles\.ref = activities\.bundle_ref/);
+  assert.match(sql, /activity_bundle_html ~\*.*answer_key.*length/s);
+  assert.match(sql, /legacy_answer_total := jsonb_array_length/);
 });
 
 test("completion event and assignment update share one database function", () => {
