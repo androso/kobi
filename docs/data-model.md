@@ -134,4 +134,4 @@ An activity's curriculum grounding is a **snapshot at generation time** (the `Cu
 
 ## Implementation status
 
-Schema-as-code + migrations: `packages/db/src/schema` (Drizzle ORM, postgres.js driver). `pnpm --filter @kobi/db run db:generate` regenerates SQL from the schema into `packages/db/drizzle/`; `pnpm --filter @kobi/db run db:migrate` applies those plus `packages/db/migrations/0002_vector_extras.sql` (the `vector` extension, the ivfflat index, and `match_curriculum_chunks()` — not expressible as Drizzle schema). No live Supabase project has been migrated against yet.
+Schema-as-code + migrations: **shipped** in `packages/db/src/schema` (Drizzle ORM, postgres.js driver). `pnpm --filter @kobi/db run db:generate` regenerates SQL from the schema into `packages/db/drizzle/`; `pnpm --filter @kobi/db run db:migrate` applies those plus `packages/db/migrations/0002_vector_extras.sql` (the `vector` extension, the ivfflat index, and `match_curriculum_chunks()` — not expressible as Drizzle schema). Applying migrations requires a live Supabase or Postgres instance.

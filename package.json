@@ -11,6 +11,7 @@
     "dev:web": "pnpm --filter @kobi/web dev",
     "dev:worker": "pnpm --filter @kobi/worker dev",
     "build": "pnpm --filter @kobi/web build",
+    "check:repo": "pnpm --filter @kobi/repo-hygiene check",
     "test": "pnpm --filter @kobi/web test",
     "typecheck": "pnpm -r --if-present run typecheck"
   },
