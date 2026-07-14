@@ -1035,9 +1035,12 @@ export function LiveClassMonitor() {
     setUploadStatus(apiSessionIdRef.current ? "Sesion enviada al worker" : uploadStatus);
 
     if (activeClass) {
-      if (apiSessionIdRef.current && supabase) {
+      const closedSessionId = apiSessionIdRef.current;
+      let sessionClosed = false;
+      if (closedSessionId && supabase) {
         try {
-          await closeTeacherSession(supabase, apiSessionIdRef.current);
+          await closeTeacherSession(supabase, closedSessionId);
+          sessionClosed = true;
         } catch (error) {
           setRecordingError(error instanceof Error ? error.message : "No se pudo cerrar la sesion.");
         }
@@ -1045,7 +1048,11 @@ export function LiveClassMonitor() {
       const session = buildSession(activeClass, elapsed, latestLessonState);
       setCompletedSessionClassId(activeClass.id);
       endSession(session); // guarda en historial + limpia el monitor activo
-      void handleGenerateActivity();
+      void handleGenerateActivity(closedSessionId);
+      if (sessionClosed) {
+        apiSessionIdRef.current = null;
+        setApiSessionId(null);
+      }
     }
   }
 
@@ -1099,7 +1106,7 @@ export function LiveClassMonitor() {
     return true;
   }
 
-  async function handleGenerateActivity() {
+  async function handleGenerateActivity(sessionIdOverride?: string | null) {
     if (!activeClass || !deliveryStore) {
       setActivityError("Selecciona una clase y configura Supabase para generar la actividad.");
       return;
@@ -1110,14 +1117,15 @@ export function LiveClassMonitor() {
     setPublishStatus(null);
 
     try {
-      if (apiSessionIdRef.current && await loadCandidatesForSession(apiSessionIdRef.current, { allowEmpty: true })) {
+      const sessionId = sessionIdOverride ?? apiSessionIdRef.current;
+      if (sessionId && await loadCandidatesForSession(sessionId, { allowEmpty: true })) {
         return;
       }
 
-      const sessionId = apiSessionIdRef.current ?? (await ensureBackendSession());
-      await requestActivityCandidates({ sessionId });
+      const ensuredSessionId = sessionId ?? (await ensureBackendSession());
+      await requestActivityCandidates({ sessionId: ensuredSessionId });
 
-      if (!await loadCandidatesForSession(sessionId)) {
+      if (!await loadCandidatesForSession(ensuredSessionId)) {
         setActivityError("La generacion termino, pero aun no hay actividades listas para esta sesion.");
       }
     } catch (error) {
@@ -1252,7 +1260,7 @@ export function LiveClassMonitor() {
       </div>
       <SuggestedActivityFAB
         loading={activityLoading}
-        onGenerate={handleGenerateActivity}
+        onGenerate={() => void handleGenerateActivity()}
       />
     </main>
   );

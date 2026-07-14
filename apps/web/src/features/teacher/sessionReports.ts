@@ -13,21 +13,15 @@ export interface SessionReport {
 
 export const REPORT_PAGE_SIZE = 20;
 
-export async function closeTeacherSession(
-  client: SupabaseClient,
-  sessionId: string,
-  endedAt = new Date().toISOString(),
-) {
-  const { data, error } = await client
-    .from("sessions")
-    .update({ status: "ended", ended_at: endedAt })
-    .eq("id", sessionId)
-    .eq("status", "active")
-    .select("id")
-    .single();
+export async function closeTeacherSession(client: SupabaseClient, sessionId: string) {
+  const { data, error } = await client.rpc("close_teacher_session", {
+    input_session_id: sessionId,
+  });
 
   if (error) throw error;
-  if (!data) throw new Error("Session was not closed");
+  if (!data || (Array.isArray(data) && data.length === 0)) {
+    throw new Error("Session was not closed");
+  }
 }
 
 export async function loadSessionReports(client: SupabaseClient, page: number, classId?: string) {

@@ -1,16 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { closeTeacherSession, loadSessionReports, REPORT_PAGE_SIZE } from "./sessionReports";
 
-function updateChain(result: { data: unknown; error: unknown }) {
-  const chain = {
-    update: vi.fn(() => chain),
-    eq: vi.fn(() => chain),
-    select: vi.fn(() => chain),
-    single: vi.fn(async () => result),
-  };
-  return chain;
-}
-
 describe("loadSessionReports", () => {
   it("loads a bounded persisted page without waiting for realtime", async () => {
     const report = { id: "session-1", total_count: 1 };
@@ -29,23 +19,26 @@ describe("loadSessionReports", () => {
 });
 
 describe("closeTeacherSession", () => {
-  it("closes only an active session through the teacher-owned update path", async () => {
-    const chain = updateChain({ data: { id: "session-1" }, error: null });
-    const client = { from: vi.fn(() => chain) };
+  it("closes through the server-clock RPC", async () => {
+    const rpc = vi.fn(async () => ({ data: [{ id: "session-1", ended_at: "2026-07-13T12:00:00.000Z" }], error: null }));
+    const client = { rpc };
 
-    await closeTeacherSession(client as never, "session-1", "2026-07-13T12:00:00.000Z");
+    await closeTeacherSession(client as never, "session-1");
 
-    expect(client.from).toHaveBeenCalledWith("sessions");
-    expect(chain.update).toHaveBeenCalledWith({ status: "ended", ended_at: "2026-07-13T12:00:00.000Z" });
-    expect(chain.eq).toHaveBeenNthCalledWith(1, "id", "session-1");
-    expect(chain.eq).toHaveBeenNthCalledWith(2, "status", "active");
-    expect(chain.select).toHaveBeenCalledWith("id");
+    expect(rpc).toHaveBeenCalledWith("close_teacher_session", { input_session_id: "session-1" });
   });
 
   it("surfaces a failed authorized close", async () => {
-    const chain = updateChain({ data: null, error: new Error("permission denied") });
+    const rpc = vi.fn(async () => ({ data: null, error: new Error("permission denied") }));
 
-    await expect(closeTeacherSession({ from: vi.fn(() => chain) } as never, "session-1"))
+    await expect(closeTeacherSession({ rpc } as never, "session-1"))
       .rejects.toThrow("permission denied");
+  });
+
+  it("rejects an RPC that did not close an active session", async () => {
+    const rpc = vi.fn(async () => ({ data: [], error: null }));
+
+    await expect(closeTeacherSession({ rpc } as never, "session-1"))
+      .rejects.toThrow("Session was not closed");
   });
 });

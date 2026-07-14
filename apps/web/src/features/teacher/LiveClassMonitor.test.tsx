@@ -62,6 +62,7 @@ const mocks = vi.hoisted(() => {
       { audioChunkId: "chunk-0", chunkIndex: 0, totalChunks: 2, done: false },
       { audioChunkId: "chunk-1", chunkIndex: 1, totalChunks: 2, done: true },
     ]),
+    supabaseRpc: vi.fn(async () => ({ data: [{ id: "session-1" }], error: null })),
     supabaseFrom: vi.fn(() => ({
       update: vi.fn().mockReturnThis(),
       select: vi.fn().mockReturnThis(),
@@ -73,7 +74,7 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("../../lib/supabase", () => ({ supabase: { from: mocks.supabaseFrom } }));
+vi.mock("../../lib/supabase", () => ({ supabase: { from: mocks.supabaseFrom, rpc: mocks.supabaseRpc } }));
 
 vi.mock("../../lib/audioApi", () => ({
   createBackendSession: mocks.createBackendSession,
@@ -196,5 +197,38 @@ describe("LiveClassMonitor activity delivery", () => {
 
     expect(screen.queryByText(/sesión finalizada/i)).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: /aprobar y entregar actividad/i })).toBeInTheDocument();
+  });
+
+  it("creates a fresh backend session after closing a recording", async () => {
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mocks.createBackendSession).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /pausar/i }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.createBackendSession).toHaveBeenCalledTimes(2);
+    expect(mocks.supabaseRpc).toHaveBeenCalledWith("close_teacher_session", { input_session_id: "session-1" });
   });
 });
