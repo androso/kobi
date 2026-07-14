@@ -65,10 +65,28 @@ async function cachedFiles() {
   return new Set(stdout.split("\0").filter(Boolean));
 }
 
+async function modifiedFiles() {
+  const { stdout } = await execFile("git", ["ls-files", "--modified", "--others", "--exclude-standard", "-z"], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  return new Set(stdout.split("\0").filter(Boolean));
+}
+
+function addContentViolations(repoPath, bytes, violations) {
+  if (!bytes || bytes.includes(0)) return;
+  const text = bytes.toString("utf8");
+  if (ansiPattern.test(text)) violations.push(`${repoPath}: terminal ANSI escape sequence`);
+  for (const [label, pattern] of secretPatterns) {
+    if (pattern.test(text)) violations.push(`${repoPath}: credential-shaped content (${label})`);
+  }
+}
+
 export async function inspectFiles(
   paths,
   {
     stagedPaths = new Set(),
+    workingTreePaths = new Set(),
     readStagedBlob: loadStagedBlob = readStagedBlob,
     readWorkingTreeFile = readFile,
     statWorkingTreeFile = stat,
@@ -78,18 +96,22 @@ export async function inspectFiles(
   for (const inputPath of paths) {
     const absolutePath = resolve(root, inputPath);
     const repoPath = relative(root, absolutePath).split(sep).join("/");
-    let metadata;
-    let bytes;
+    if (!repoPath.includes("/") && suspiciousRootNames.has(repoPath.toLowerCase())) {
+      violations.push(`${repoPath}: suspicious root artifact name`);
+    }
+
     if (stagedPaths.has(repoPath)) {
       const staged = await loadStagedBlob(repoPath);
-      metadata = { size: staged.size };
       if (staged.size > maxGeneratedBytes && !allowedLargeFiles.has(repoPath)) {
         violations.push(`${repoPath}: unexpectedly large tracked file (${staged.size} bytes)`);
-        continue;
+      } else {
+        addContentViolations(repoPath, staged.bytes, violations);
       }
-      bytes = staged.bytes;
-    } else {
-      metadata = await statWorkingTreeFile(absolutePath).catch((error) => {
+    }
+
+    const shouldInspectWorkingTree = workingTreePaths.has(repoPath) || !stagedPaths.has(repoPath);
+    if (shouldInspectWorkingTree) {
+      const metadata = await statWorkingTreeFile(absolutePath).catch((error) => {
         if (error?.code === "ENOENT") return null;
         throw error;
       });
@@ -97,21 +119,10 @@ export async function inspectFiles(
 
       if (metadata.size > maxGeneratedBytes && !allowedLargeFiles.has(repoPath)) {
         violations.push(`${repoPath}: unexpectedly large tracked file (${metadata.size} bytes)`);
-        continue;
+      } else {
+        const bytes = await readWorkingTreeFile(absolutePath);
+        addContentViolations(repoPath, bytes, violations);
       }
-      bytes = await readWorkingTreeFile(absolutePath);
-    }
-
-    if (!repoPath.includes("/") && suspiciousRootNames.has(repoPath.toLowerCase())) {
-      violations.push(`${repoPath}: suspicious root artifact name`);
-    }
-
-    if (!bytes) continue;
-    if (bytes.includes(0)) continue;
-    const text = bytes.toString("utf8");
-    if (ansiPattern.test(text)) violations.push(`${repoPath}: terminal ANSI escape sequence`);
-    for (const [label, pattern] of secretPatterns) {
-      if (pattern.test(text)) violations.push(`${repoPath}: credential-shaped content (${label})`);
     }
   }
   return violations;
@@ -123,6 +134,7 @@ async function trackedFiles() {
   return {
     paths: input.split("\0").filter((path) => path && !path.startsWith(fixturePrefix)),
     stagedPaths: await cachedFiles(),
+    workingTreePaths: new Set([...await modifiedFiles()].filter((path) => !path.startsWith(fixturePrefix))),
   };
 }
 
@@ -134,9 +146,9 @@ function assertGeneratedFilesAreDocumented(paths) {
 }
 
 if (process.argv[1] === import.meta.filename) {
-  const { paths, stagedPaths } = await trackedFiles();
+  const { paths, stagedPaths, workingTreePaths } = await trackedFiles();
   const violations = [
-    ...(await inspectFiles(paths, { stagedPaths })),
+    ...(await inspectFiles(paths, { stagedPaths, workingTreePaths })),
     ...assertGeneratedFilesAreDocumented(paths),
   ];
   if (violations.length > 0) {

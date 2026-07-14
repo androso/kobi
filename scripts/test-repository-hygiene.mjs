@@ -37,6 +37,25 @@ assert.deepEqual(stagedViolations, ["staged.txt: credential-shaped content (GitH
 assert.equal(stagedBlobRead, true);
 assert.equal(stagedWorkingTreeRead, false);
 
+let modifiedStagedBlobRead = false;
+let modifiedWorkingTreeRead = false;
+const modifiedViolations = await inspectFiles(["modified.txt"], {
+  stagedPaths: new Set(["modified.txt"]),
+  workingTreePaths: new Set(["modified.txt"]),
+  readStagedBlob: async () => {
+    modifiedStagedBlobRead = true;
+    return { size: 5, bytes: Buffer.from("clean") };
+  },
+  statWorkingTreeFile: async () => ({ size: 28 }),
+  readWorkingTreeFile: async () => {
+    modifiedWorkingTreeRead = true;
+    return Buffer.from(`ghs_${"C".repeat(24)}`);
+  },
+});
+assert.deepEqual(modifiedViolations, ["modified.txt: credential-shaped content (GitHub token)"]);
+assert.equal(modifiedStagedBlobRead, true);
+assert.equal(modifiedWorkingTreeRead, true);
+
 for (const prefix of ["ghp", "github_pat", "gho", "ghu", "ghs", "ghr"]) {
   const token = `${prefix}_${"B".repeat(24)}`;
   const tokenViolations = await inspectFiles(["token.txt"], {
