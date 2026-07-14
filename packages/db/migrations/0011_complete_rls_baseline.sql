@@ -24,13 +24,14 @@ grant all on all sequences in schema public to service_role;
 
 grant select, insert, update on teacher_profiles to authenticated;
 grant select, insert, update on classes to authenticated;
-grant select on students to authenticated;
+grant select (id, class_id, display_name, joined_at) on students to authenticated;
 grant select, insert, update on student_profiles to authenticated;
 grant select, insert, update on sessions to authenticated;
 grant select on segments to authenticated;
 grant select on activity_bundles to authenticated;
 grant select on activities to authenticated;
-grant select, update on session_activity_candidates to authenticated;
+grant select on session_activity_candidates to authenticated;
+grant update (status, approved_at) on session_activity_candidates to authenticated;
 grant select, insert, update on assignments to authenticated;
 grant select on events to authenticated;
 
