@@ -1,11 +1,11 @@
-import { readFile, stat } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import { execFile as execFileCallback } from "node:child_process";
 import { relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
 const root = resolve(import.meta.dirname, "..");
 const maxGeneratedBytes = 1_000_000;
-const fixturePrefix = "scripts/fixtures/repository-hygiene/";
+const expectedAnsiFixture = "scripts/fixtures/repository-hygiene/ansi-terminal-dump.txt";
 const allowedLargeFiles = new Set([]);
 const allowedGeneratedFiles = new Set([
   "apps/web/public/auth/curriculum.png",
@@ -89,7 +89,7 @@ export async function inspectFiles(
     workingTreePaths = new Set(),
     readStagedBlob: loadStagedBlob = readStagedBlob,
     readWorkingTreeFile = readFile,
-    statWorkingTreeFile = stat,
+    statWorkingTreeFile = lstat,
   } = {},
 ) {
   const violations = [];
@@ -116,6 +116,7 @@ export async function inspectFiles(
         throw error;
       });
       if (!metadata) continue;
+      if (!metadata.isFile()) continue;
 
       if (metadata.size > maxGeneratedBytes && !allowedLargeFiles.has(repoPath)) {
         violations.push(`${repoPath}: unexpectedly large tracked file (${metadata.size} bytes)`);
@@ -128,13 +129,17 @@ export async function inspectFiles(
   return violations;
 }
 
+export function filterScannedPaths(paths) {
+  return paths.filter((path) => path !== expectedAnsiFixture);
+}
+
 async function trackedFiles() {
   let input = "";
   for await (const chunk of process.stdin) input += chunk;
   return {
-    paths: input.split("\0").filter((path) => path && !path.startsWith(fixturePrefix)),
+    paths: filterScannedPaths(input.split("\0").filter(Boolean)),
     stagedPaths: await cachedFiles(),
-    workingTreePaths: new Set([...await modifiedFiles()].filter((path) => !path.startsWith(fixturePrefix))),
+    workingTreePaths: new Set(filterScannedPaths([...await modifiedFiles()])),
   };
 }
 
