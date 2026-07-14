@@ -32,6 +32,8 @@ const forbiddenPatterns: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bwindow\.top\b/i, reason: "top-window access is forbidden" },
   { pattern: /\bparent\.location\b/i, reason: "parent navigation is forbidden" },
   { pattern: /\bdocument\.write\s*\(/i, reason: "document.write is forbidden" },
+  { pattern: /\beval\s*\(/i, reason: "eval is forbidden" },
+  { pattern: /\bnew\s+Function\s*\(/i, reason: "Function constructor is forbidden" },
   { pattern: /https?:\/\//i, reason: "absolute network URLs are forbidden" },
 ];
 
