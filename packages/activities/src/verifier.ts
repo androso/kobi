@@ -121,28 +121,208 @@ function checkSdkTelemetry(bundleHtml: string): string[] {
 }
 
 function checkCompletionTelemetry(bundleHtml: string): string[] {
-  const completionPayloads = Array.from(
-    bundleHtml.matchAll(/\breportComplete\s*\(\s*\{([\s\S]*?)\}\s*\)/g),
-    (match) => match[1],
-  );
+  const completionCalls = findExecutableCompletionCalls(bundleHtml);
 
-  if (completionPayloads.length === 0) {
+  if (completionCalls.length === 0) {
     return ["bundle must call reportComplete with a telemetry payload"];
   }
 
-  if (
-    completionPayloads.some((payload) =>
-      /\btotal\s*:\s*manifest\.content\.items\.length\b/.test(payload),
-    )
-  ) {
-    return [];
-  }
+  if (completionCalls.every((call) => call === "canonical")) return [];
 
-  if (completionPayloads.some((payload) => /\btotal\s*:/.test(payload))) {
+  if (completionCalls.some((call) => call === "wrong")) {
     return ["bundle completion total must equal manifest.content.items.length"];
   }
 
   return ["bundle reportComplete payload must include total equal to manifest.content.items.length"];
+}
+
+type JavaScriptToken = {
+  kind: "identifier" | "string" | "punctuation";
+  value: string;
+};
+
+type CompletionCallCheck = "canonical" | "wrong" | "missing";
+
+function findExecutableCompletionCalls(bundleHtml: string): CompletionCallCheck[] {
+  const tokens = tokenizeJavaScript(bundleHtml);
+  const calls: CompletionCallCheck[] = [];
+
+  for (let index = 0; index < tokens.length - 1; index += 1) {
+    if (tokens[index].value !== "reportComplete" || tokens[index + 1].value !== "(") continue;
+    if (tokens[index - 1]?.value === "function") continue;
+
+    const closingParen = findMatchingDelimiter(tokens, index + 1, "(", ")");
+    if (closingParen === -1) {
+      calls.push("missing");
+      continue;
+    }
+
+    calls.push(checkCompletionCallPayload(tokens.slice(index + 2, closingParen)));
+    index = closingParen;
+  }
+
+  return calls;
+}
+
+function checkCompletionCallPayload(payload: JavaScriptToken[]): CompletionCallCheck {
+  if (payload[0]?.value !== "{" || payload.at(-1)?.value !== "}") return "missing";
+
+  const totalExpressions = findTopLevelPropertyExpressions(payload, "total");
+  if (totalExpressions.length === 0) return "missing";
+
+  return totalExpressions.every(isCanonicalItemCountExpression) ? "canonical" : "wrong";
+}
+
+function findTopLevelPropertyExpressions(
+  objectTokens: JavaScriptToken[],
+  propertyName: string,
+): JavaScriptToken[][] {
+  const expressions: JavaScriptToken[][] = [];
+  const lastIndex = objectTokens.length - 1;
+  let index = 1;
+
+  while (index < lastIndex) {
+    if (isPropertyName(objectTokens[index], propertyName) && objectTokens[index + 1]?.value === ":") {
+      const expressionStart = index + 2;
+      const expressionEnd = findExpressionEnd(objectTokens, expressionStart, lastIndex);
+      expressions.push(objectTokens.slice(expressionStart, expressionEnd));
+      index = expressionEnd + (objectTokens[expressionEnd]?.value === "," ? 1 : 0);
+      continue;
+    }
+
+    const closingDelimiter = matchingClosingDelimiter(objectTokens[index]?.value);
+    if (closingDelimiter) {
+      const closingIndex = findMatchingDelimiter(objectTokens, index, objectTokens[index].value, closingDelimiter);
+      index = closingIndex === -1 ? lastIndex : closingIndex + 1;
+      continue;
+    }
+
+    index += 1;
+  }
+
+  return expressions;
+}
+
+function findExpressionEnd(tokens: JavaScriptToken[], start: number, objectEnd: number): number {
+  let braceDepth = 0;
+  let bracketDepth = 0;
+  let parenDepth = 0;
+
+  for (let index = start; index < objectEnd; index += 1) {
+    const value = tokens[index].value;
+    if (value === "{") braceDepth += 1;
+    else if (value === "}") {
+      if (braceDepth === 0) return index;
+      braceDepth -= 1;
+    } else if (value === "[") bracketDepth += 1;
+    else if (value === "]") bracketDepth -= 1;
+    else if (value === "(") parenDepth += 1;
+    else if (value === ")") parenDepth -= 1;
+    else if (value === "," && braceDepth === 0 && bracketDepth === 0 && parenDepth === 0) {
+      return index;
+    }
+  }
+
+  return objectEnd;
+}
+
+function isPropertyName(token: JavaScriptToken | undefined, propertyName: string): boolean {
+  if (!token) return false;
+  if (token.kind === "identifier") return token.value === propertyName;
+  if (token.kind !== "string") return false;
+
+  const quote = token.value[0];
+  return (quote === '"' || quote === "'") && token.value.slice(1, -1) === propertyName;
+}
+
+function isCanonicalItemCountExpression(expression: JavaScriptToken[]): boolean {
+  return expression.map((token) => token.value).join("") === "manifest.content.items.length";
+}
+
+function tokenizeJavaScript(source: string): JavaScriptToken[] {
+  const tokens: JavaScriptToken[] = [];
+
+  for (let index = 0; index < source.length; ) {
+    const character = source[index];
+    if (/\s/.test(character)) {
+      index += 1;
+      continue;
+    }
+
+    if (character === "/" && source[index + 1] === "/") {
+      index = skipLineComment(source, index + 2);
+      continue;
+    }
+    if (character === "/" && source[index + 1] === "*") {
+      index = skipBlockComment(source, index + 2);
+      continue;
+    }
+    if (character === '"' || character === "'" || character === "`") {
+      const end = skipStringLiteral(source, index, character);
+      if (character !== "`") tokens.push({ kind: "string", value: source.slice(index, end) });
+      index = end;
+      continue;
+    }
+    if (/[A-Za-z_$]/.test(character)) {
+      const start = index;
+      index += 1;
+      while (index < source.length && /[A-Za-z0-9_$]/.test(source[index])) index += 1;
+      tokens.push({ kind: "identifier", value: source.slice(start, index) });
+      continue;
+    }
+
+    tokens.push({ kind: "punctuation", value: character });
+    index += 1;
+  }
+
+  return tokens;
+}
+
+function skipLineComment(source: string, index: number): number {
+  while (index < source.length && source[index] !== "\n") index += 1;
+  return index;
+}
+
+function skipBlockComment(source: string, index: number): number {
+  const end = source.indexOf("*/", index);
+  return end === -1 ? source.length : end + 2;
+}
+
+function skipStringLiteral(source: string, start: number, quote: string): number {
+  let index = start + 1;
+  while (index < source.length) {
+    if (source[index] === "\\") {
+      index += 2;
+      continue;
+    }
+    if (source[index] === quote) return index + 1;
+    index += 1;
+  }
+  return source.length;
+}
+
+function matchingClosingDelimiter(value: string | undefined): string | null {
+  if (value === "{") return "}";
+  if (value === "[") return "]";
+  if (value === "(") return ")";
+  return null;
+}
+
+function findMatchingDelimiter(
+  tokens: JavaScriptToken[],
+  start: number,
+  opening: string,
+  closing: string,
+): number {
+  let depth = 0;
+  for (let index = start; index < tokens.length; index += 1) {
+    if (tokens[index].value === opening) depth += 1;
+    else if (tokens[index].value === closing) {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return -1;
 }
 
 function checkManifestCodeConsistency(candidate: ActivityArtifactCandidate): string[] {

@@ -269,4 +269,30 @@ describe("activity artifact contracts", () => {
       "bundle completion total must equal manifest.content.items.length",
     );
   });
+
+  it("rejects any executable completion call with a non-canonical total", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+    });
+
+    candidate.bundle_html = candidate.bundle_html.replace(
+      "</body>",
+      `<script>
+        const ignored = "reportComplete({ total: 99 })";
+        // reportComplete({ total: 99 });
+        reportComplete({ score: 1, total: manifest.content.items[0].answer_key.length });
+      </script>
+      </body>`,
+    );
+
+    const result = verifyActivityArtifact(candidate);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain(
+      "bundle completion total must equal manifest.content.items.length",
+    );
+  });
 });
