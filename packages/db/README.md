@@ -6,7 +6,7 @@ Supabase schema/migrations + shared TS types. One datastore (Postgres + pgvector
 
 | Table | Purpose | Key fields |
 |---|---|---|
-| `teacher_profiles` / `classes` / `students` | Auth-lite: teachers via magic link; students via join code + display name | teacher_id, join_code, display_name |
+| `teacher_profiles` / `classes` / `students` | Teachers use Supabase Auth; teachers provision durable student Auth accounts | teacher_id, username, auth_user_id, is_active |
 | `sessions` | One class period | class_id, status, started_at |
 | `segments` | Rolling lesson state | session_id, lesson_state (jsonb), confidence, transcript_summary |
 | `curriculum_chunks` | Ingested textbook unit, objective-level | unit, objective_code, text, embedding |
@@ -19,4 +19,4 @@ Supabase schema/migrations + shared TS types. One datastore (Postgres + pgvector
 
 Maps to the four memory tiers: active lesson → `segments`; teacher/class → `classes` + `session_activity_candidates`; student pedagogical → per-session `assignments.variant` plus `student_profiles` notes; repository → `activities`.
 
-Status: Drizzle schema/migration scaffolding exists. Area C should write candidates to `session_activity_candidates`; Area E should create one `assignments` row per student, defaulting unselected students to the core variant.
+Status: **shipped**. Drizzle schema and migrations cover all v0 tables, triggers, and the `match_curriculum_chunks()` RPC. Run `pnpm --filter @kobi/db db:generate` to regenerate migration output and `pnpm --filter @kobi/db db:migrate` to apply against a Supabase/Postgres instance.

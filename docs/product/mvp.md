@@ -15,7 +15,7 @@ Validate that Kobi can turn the last 10 minutes of a real class into a personali
 - 3 activity artifact families only: match/classify, sequence/order, guided practice/checkpoint — verified HTML bundles plus structured manifests, rendered in the sandboxed artifact iframe.
 - Difficulty-banded personalization: 3 variants (support/core/challenge) per approved activity; teacher-selected support/challenge overrides per session, with core as the default for unselected students.
 - Manual fallback at every AI stage: transcription fails → teacher types a topic summary; generation is slow → pull from the pre-seeded activity repository.
-- Basic auth: teachers via magic link, students via join code + display name.
+- Basic auth: teachers use Supabase Auth and provision username/password student accounts per class.
 - Basic telemetry: attempt/hint/complete events, enough to drive the session report.
 
 ## Out of scope before MVP validation

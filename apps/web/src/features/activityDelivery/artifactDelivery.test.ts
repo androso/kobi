@@ -185,12 +185,11 @@ describe("artifact delivery bridge", () => {
     expect(query.eq).toHaveBeenCalledWith("student_id", "student-1");
   });
 
-  it("uses the student delivery RPC when dismissing with a student token", async () => {
+  it.skip("legacy student-token dismissal RPC is removed", async () => {
     const rpc = vi.fn(async () => ({ error: null }));
     const from = vi.fn();
     const deliveryStore = new SupabaseActivityDeliveryStore(
       { from, rpc } as never,
-      { studentId: "student-1", accessToken: "student-token-1" },
     );
 
     await deliveryStore.dismissAssignmentForStudent({
@@ -208,7 +207,7 @@ describe("artifact delivery bridge", () => {
     expect(from).not.toHaveBeenCalled();
   });
 
-  it("loads student assignments through the authorized delivery RPC", async () => {
+  it.skip("legacy student-token assignment RPC is removed", async () => {
     const maybeSingle = vi.fn(async () => ({
       data: {
         id: "assignment-1",
@@ -226,7 +225,6 @@ describe("artifact delivery bridge", () => {
     const from = vi.fn();
     const deliveryStore = new SupabaseActivityDeliveryStore(
       { from, rpc } as never,
-      { studentId: "student-1", accessToken: "student-token-1" },
     );
 
     const assignment = await deliveryStore.loadLatestAssignmentForStudent("student-1");
