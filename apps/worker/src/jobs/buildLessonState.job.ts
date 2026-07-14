@@ -73,7 +73,12 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
     async (jobs) => {
       const job = jobs[0];
       if (!job) return;
-      await processBuildLessonStateJob(supabase, job.data.sessionId);
+      const result = await processBuildLessonStateJob(supabase, job.data.sessionId);
+      if (result === "stale") {
+        // Another worker finalized this claim while this job was building it.
+        // Requeue so this consumed job does not strand the next transcribed range.
+        await boss.send("build-lesson-state", { sessionId: job.data.sessionId });
+      }
     },
   );
 }

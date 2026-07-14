@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LessonState } from "@kobi/ai-core";
-import { processBuildLessonStateJob } from "./buildLessonState.job.js";
+import {
+  processBuildLessonStateJob,
+  registerBuildLessonStateJob,
+  type BuildLessonStateJobData,
+} from "./buildLessonState.job.js";
+import type PgBoss from "pg-boss";
 
 const state: LessonState = {
   topic: "La noticia",
@@ -30,6 +35,26 @@ describe("processBuildLessonStateJob", () => {
   it("ignores duplicate or stale finalization", async () => {
     const client = fakeClient([claim({}), false]);
     await expect(processBuildLessonStateJob(client, "session-1", vi.fn().mockResolvedValue(state))).resolves.toBe("stale");
+  });
+
+  it("re-enqueues the session when another worker finalized the claim first", async () => {
+    const client = fakeClient([claim({}), false]);
+    const send = vi.fn().mockResolvedValue("retry-job");
+    let handler: ((jobs: Array<{ data: BuildLessonStateJobData }>) => Promise<void>) | undefined;
+    const work = vi.fn(
+      (
+        _name: string,
+        _options: unknown,
+        callback: (jobs: Array<{ data: BuildLessonStateJobData }>) => Promise<void>,
+      ) => {
+        handler = callback;
+      },
+    );
+
+    registerBuildLessonStateJob({ work, send } as unknown as PgBoss, client);
+    await handler?.([{ data: { sessionId: "session-1" } }]);
+
+    expect(send).toHaveBeenCalledWith("build-lesson-state", { sessionId: "session-1" });
   });
 
   it("waits when a missing chunk prevents a contiguous claim", async () => {
