@@ -8,7 +8,6 @@ export const sessions = pgTable("sessions", {
     .notNull()
     .references(() => classes.id, { onDelete: "cascade" }),
   status: sessionStatusEnum("status").notNull().default("active"),
-  classroomDataDeletionRequestedAt: timestamp("classroom_data_deletion_requested_at", { withTimezone: true }),
   startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
   endedAt: timestamp("ended_at", { withTimezone: true }),
 });

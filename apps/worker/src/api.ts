@@ -7,7 +7,6 @@ import type PgBoss from "pg-boss";
 import { demoTranscriptChunks, DEMO_TRANSCRIPT_TICK_MS } from "./demoTranscript.js";
 import { JOB_BUILD_LESSON_STATE, JOB_TRANSCRIBE_CHUNK } from "./queue.js";
 import { runGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
-import { isSessionDeletionRequested, runRetentionCleanup } from "./retention.js";
 
 interface ApiServerOptions {
   supabase: SupabaseClient;
@@ -39,12 +38,6 @@ function logApi(message: string, details?: Record<string, unknown>) {
   safeLog("info", `api.${message.replaceAll(" ", "_")}`, details);
 }
 
-function isRetentionAdmin(req: IncomingMessage): boolean {
-  const expected = process.env.RETENTION_ADMIN_TOKEN;
-  const supplied = req.headers.authorization?.replace(/^Bearer\s+/i, "");
-  return Boolean(expected && supplied && expected.length >= 32 && supplied === expected);
-}
-
 function getCorsOrigin() {
   return process.env.KOBI_API_CORS_ORIGIN ?? process.env.WEB_ORIGIN ?? "*";
 }
@@ -58,7 +51,7 @@ function writeJson(
   res.writeHead(statusCode, {
     "content-type": "application/json",
     "access-control-allow-origin": getCorsOrigin(),
-    "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
+    "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
     "access-control-allow-headers": "content-type,authorization",
     ...extraHeaders,
   });
@@ -68,7 +61,7 @@ function writeJson(
 function handleOptions(res: ServerResponse) {
   res.writeHead(204, {
     "access-control-allow-origin": getCorsOrigin(),
-    "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
+    "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
     "access-control-allow-headers": "content-type,authorization",
     "access-control-max-age": "86400",
   });
@@ -251,16 +244,6 @@ function isDemoMode() {
   return process.env.KOBI_PROJECT_MODE === DEMO_MODE;
 }
 
-async function rejectDeletedSession(
-  res: ServerResponse,
-  supabase: SupabaseClient,
-  sessionId: string,
-): Promise<boolean> {
-  if (!(await isSessionDeletionRequested(supabase, sessionId))) return false;
-  writeJson(res, 409, { error: "Session classroom data deletion is in progress." });
-  return true;
-}
-
 function extensionForMimeType(mimeType: string) {
   if (mimeType.includes("webm")) return "webm";
   if (mimeType.includes("mp4")) return "mp4";
@@ -268,59 +251,6 @@ function extensionForMimeType(mimeType: string) {
   if (mimeType.includes("wav")) return "wav";
   if (mimeType.includes("ogg")) return "ogg";
   return "bin";
-}
-
-interface AudioChunkInsertInput {
-  sessionId: string;
-  chunkIndex: number;
-  storagePath: string;
-  startMs: number;
-  endMs: number;
-}
-
-export async function insertAudioChunkIfSessionActive(
-  supabase: SupabaseClient,
-  input: AudioChunkInsertInput,
-): Promise<{ id: string } | null> {
-  const { data, error } = await supabase.rpc("insert_audio_chunk_if_not_deleted", {
-    p_session_id: input.sessionId,
-    p_chunk_index: input.chunkIndex,
-    p_storage_path: input.storagePath,
-    p_start_ms: input.startMs,
-    p_end_ms: input.endMs,
-  });
-
-  if (error) throw new Error(`Audio chunk acceptance failed: ${error.message}`);
-
-  const row = Array.isArray(data) ? data[0] : data;
-  if (!row || typeof row !== "object" || !("id" in row)) return null;
-  return { id: String(row.id) };
-}
-
-export async function acceptUploadedAudioChunk(
-  supabase: SupabaseClient,
-  bucket: string,
-  storagePath: string,
-  input: AudioChunkInsertInput,
-): Promise<{ id: string } | null> {
-  try {
-    const chunk = await insertAudioChunkIfSessionActive(supabase, input);
-    if (!chunk) await removeUploadedAudio(supabase, bucket, storagePath);
-    return chunk;
-  } catch (error) {
-    await removeUploadedAudio(supabase, bucket, storagePath);
-    throw error;
-  }
-}
-
-async function removeUploadedAudio(supabase: SupabaseClient, bucket: string, storagePath: string) {
-  const { error } = await supabase.storage.from(bucket).remove([storagePath]);
-  if (error) {
-    safeLog("error", "audio.rejected_object_cleanup_failed", {
-      bucket,
-      outcome: classifySafeError(error),
-    });
-  }
 }
 
 async function createSession(req: IncomingMessage, res: ServerResponse, supabase: SupabaseClient) {
@@ -374,8 +304,6 @@ async function createManualLessonState(
   sessionId: string,
   supabase: SupabaseClient,
 ) {
-  if (await rejectDeletedSession(res, supabase, sessionId)) return;
-
   const body = await readJsonBody(req);
   const topic = body.topic;
   const objective = body.objective;
@@ -467,8 +395,6 @@ async function createDemoTranscriptChunk(
     return;
   }
 
-  if (await rejectDeletedSession(res, supabase, sessionId)) return;
-
   const body = await readJsonBody(req);
   let chunkIndex: number;
   try {
@@ -485,8 +411,6 @@ async function createDemoTranscriptChunk(
   }
 
   await ensureDemoCurriculumSeed(supabase);
-
-  if (await rejectDeletedSession(res, supabase, sessionId)) return;
 
   const { data: existing, error: existingError } = await supabase
     .from("audio_chunks")
@@ -579,8 +503,6 @@ async function uploadAudioChunk(
     return;
   }
 
-  if (await rejectDeletedSession(res, supabase, sessionId)) return;
-
   const mimeType = audio.type || "application/octet-stream";
   const audioBytes = Buffer.from(await audio.arrayBuffer());
 
@@ -613,23 +535,21 @@ async function uploadAudioChunk(
     return;
   }
 
-  let chunk: { id: string } | null;
-  try {
-    chunk = await acceptUploadedAudioChunk(supabase, bucket, storagePath, {
-      sessionId,
-      chunkIndex,
-      storagePath,
-      startMs,
-      endMs,
-    });
-  } catch (error) {
-    safeLog("error", "audio.chunk_acceptance_failed", { sessionId, outcome: classifySafeError(error) });
-    writeJson(res, 500, { error: "Audio chunk acceptance failed" });
-    return;
-  }
+  const { data: chunk, error: insertError } = await supabase
+    .from("audio_chunks")
+    .insert({
+      session_id: sessionId,
+      chunk_index: chunkIndex,
+      storage_path: storagePath,
+      start_ms: startMs,
+      end_ms: endMs,
+      status: "pending",
+    })
+    .select("id")
+    .single();
 
-  if (!chunk) {
-    writeJson(res, 409, { error: "Session classroom data deletion is in progress." });
+  if (insertError) {
+    writeJson(res, 400, { error: insertError.message });
     return;
   }
 
@@ -669,8 +589,6 @@ async function createActivityCandidates(
   sessionId: string,
   supabase: SupabaseClient,
 ) {
-  if (await rejectDeletedSession(res, supabase, sessionId)) return;
-
   const lessonState = await loadLatestLessonState(supabase, sessionId);
   if (!lessonState) {
     writeJson(res, 409, { error: "No lesson_state is available for this session yet." });
@@ -805,17 +723,6 @@ export async function routeRequest(
     const activityCandidatesMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/activity-candidates$/);
     if (req.method === "POST" && activityCandidatesMatch?.[1]) {
       await createActivityCandidates(res, activityCandidatesMatch[1], supabase);
-      return;
-    }
-
-    const deletionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/classroom-data$/);
-    if (req.method === "DELETE" && deletionMatch?.[1]) {
-      if (!isRetentionAdmin(req)) {
-        writeJson(res, 401, { error: "Unauthorized" });
-        return;
-      }
-      const result = await runRetentionCleanup(supabase, { sessionId: deletionMatch[1], reason: "manual" });
-      writeJson(res, 200, result);
       return;
     }
 

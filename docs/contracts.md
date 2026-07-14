@@ -22,8 +22,6 @@ Emitted by the lesson-state builder (`apps/worker` / `packages/ai-core`, see `bu
 
 The manual-fallback path (D6) produces the same `lesson_state` shape via `lessonStateFromManualEntry()` — downstream consumers never need a second code path.
 
-Raw audio, transcript text, and lesson-state summaries have separate deletion windows. Their operational contract, including the preserved aggregate report boundary, is defined in [`data-retention.md`](data-retention.md).
-
 ## 2. Checkpoint decision (Understand -> Propose gate)
 
 Produced by the checkpoint agent (`apps/worker/src/checkpoint/evaluateCheckpoint.ts`, OpenAI structured output) and consumed by `apps/worker/src/jobs/evaluateCheckpoint.job.ts`. This replaces the old static `confidence >= 0.5` threshold that used to live inline in `buildLessonState.job.ts`. It runs on an independent timer (`checkpointScheduler.job.ts`, default every `CHECKPOINT_INTERVAL_MINUTES` = 10 min), not on every `lesson_state` tick.

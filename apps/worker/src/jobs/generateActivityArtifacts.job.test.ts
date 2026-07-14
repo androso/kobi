@@ -162,24 +162,6 @@ describe("generateActivityArtifacts job planning", () => {
     expect(supabase.likeFilters).toContain("activities.bundle_ref=artifact-bundles/openai/%");
   });
 
-  it("checks the deletion marker before persisting each generated artifact", async () => {
-    const supabase = fakeSupabase({ deletionRequestedAfterChecks: 1 });
-
-    const result = await runGenerateActivityArtifactsJob(
-      supabase.client,
-      { sessionId: "session-1", lessonState, curriculumMatches },
-      { openAiGenerator: null },
-    );
-
-    expect(result).toEqual({
-      inserted: 0,
-      reused: 0,
-      generated: 0,
-      skippedReason: "session data deletion requested",
-    });
-    expect(supabase.bundleRefs).toHaveLength(0);
-    expect(supabase.insertedCandidates).toHaveLength(0);
-  });
 });
 
 const lessonState: LessonState = {
@@ -290,11 +272,7 @@ function manifest(band: "support" | "core" | "challenge", title: string): Activi
   };
 }
 
-function fakeSupabase(options: {
-  openAiGenerationCount?: number;
-  segments?: LessonState[];
-  deletionRequestedAfterChecks?: number;
-} = {}) {
+function fakeSupabase(options: { openAiGenerationCount?: number; segments?: LessonState[] } = {}) {
   const insertedCandidates: Array<{
     context_snapshot: { latest_topic: string; vocabulary: string[]; segment_count: number };
     evidence: unknown;
@@ -312,8 +290,6 @@ function fakeSupabase(options: {
     },
     openAiGenerationCount: options.openAiGenerationCount ?? 0,
     segments: options.segments ?? [],
-    deletionRequestedAfterChecks: options.deletionRequestedAfterChecks,
-    sessionDeletionChecks: 0,
   };
 
   const client = {
@@ -332,8 +308,6 @@ interface FakeQueryState {
   nextActivityId: () => string;
   openAiGenerationCount: number;
   segments: LessonState[];
-  deletionRequestedAfterChecks?: number;
-  sessionDeletionChecks: number;
 }
 
 class FakeQuery {
@@ -389,21 +363,6 @@ class FakeQuery {
     return this;
   }
 
-  maybeSingle() {
-    if (this.table === "sessions") {
-      this.state.sessionDeletionChecks += 1;
-      return Promise.resolve({
-        data:
-          this.state.deletionRequestedAfterChecks !== undefined &&
-          this.state.sessionDeletionChecks > this.state.deletionRequestedAfterChecks
-            ? { classroom_data_deletion_requested_at: "2026-07-13T00:00:00.000Z" }
-            : null,
-        error: null,
-      });
-    }
-    return Promise.resolve({ data: null, error: null });
-  }
-
   like(column: string, pattern: string) {
     this.state.likeFilters.push(`${column}=${pattern}`);
     return this;
@@ -430,10 +389,6 @@ class FakeQuery {
         data: this.state.segments.map((lessonState) => ({ lesson_state: lessonState })),
         error: null,
       };
-    }
-
-    if (this.table === "sessions") {
-      return { data: null, error: null };
     }
 
     if (this.table === "activities" && this.operation === "select") {

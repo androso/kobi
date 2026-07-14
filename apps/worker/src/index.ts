@@ -12,7 +12,6 @@ import {
   scheduleCheckpointSchedulerJob,
 } from "./jobs/checkpointScheduler.job.js";
 import { startApiServer } from "./api.js";
-import { registerRetentionCleanupJob, scheduleRetentionCleanupJob } from "./jobs/retentionCleanup.job.js";
 import type PgBoss from "pg-boss";
 
 async function main() {
@@ -44,8 +43,6 @@ async function main() {
   await registerEvaluateCheckpointJob(boss, supabase);
   await registerCheckpointSchedulerJob(boss, supabase);
   await scheduleCheckpointSchedulerJob(boss);
-  await registerRetentionCleanupJob(boss, supabase);
-  await scheduleRetentionCleanupJob(boss);
   console.log(
     "Kobi worker running: API, transcribe-chunk, build-lesson-state, checkpoint-scheduler, evaluate-checkpoint, generate-activity-artifacts",
   );

@@ -13,7 +13,6 @@ import {
   type EvaluateCheckpointInput,
 } from "../checkpoint/evaluateCheckpoint.js";
 import { JOB_GENERATE_ACTIVITY_ARTIFACTS } from "../queue.js";
-import { isSessionDeletionRequested } from "../retention.js";
 
 export interface EvaluateCheckpointJobData {
   sessionId: string;
@@ -93,10 +92,6 @@ export async function runEvaluateCheckpointJob(
   const curriculumRetriever = options.curriculumRetriever ?? retrieveCurriculumMatches;
   const { sessionId } = data;
 
-  if (await isSessionDeletionRequested(supabase, sessionId)) {
-    return { evaluated: false, ready: null, skippedReason: "session data deletion requested" };
-  }
-
   const since = await loadLastReadyCheckpointAt(supabase, sessionId);
   const lessonStates = await loadLessonStatesSince(supabase, sessionId, since);
 
@@ -106,10 +101,6 @@ export async function runEvaluateCheckpointJob(
 
   const sessionContext = buildActivitySessionContext(lessonStates);
   const decision = await evaluator({ sessionContext, lessonStates });
-
-  if (await isSessionDeletionRequested(supabase, sessionId)) {
-    return { evaluated: false, ready: null, skippedReason: "session data deletion requested" };
-  }
 
   const { error: insertError } = await supabase.from("checkpoints").insert({
     session_id: sessionId,
