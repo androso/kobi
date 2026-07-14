@@ -96,7 +96,7 @@ begin
     end if;
   end if;
 
-  if input_type = 'attempt' and jsonb_typeof(input_payload -> 'correct') <> 'boolean' then
+  if input_type = 'attempt' and jsonb_typeof(input_payload -> 'correct') is distinct from 'boolean' then
     raise exception using errcode = '22023', message = 'attempt correct must be boolean';
   end if;
 

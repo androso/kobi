@@ -18,6 +18,7 @@ test("burst limits recover and retries do not consume capacity", () => {
 
 test("manifest bounds and authoritative score semantics are enforced", () => {
   assert.match(sql, /jsonb_typeof\(input_payload -> 'item_index'\) is distinct from 'number'/i);
+  assert.match(sql, /jsonb_typeof\(input_payload -> 'correct'\) is distinct from 'boolean'/i);
   assert.match(sql, /jsonb_typeof\(input_payload -> 'score'\) is distinct from 'number'/i);
   assert.match(sql, /jsonb_typeof\(input_payload -> 'total'\) is distinct from 'number'/i);
   assert.match(sql, /item_index < 0 or item_index >= item_count/);
