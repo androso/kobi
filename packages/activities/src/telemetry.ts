@@ -67,7 +67,7 @@ export function authorizeActivityTelemetryMessage(
   return {
     ok: true,
     event: {
-      event_id: parsed.data.payload.event_id ?? crypto.randomUUID(),
+      event_id: crypto.randomUUID(),
       assignment_id: context.assignmentId,
       type: eventTypeFromSdkMethod(parsed.data.method),
       payload: payloadFromSdkEvent(parsed.data, context.assignmentId),
@@ -108,9 +108,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function payloadFromSdkEvent(event: ActivitySdkEvent, assignmentId: string): Record<string, unknown> {
-  const { event_id: _eventId, ...payload } = event.payload;
   return {
-    ...payload,
+    ...event.payload,
     assignment_id: assignmentId,
   };
 }

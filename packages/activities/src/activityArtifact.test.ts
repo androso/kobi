@@ -136,6 +136,31 @@ describe("activity artifact contracts", () => {
       assignment_id: "assignment-1",
       type: "attempt",
     });
+    expect(result.event.event_id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+  });
+
+  it("assigns event ids in the parent and drops iframe-supplied ids", () => {
+    const result = authorizeActivityTelemetryMessage(
+      {
+        sdk: "activity-sdk/v1",
+        type: "event",
+        method: "reportAttempt",
+        payload: {
+          assignment_id: "assignment-1",
+          event_id: "00000000-0000-4000-8000-000000000000",
+          item_index: 0,
+          correct: true,
+        },
+      },
+      { assignmentId: "assignment-1", sourceMatches: true },
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.event.event_id).not.toBe("00000000-0000-4000-8000-000000000000");
+    expect(result.event.payload).not.toHaveProperty("event_id");
   });
 
   it("stamps missing telemetry assignment ids from parent context", () => {
@@ -222,5 +247,26 @@ describe("activity artifact contracts", () => {
     expect(result.ok).toBe(false);
     expect(result.artifact.status).toBe("rejected");
     expect(result.errors).toContain("rubric: hint_leakage 0.35 is below 0.80");
+  });
+
+  it("requires generated completion telemetry to use the manifest item count", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+    });
+
+    candidate.bundle_html = candidate.bundle_html.replace(
+      "total: manifest.content.items.length",
+      "total: manifest.content.items[0].answer_key.length",
+    );
+
+    const result = verifyActivityArtifact(candidate);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain(
+      "bundle completion total must equal manifest.content.items.length",
+    );
   });
 });

@@ -57,6 +57,7 @@ export function verifyActivityArtifact(
     ...checkHtmlShape(bundleHtml),
     ...checkForbiddenApis(bundleHtml),
     ...checkSdkTelemetry(bundleHtml),
+    ...checkCompletionTelemetry(bundleHtml),
     ...checkManifestCodeConsistency(candidate),
   ];
   const deterministicErrors = [...schemaErrors, ...staticErrors];
@@ -117,6 +118,31 @@ function checkSdkTelemetry(bundleHtml: string): string[] {
   return requiredStrings
     .filter((required) => !bundleHtml.includes(required))
     .map((required) => `bundle is missing SDK hook: ${required}`);
+}
+
+function checkCompletionTelemetry(bundleHtml: string): string[] {
+  const completionPayloads = Array.from(
+    bundleHtml.matchAll(/\breportComplete\s*\(\s*\{([\s\S]*?)\}\s*\)/g),
+    (match) => match[1],
+  );
+
+  if (completionPayloads.length === 0) {
+    return ["bundle must call reportComplete with a telemetry payload"];
+  }
+
+  if (
+    completionPayloads.some((payload) =>
+      /\btotal\s*:\s*manifest\.content\.items\.length\b/.test(payload),
+    )
+  ) {
+    return [];
+  }
+
+  if (completionPayloads.some((payload) => /\btotal\s*:/.test(payload))) {
+    return ["bundle completion total must equal manifest.content.items.length"];
+  }
+
+  return ["bundle reportComplete payload must include total equal to manifest.content.items.length"];
 }
 
 function checkManifestCodeConsistency(candidate: ActivityArtifactCandidate): string[] {

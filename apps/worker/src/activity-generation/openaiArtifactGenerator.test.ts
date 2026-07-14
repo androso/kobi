@@ -250,6 +250,12 @@ describe("OpenAI activity artifact generator", () => {
     expect(parsed.creativity_brief.avoid).toContain(
       "generic multiple-choice unless it is clearly the strongest fit",
     );
+    expect(parsed.completion_telemetry.required_payload.total).toBe(
+      "manifest.content.items.length",
+    );
+    expect(parsed.completion_telemetry.forbidden_total_source).toBe(
+      "manifest.content.items[0].answer_key.length",
+    );
   });
 });
 
@@ -306,7 +312,7 @@ function validHtml(title: string, prompt: string) {
     function reportComplete(payload) { emit("reportComplete", payload); }
     document.getElementById("attempt").addEventListener("click", () => reportAttempt({ assignment_id: "assignment-1", item_index: 0, correct: true }));
     document.getElementById("hint").addEventListener("click", () => reportHint({ assignment_id: "assignment-1", item_index: 0, hint_index: 0 }));
-    document.getElementById("complete").addEventListener("click", () => reportComplete({ assignment_id: "assignment-1", score: 1, total: 1 }));
+    document.getElementById("complete").addEventListener("click", () => reportComplete({ assignment_id: "assignment-1", score: 1, total: manifest.content.items.length }));
   </script>
 </body>
 </html>`;

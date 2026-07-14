@@ -499,6 +499,13 @@ export function buildActivityGenerationPrompt(input: BuildPromptInput): string {
           "reportComplete",
         ],
       },
+      completion_telemetry: {
+        required_payload: {
+          score: "numeric score between 0 and total",
+          total: "manifest.content.items.length",
+        },
+        forbidden_total_source: "manifest.content.items[0].answer_key.length",
+      },
       lesson_state: minimizeLessonState(input.lessonState),
       session_context: minimizeSessionContext(input.sessionContext),
       curriculum_matches: input.curriculumMatches.map((match) => ({
