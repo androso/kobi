@@ -1,6 +1,6 @@
 # Repository hygiene
 
-Run `pnpm check:repo` from the repository root before committing. The check scans tracked and unignored files for terminal ANSI dumps, known accidental root filenames, credential-shaped content, and files larger than 1 MB. `pnpm test:repo-hygiene` proves the scanner rejects the fake ANSI fixture under `scripts/fixtures/repository-hygiene/`; fixtures in that directory are test-only and are excluded from the normal repository scan.
+Run `pnpm check:repo` from the repository root before committing. The check scans tracked and unignored files for terminal ANSI dumps, known accidental root filenames, credential-shaped content, and files larger than 1 MB. `pnpm test:repo-hygiene` proves the scanner rejects the fake ANSI fixture under `scripts/fixtures/repository-hygiene/`; only that intentional ANSI fixture is excluded from the normal repository scan, so other files added to the directory remain subject to credential and size checks.
 
 ## Intentional generated files
 

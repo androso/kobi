@@ -122,6 +122,6 @@ See [`docs/area-bc-contract.md`](area-bc-contract.md) for the full write-up shar
 
 ## Implementation status
 
-The `lesson_state`, checkpoint, `curriculum_match`, `ActivityArtifact`, assignment, SDK-message, and telemetry shapes are frozen as TypeScript/Zod schemas in `packages/ai-core`, `packages/curriculum`, and `packages/activities`, with matching database schema/migrations in `packages/db`. The worker produces and verifies candidates, while the web approval/delivery path consumes those contracts and records authorized telemetry.
+The `lesson_state`, `curriculum_match`, `ActivityArtifact`, assignment, SDK-message, and telemetry shapes are frozen as TypeScript/Zod schemas in `packages/ai-core`, `packages/curriculum`, and `packages/activities`, with matching database schema/migrations in `packages/db`. The checkpoint decision shape is currently worker-local to `apps/worker/src/checkpoint/evaluateCheckpoint.ts`; no shared package exports it yet. The worker produces and verifies candidates, while the web approval/delivery path consumes those shared contracts and records authorized telemetry.
 
 The contracts describe supported v0 behavior, but production operation still depends on applying the Supabase migrations/RPC policies, configuring storage and Realtime, and running the worker with provider credentials. Demo fixtures use the same shapes with invented data and do not establish production readiness.
