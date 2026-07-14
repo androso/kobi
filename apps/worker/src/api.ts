@@ -195,28 +195,25 @@ async function createManualLessonState(
     hasObjective: typeof objective === "string" && objective.trim().length > 0,
   });
 
-  const { data, error } = await supabase
-    .from("segments")
-    .insert({
-      session_id: sessionId,
-      // Manual fallback rows are outside the non-negative audio range and do
-      // not advance the worker's contiguous transcript cursor.
-      from_chunk_index: -1,
-      to_chunk_index: -1,
-      lesson_state: lessonState,
-      confidence: lessonState.confidence,
-      transcript_summary: lessonState.transcript_summary,
-    })
-    .select("id")
-    .single();
+  const { data, error } = await supabase.rpc("insert_manual_lesson_state", {
+    target_session_id: sessionId,
+    new_lesson_state: lessonState,
+    new_confidence: lessonState.confidence,
+    new_transcript_summary: lessonState.transcript_summary,
+  });
 
   if (error) {
     writeJson(res, 400, { error: error.message });
     return;
   }
 
-  logApi("manual lesson_state created", { sessionId, segmentId: data.id });
-  writeJson(res, 201, { segmentId: data.id, lessonState });
+  if (typeof data !== "string") {
+    writeJson(res, 500, { error: "Manual lesson_state insert returned no segment id." });
+    return;
+  }
+
+  logApi("manual lesson_state created", { sessionId, segmentId: data });
+  writeJson(res, 201, { segmentId: data, lessonState });
 }
 
 async function ensureDemoCurriculumSeed(supabase: SupabaseClient) {

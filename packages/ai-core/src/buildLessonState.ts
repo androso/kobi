@@ -74,13 +74,13 @@ export function lessonStateFromManualEntry(input: {
   topic: string;
   objective?: string;
 }): LessonState {
-  const topic = input.topic.trim();
-  const objective = input.objective?.trim();
+  const topic = bounded(input.topic, 160);
+  const objective = input.objective ? bounded(input.objective, 300) : "";
   if (!topic) {
     throw new Error("lessonStateFromManualEntry: topic is required");
   }
 
-  return {
+  return lessonStateSchema.parse({
     topic,
     objective_guess: objective || null,
     key_terms: [],
@@ -90,7 +90,7 @@ export function lessonStateFromManualEntry(input: {
       quoted_phrases: [],
       reason: "Manual entry by teacher (transcription fallback, D6).",
     },
-  };
+  });
 }
 
 function normalizeTranscriptText(value: string): string {
