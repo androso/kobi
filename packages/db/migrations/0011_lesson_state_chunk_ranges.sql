@@ -39,6 +39,10 @@ create table if not exists public.lesson_state_claims (
   check (from_chunk_index <= to_chunk_index)
 );
 
+alter table public.lesson_state_claims enable row level security;
+revoke all privileges on table public.lesson_state_claims from public, anon, authenticated;
+grant all privileges on table public.lesson_state_claims to service_role;
+
 create or replace function public.claim_next_lesson_state_range(target_session_id uuid, max_chunks integer default 2)
 returns table (
   claim_id uuid,
@@ -77,6 +81,20 @@ begin
 
   select coalesce(max(s.to_chunk_index) filter (where s.to_chunk_index >= 0), -1) + 1
   into next_index from segments s where s.session_id = target_session_id;
+
+  -- A failed transcription cannot be retried by this job, so consume each
+  -- failed source index before looking for the next transcribed range. The
+  -- resulting segment begins after the skipped audio and keeps later chunks
+  -- from waiting forever on one bad transcription.
+  loop
+    exit when not exists (
+      select 1 from audio_chunks a
+      where a.session_id = target_session_id
+        and a.chunk_index = next_index
+        and a.status = 'failed'
+    );
+    next_index := next_index + 1;
+  end loop;
 
   if not exists (
     select 1 from audio_chunks a
@@ -148,18 +166,56 @@ begin
     return false;
   end if;
 
-  insert into segments (
-    session_id, from_chunk_index, to_chunk_index, lesson_state, confidence, transcript_summary
-  ) values (
-    claimed.session_id, claimed.from_chunk_index, claimed.to_chunk_index,
-    new_lesson_state, new_confidence, new_transcript_summary
-  );
+  if new_lesson_state is not null then
+    insert into segments (
+      session_id, from_chunk_index, to_chunk_index, lesson_state, confidence, transcript_summary
+    ) values (
+      claimed.session_id, claimed.from_chunk_index, claimed.to_chunk_index,
+      new_lesson_state, new_confidence, new_transcript_summary
+    );
+  end if;
   delete from lesson_state_claims where id = target_claim_id;
   return true;
 end;
 $$;
 
+create or replace function public.insert_manual_lesson_state(
+  target_session_id uuid,
+  new_lesson_state jsonb,
+  new_confidence real,
+  new_transcript_summary text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  manual_boundary integer;
+  inserted_id uuid;
+begin
+  perform pg_advisory_xact_lock(hashtextextended(target_session_id::text, 47));
+
+  select coalesce(min(from_chunk_index), 0) - 1
+  into manual_boundary
+  from segments
+  where session_id = target_session_id and from_chunk_index < 0;
+
+  insert into segments (
+    session_id, from_chunk_index, to_chunk_index, lesson_state, confidence, transcript_summary
+  ) values (
+    target_session_id, manual_boundary, manual_boundary,
+    new_lesson_state, new_confidence, new_transcript_summary
+  )
+  returning id into inserted_id;
+
+  return inserted_id;
+end;
+$$;
+
 revoke all on function public.claim_next_lesson_state_range(uuid, integer) from public;
 revoke all on function public.finalize_lesson_state_range(uuid, jsonb, real, text) from public;
+revoke all on function public.insert_manual_lesson_state(uuid, jsonb, real, text) from public;
 grant execute on function public.claim_next_lesson_state_range(uuid, integer) to service_role;
 grant execute on function public.finalize_lesson_state_range(uuid, jsonb, real, text) to service_role;
+grant execute on function public.insert_manual_lesson_state(uuid, jsonb, real, text) to service_role;
