@@ -11,33 +11,36 @@ type Check = {
 
 type CountRow = { count: number };
 
-loadRootEnv();
+export type RecoverySql = ReturnType<typeof postgres>;
+type SqlQuery = ReturnType<RecoverySql>;
 
-const connectionString = process.env.RECOVERY_DATABASE_URL;
-const environment = process.env.RECOVERY_ENVIRONMENT;
-const evidencePath = process.env.RECOVERY_EVIDENCE_PATH ?? "artifacts/recovery/restore-audit.json";
+export type RecoveryAuditConfig = {
+  environment: string;
+  sessionId: string;
+  commitSha: string | null;
+};
 
-if (!connectionString) throw new Error("RECOVERY_DATABASE_URL is required; DATABASE_URL is intentionally ignored");
-if (!environment || !/^(restore|recovery|dr)-/i.test(environment)) {
-  throw new Error("RECOVERY_ENVIRONMENT must name an isolated environment and start with restore-, recovery-, or dr-");
-}
+export type RecoveryEvidence = {
+  schema_version: "kobi-recovery-evidence/v1";
+  generated_at: string;
+  environment: string;
+  representative_session_id: string;
+  commit_sha: string | null;
+  passed: boolean;
+  checks: Check[];
+};
 
-const sql = postgres(connectionString, { max: 1, prepare: false });
-const checks: Check[] = [];
-
-async function count(query: ReturnType<typeof sql>): Promise<number> {
+async function count(query: SqlQuery): Promise<number> {
   const rows = (await query) as unknown as CountRow[];
   return Number(rows[0]?.count ?? 0);
 }
 
-function record(name: string, value: number, details: Record<string, unknown> = {}) {
+function record(checks: Check[], name: string, value: number, details: Record<string, unknown> = {}) {
   checks.push({ name, ok: value === 0, details: { count: value, ...details } });
 }
 
-async function main() {
-  const sessionId = process.env.RECOVERY_SESSION_ID;
-  if (!sessionId) throw new Error("RECOVERY_SESSION_ID is required for the representative completed-session audit");
-
+export async function runRecoveryAudit(sql: RecoverySql, { environment, sessionId, commitSha }: RecoveryAuditConfig): Promise<RecoveryEvidence> {
+  const checks: Check[] = [];
   const [session] = await sql<{
     session_id: string;
     status: string;
@@ -65,13 +68,13 @@ async function main() {
     details: session ?? { session_id: sessionId, missing: true },
   });
 
-  record("assignment_ownership", await count(sql`
+  record(checks, "assignment_ownership", await count(sql`
     select count(*)::int as count from assignments a
     join sessions s on s.id = a.session_id
     join students st on st.id = a.student_id
     where a.session_id = ${sessionId} and st.class_id <> s.class_id
   `));
-  record("assignment_candidate_consistency", await count(sql`
+  record(checks, "assignment_candidate_consistency", await count(sql`
     select count(*)::int as count from assignments a
     left join session_activity_candidates c on c.id = a.candidate_id
     where a.session_id = ${sessionId} and (
@@ -79,29 +82,29 @@ async function main() {
       or c.difficulty_band <> a.variant or c.status <> 'approved'
     )
   `));
-  record("completion_event_consistency", await count(sql`
+  record(checks, "completion_event_consistency", await count(sql`
     select count(*)::int as count from assignments a
     where a.session_id = ${sessionId} and a.status = 'completed'
       and not exists (select 1 from events e where e.assignment_id = a.id and e.type = 'complete')
   `));
-  record("missing_audio_objects", await count(sql`
+  record(checks, "missing_audio_objects", await count(sql`
     select count(*)::int as count from audio_chunks ac
     where ac.session_id = ${sessionId} and not exists (
       select 1 from storage.objects o where o.bucket_id = 'audio-chunks' and o.name = ac.storage_path
     )
   `));
-  record("orphaned_audio_objects", await count(sql`
+  record(checks, "orphaned_audio_objects", await count(sql`
     select count(*)::int as count from storage.objects o
     where o.bucket_id = 'audio-chunks' and not exists (
       select 1 from audio_chunks ac where ac.storage_path = o.name
     )
   `));
-  record("missing_activity_bundles", await count(sql`
+  record(checks, "missing_activity_bundles", await count(sql`
     select count(*)::int as count from activities a
     left join activity_bundles b on b.ref = a.bundle_ref
     where b.ref is null
   `));
-  record("required_buckets", await count(sql`
+  record(checks, "required_buckets", await count(sql`
     select count(*)::int as count from (values ('audio-chunks')) required(id)
     where not exists (select 1 from storage.buckets b where b.id = required.id)
   `));
@@ -125,29 +128,61 @@ async function main() {
   `;
   checks.push({ name: "queue_schema", ok: queueSchemas.some((row) => row.schema_name === "pgboss"), details: { schemas: queueSchemas } });
   const requiredQueues = ["transcribe-chunk", "build-lesson-state", "generate-activity-artifacts", "checkpoint-scheduler", "evaluate-checkpoint"];
-  const queueRows = await sql<{ name: string }[]>`
-    select name from pgboss.queue where name = any(${requiredQueues}) order by name
+  const [queueTable] = await sql<{ relation_name: string | null }[]>`
+    select to_regclass('pgboss.queue')::text as relation_name
   `;
-  const missingQueues = requiredQueues.filter((name) => !queueRows.some((row) => row.name === name));
-  checks.push({ name: "queue_registrations", ok: missingQueues.length === 0, details: { missing_queues: missingQueues, queues: queueRows } });
+  if (!queueTable?.relation_name) {
+    checks.push({
+      name: "queue_registrations",
+      ok: false,
+      details: { missing_table: "pgboss.queue", missing_queues: requiredQueues, queues: [] },
+    });
+  } else {
+    const queueRows = await sql<{ name: string }[]>`
+      select name from pgboss.queue where name = any(${requiredQueues}) order by name
+    `;
+    const missingQueues = requiredQueues.filter((name) => !queueRows.some((row) => row.name === name));
+    checks.push({ name: "queue_registrations", ok: missingQueues.length === 0, details: { missing_queues: missingQueues, queues: queueRows } });
+  }
 
-  const evidence = {
+  const evidence: RecoveryEvidence = {
     schema_version: "kobi-recovery-evidence/v1",
     generated_at: new Date().toISOString(),
     environment,
     representative_session_id: sessionId,
-    commit_sha: process.env.GITHUB_SHA ?? null,
+    commit_sha: commitSha,
     passed: checks.every((check) => check.ok),
     checks,
   };
-  const output = path.resolve(evidencePath);
-  mkdirSync(path.dirname(output), { recursive: true });
-  writeFileSync(output, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
-  console.log(JSON.stringify(evidence, null, 2));
-  if (!evidence.passed) process.exitCode = 1;
+  return evidence;
 }
 
-main().finally(() => sql.end()).catch((error: unknown) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+export async function main() {
+  loadRootEnv();
+  const connectionString = process.env.RECOVERY_DATABASE_URL;
+  const environment = process.env.RECOVERY_ENVIRONMENT;
+  const sessionId = process.env.RECOVERY_SESSION_ID;
+  const evidencePath = process.env.RECOVERY_EVIDENCE_PATH ?? "artifacts/recovery/restore-audit.json";
+
+  if (!connectionString) throw new Error("RECOVERY_DATABASE_URL is required; DATABASE_URL is intentionally ignored");
+  if (!environment || !/^(restore|recovery|dr)-/i.test(environment)) {
+    throw new Error("RECOVERY_ENVIRONMENT must name an isolated environment and start with restore-, recovery-, or dr-");
+  }
+  if (!sessionId) throw new Error("RECOVERY_SESSION_ID is required for the representative completed-session audit");
+
+  const sql = postgres(connectionString, { max: 1, prepare: false });
+  try {
+    const evidence = await runRecoveryAudit(sql, {
+      environment,
+      sessionId,
+      commitSha: process.env.GITHUB_SHA ?? null,
+    });
+    const output = path.resolve(evidencePath);
+    mkdirSync(path.dirname(output), { recursive: true });
+    writeFileSync(output, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
+    console.log(JSON.stringify(evidence, null, 2));
+    if (!evidence.passed) process.exitCode = 1;
+  } finally {
+    await sql.end();
+  }
+}
