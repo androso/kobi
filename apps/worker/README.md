@@ -24,5 +24,4 @@ Required API env: `PORT`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE
 - Writes: `segments.lesson_state`, verified `activities`, `session_activity_candidates`, and later `assignments` variants after teacher approval
 - Uses: `packages/ai-core` for model routing, `packages/curriculum` for retrieval, `packages/activities` for manifest schema, verifier, and SDK contracts
 
-Status: transcription, lesson-state building, and curriculum retrieval jobs are wired.
-Pre-generation, verification, and variant making still need Area C/E implementation.
+Status: **partial/environment-dependent**. Transcription, lesson-state building, checkpoint evaluation, curriculum retrieval, and activity generation (repository reuse + static fallback + OpenAI generation with verifier) are wired. End-to-end operation requires a running Supabase DB (`DATABASE_URL`) and model credentials (`OPENAI_API_KEY`, `GEMINI_API_KEY`). Assignment delivery to students after teacher approval is implemented in `apps/web` via Supabase Realtime; the worker enqueues generated candidates for that flow.

@@ -23,4 +23,4 @@ Vite + React + TypeScript app: teacher portal + student portal.
 - `ActivityArtifact` manifest + authorized `bundle_ref` (from `packages/activities`, verified before display and rendered in a sandboxed iframe)
 - telemetry events (written to `events` table, read back for live monitor / session report)
 
-Status: scaffolded with Vite, React, TypeScript, Tailwind CSS, shadcn-compatible UI utilities, React Router, TanStack Query, Zustand, React Hook Form, Zod, Supabase JS, Vitest, and Playwright.
+Status: **shipped**. The teacher and student portals are implemented with Vite, React, TypeScript, Tailwind CSS, shadcn-compatible UI utilities, React Router, TanStack Query, Zustand, React Hook Form, Zod, Supabase JS, Vitest, and Playwright. Start with `pnpm dev` from the repo root.

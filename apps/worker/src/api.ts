@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { Readable } from "node:stream";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildCurriculumQueryText, embedText, retrieveCurriculumMatches } from "@kobi/curriculum";
-import { lessonStateFromManualEntry, lessonStateSchema, type LessonState } from "@kobi/ai-core";
+import { classifySafeError, lessonStateFromManualEntry, lessonStateSchema, safeLog, type LessonState } from "@kobi/ai-core";
 import type PgBoss from "pg-boss";
 import { z } from "zod";
 import { demoTranscriptChunks, DEMO_TRANSCRIPT_TICK_MS } from "./demoTranscript.js";
@@ -11,7 +11,8 @@ import { runGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifact
 
 interface ApiServerOptions {
   supabase: SupabaseClient;
-  boss: PgBoss;
+  boss?: PgBoss;
+  getBoss?: () => PgBoss | undefined;
 }
 
 const DEFAULT_AUDIO_BUCKET = "audio-chunks";
@@ -49,7 +50,7 @@ const RATE_WINDOW_MS = 60_000;
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 
 function logApi(message: string, details?: Record<string, unknown>) {
-  console.info(`[Kobi API] ${message}`, details ?? {});
+  safeLog("info", `api.${message.replaceAll(" ", "_")}`, details);
 }
 
 function getAllowedOrigins() {
@@ -72,7 +73,7 @@ function writeJson(
 ) {
   res.writeHead(statusCode, {
     "content-type": "application/json",
-    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
     "access-control-allow-headers": "content-type,authorization",
     ...corsHeaders(req),
     ...extraHeaders,
@@ -82,7 +83,7 @@ function writeJson(
 
 function handleOptions(req: IncomingMessage, res: ServerResponse) {
   res.writeHead(204, {
-    "access-control-allow-methods": "GET,POST,OPTIONS",
+    "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
     "access-control-allow-headers": "content-type,authorization",
     "access-control-max-age": "86400",
     ...corsHeaders(req),
@@ -92,6 +93,134 @@ function handleOptions(req: IncomingMessage, res: ServerResponse) {
 
 function getRequestUrl(req: IncomingMessage) {
   return new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+}
+
+const STUDENT_EMAIL_DOMAIN = "students.kobi.invalid";
+const MIN_STUDENT_PASSWORD_LENGTH = 8;
+
+function normalizeUsername(value: string) {
+  return value.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9-]/g, "");
+}
+
+function usernameEmail(username: string) {
+  return `${username}@${STUDENT_EMAIL_DOMAIN}`;
+}
+
+async function requireTeacher(req: IncomingMessage, supabase: SupabaseClient) {
+  const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (!token) throw new ApiRequestError("Unauthorized", 401);
+  const { data, error } = await supabase.auth.getUser(token);
+  if (error || !data.user || data.user.user_metadata?.role === "student") throw new ApiRequestError("Unauthorized", 401);
+  return data.user;
+}
+
+async function requireOwnedClass(req: IncomingMessage, supabase: SupabaseClient, classId: string) {
+  const teacher = await requireTeacher(req, supabase);
+  const { data } = await supabase.from("classes").select("id").eq("id", classId).eq("teacher_id", teacher.id).maybeSingle();
+  if (!data) throw new ApiRequestError("Class not found", 404);
+  return teacher;
+}
+
+async function listRoster(req: IncomingMessage, res: ServerResponse, classId: string, supabase: SupabaseClient) {
+  await requireOwnedClass(req, supabase, classId);
+  const { data, error } = await supabase.from("students")
+    .select("id,class_id,display_name,username,is_active,activated_at,joined_at")
+    .eq("class_id", classId).not("auth_user_id", "is", null).order("display_name");
+  if (error) throw new ApiRequestError(error.message);
+  writeJson(res, 200, { students: data ?? [] });
+}
+
+async function createRosterStudent(req: IncomingMessage, res: ServerResponse, classId: string, supabase: SupabaseClient) {
+  await requireOwnedClass(req, supabase, classId);
+  const body = await readJsonBody(req);
+  const displayName = typeof body.displayName === "string" ? body.displayName.trim() : "";
+  const password = typeof body.password === "string" ? body.password : "";
+  if (!displayName) throw new ApiRequestError("displayName is required");
+  if (password.length < MIN_STUDENT_PASSWORD_LENGTH) throw new ApiRequestError(`Password must be at least ${MIN_STUDENT_PASSWORD_LENGTH} characters`);
+  const { data: existingStudent, error: existingStudentError } = await supabase
+    .from("students")
+    .select("id,auth_user_id")
+    .eq("class_id", classId)
+    .ilike("display_name", displayName)
+    .maybeSingle();
+  if (existingStudentError) throw new ApiRequestError(existingStudentError.message);
+  if (existingStudent?.auth_user_id) {
+    throw new ApiRequestError("A student account with this name already exists", 409);
+  }
+
+  const base = normalizeUsername(displayName).replace(/^-+|-+$/g, "") || "estudiante";
+  let authUserId: string | undefined;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const username = `${base}-${crypto.randomUUID().replace(/-/g, "").slice(0, 6)}`;
+    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      email: usernameEmail(username), password, email_confirm: true,
+      user_metadata: { role: "student", username, display_name: displayName },
+    });
+    if (authError) {
+      logApi("student Auth account creation failed", {
+        classId,
+        attempt: attempt + 1,
+        username,
+        error: authError.message,
+        status: authError.status,
+        code: authError.code,
+      });
+      continue;
+    }
+    authUserId = authData.user.id;
+    const studentValues = {
+      class_id: classId, display_name: displayName, username, auth_user_id: authUserId,
+      is_active: true, activated_at: new Date().toISOString(), access_token: null,
+    };
+    const { data, error } = existingStudent?.id
+      ? await supabase.from("students").update(studentValues).eq("id", existingStudent.id).select("id,class_id,display_name,username,is_active,activated_at,joined_at").single()
+      : await supabase.from("students").insert(studentValues).select("id,class_id,display_name,username,is_active,activated_at,joined_at").single();
+    if (!error) { writeJson(res, 201, { student: data }); return; }
+    logApi("student database row creation failed", {
+      classId,
+      attempt: attempt + 1,
+      username,
+      authUserId,
+      error: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+    });
+    const { error: cleanupError } = await supabase.auth.admin.deleteUser(authUserId);
+    if (cleanupError) {
+      logApi("student Auth account cleanup failed", {
+        classId,
+        attempt: attempt + 1,
+        username,
+        authUserId,
+        error: cleanupError.message,
+        status: cleanupError.status,
+        code: cleanupError.code,
+      });
+    }
+    authUserId = undefined;
+  }
+  logApi("student account provisioning exhausted retries", { classId, displayName, attempts: 5 });
+  throw new ApiRequestError("Unable to provision student account", 409);
+}
+
+async function updateRosterStudent(req: IncomingMessage, res: ServerResponse, classId: string, studentId: string, action: string, supabase: SupabaseClient) {
+  await requireOwnedClass(req, supabase, classId);
+  const { data: student } = await supabase.from("students").select("id,auth_user_id").eq("id", studentId).eq("class_id", classId).not("auth_user_id", "is", null).maybeSingle();
+  if (!student?.auth_user_id) throw new ApiRequestError("Student not found", 404);
+  if (action === "password") {
+    const body = await readJsonBody(req); const password = typeof body.password === "string" ? body.password : "";
+    if (password.length < MIN_STUDENT_PASSWORD_LENGTH) throw new ApiRequestError(`Password must be at least ${MIN_STUDENT_PASSWORD_LENGTH} characters`);
+    const { error } = await supabase.auth.admin.updateUserById(student.auth_user_id, { password });
+    if (error) throw new ApiRequestError("Unable to reset password", 400);
+  } else if (action === "deactivate" || action === "reactivate") {
+    const active = action === "reactivate";
+    const { error } = await supabase.auth.admin.updateUserById(student.auth_user_id, { ban_duration: active ? "none" : "876000h" });
+    if (error) throw new ApiRequestError("Unable to update account", 400);
+    const { error: rowError } = await supabase.from("students").update({ is_active: active, activated_at: active ? new Date().toISOString() : null }).eq("id", studentId);
+    if (rowError) throw new ApiRequestError(rowError.message);
+  } else throw new ApiRequestError("Unknown roster action", 404);
+  writeJson(res, 200, { ok: true });
 }
 
 async function readJsonBody(req: IncomingMessage) {
@@ -428,7 +557,6 @@ async function uploadAudioChunk(
       sessionId,
       chunkIndex,
       sizeBytes: audioBytes.length,
-      mimeType,
     });
   }
 
@@ -438,12 +566,8 @@ async function uploadAudioChunk(
   logApi("uploading audio chunk to storage", {
     sessionId,
     chunkIndex,
-    startMs,
-    endMs,
-    mimeType,
     sizeBytes: audioBytes.length,
-    bucket,
-    storagePath,
+    durationMs: endMs - startMs,
   });
 
   const { error: uploadError } = await supabase.storage.from(bucket).upload(storagePath, audioBytes, {
@@ -452,6 +576,7 @@ async function uploadAudioChunk(
   });
 
   if (uploadError) {
+    safeLog("error", "audio.upload_failed", { sessionId, outcome: classifySafeError(uploadError) });
     throw new ApiRequestError("audio_upload_failed", 500);
   }
 
@@ -479,12 +604,11 @@ async function uploadAudioChunk(
     .createSignedUrl(storagePath, 60 * 60);
 
   if (signedUrlError) {
+    safeLog("error", "audio.signing_failed", { sessionId, audioChunkId: chunk.id, outcome: classifySafeError(signedUrlError) });
     throw new ApiRequestError("audio_url_create_failed", 500);
   }
 
-  console.log(
-    `[api] audio chunk received: session=${sessionId} chunkId=${chunk.id} index=${chunkIndex} mime=${mimeType} size=${audioBytes.byteLength}B range=${startMs}-${endMs}ms`,
-  );
+  safeLog("info", "audio.received", { sessionId, audioChunkId: chunk.id, chunkIndex, sizeBytes: audioBytes.byteLength, durationMs: endMs - startMs });
 
   try {
     await boss.send(JOB_TRANSCRIBE_CHUNK, {
@@ -493,7 +617,7 @@ async function uploadAudioChunk(
       mimeType,
       sessionId,
     });
-    console.log(`[api] enqueued transcribe-chunk for chunkId=${chunk.id}`);
+    safeLog("info", "audio.transcription_enqueued", { sessionId, audioChunkId: chunk.id });
   } catch (queueError) {
     throw new ApiRequestError("transcription_enqueue_failed", 500);
   }
@@ -588,7 +712,7 @@ export async function routeRequest(
   req: IncomingMessage,
   res: ServerResponse,
   supabase: SupabaseClient,
-  boss: PgBoss,
+  boss?: PgBoss,
 ) {
   try {
     for (const [name, value] of Object.entries(corsHeaders(req))) res.setHeader?.(name, value);
@@ -605,6 +729,14 @@ export async function routeRequest(
       return;
     }
 
+    const rosterMatch = url.pathname.match(/^\/api\/classes\/([^/]+)\/students$/);
+    if (req.method === "GET" && rosterMatch?.[1]) { await listRoster(req, res, rosterMatch[1], supabase); return; }
+    if (req.method === "POST" && rosterMatch?.[1]) { await createRosterStudent(req, res, rosterMatch[1], supabase); return; }
+    const rosterActionMatch = url.pathname.match(/^\/api\/classes\/([^/]+)\/students\/([^/]+)\/(password|deactivate|reactivate)$/);
+    if (req.method === "POST" && rosterActionMatch?.[1] && rosterActionMatch[2] && rosterActionMatch[3]) {
+      await updateRosterStudent(req, res, rosterActionMatch[1], rosterActionMatch[2], rosterActionMatch[3], supabase); return;
+    }
+
     const actor = await authenticate(req, supabase);
 
     if (req.method === "POST" && url.pathname === "/api/sessions") {
@@ -617,6 +749,7 @@ export async function routeRequest(
       const sessionId = parseBody(uuidSchema, audioChunkMatch[1]);
       await authorizeSession(supabase, sessionId, actor);
       enforceRateLimit(`audio:${actor.id}:${sessionId}`, 30);
+      if (!boss) throw new ApiRequestError("background_queue_starting", 503);
       await uploadAudioChunk(req, res, url, sessionId, supabase, boss);
       return;
     }
@@ -625,6 +758,7 @@ export async function routeRequest(
     if (req.method === "POST" && demoTranscriptChunkMatch?.[1]) {
       const sessionId = parseBody(uuidSchema, demoTranscriptChunkMatch[1]);
       await authorizeSession(supabase, sessionId, actor);
+      if (!boss) throw new ApiRequestError("background_queue_starting", 503);
       await createDemoTranscriptChunk(req, res, sessionId, supabase, boss);
       return;
     }
@@ -650,16 +784,18 @@ export async function routeRequest(
   } catch (error) {
     const statusCode = error instanceof ApiRequestError ? error.statusCode : 500;
     const code = error instanceof ApiRequestError ? error.code : "internal_error";
-    if (!(error instanceof ApiRequestError)) logApi("request failed", { error: error instanceof Error ? error.message : String(error) });
+    if (!(error instanceof ApiRequestError)) {
+      safeLog("error", "api.request_failed", { outcome: classifySafeError(error) });
+    }
     writeJson(res, statusCode, { error: { code } });
   }
 }
 
-export function startApiServer({ supabase, boss }: ApiServerOptions) {
+export function startApiServer({ supabase, boss, getBoss }: ApiServerOptions) {
   const port = Number(process.env.PORT ?? process.env.API_PORT ?? 8787);
   const server = createServer((req, res) => {
-    routeRequest(req, res, supabase, boss).catch((error: unknown) => {
-      logApi("unhandled request failure", { error: error instanceof Error ? error.message : String(error) });
+    routeRequest(req, res, supabase, getBoss?.() ?? boss).catch((error: unknown) => {
+      safeLog("error", "api.unhandled_request_failure", { outcome: classifySafeError(error) });
       writeJson(res, 500, { error: { code: "internal_error" } });
     });
   });

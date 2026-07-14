@@ -11,7 +11,7 @@ This file is guidance for coding agents only; it must not expand MVP scope or ov
 ## Stack
 
 - Use TypeScript throughout the repo.
-- `apps/web` is the Next.js app for teacher and student portals plus API routes.
+- `apps/web` is the Vite + React app for teacher and student portals.
 - `apps/worker` is the Node worker for background AI pipeline work.
 - Supabase is the datastore: Postgres, pgvector, Realtime, and Auth.
 - Do not introduce Python/FastAPI unless the product spec changes.
@@ -24,6 +24,16 @@ This file is guidance for coding agents only; it must not expand MVP scope or ov
 - Treat `prompts/` as runtime-tunable prompt and rubric content, not application code.
 - Preserve the ownership boundaries described in `README.md`.
 - When adding scripts or tooling, wire them through the workspace in a way that works from the repo root.
+
+## Context and Token Efficiency
+
+- Start with `git status --short`, then use `rg`/`rg --files` to inspect only the files relevant to the request. Do not recursively reread the repository.
+- Read `README.md`, `docs/product-spec.md`, and `docs/contracts.md` selectively: use `rg` to locate the relevant sections, and expand only when changing behavior or data shapes.
+- Prefer current repository state over old task transcripts or rollout summaries. Consult memory only for a concrete prior decision, error, branch, or path that is relevant to the task.
+- Load a skill or external connector only when the request requires that capability. Prefer local `git`, `rg`, and narrow package commands for ordinary repository work.
+- Do not use subagents for a task that is small or sequential. When delegation is explicitly requested, give each agent a bounded, independent subtask and avoid duplicate repository scans.
+- Run the narrowest relevant validation first. Escalate to workspace-wide typechecking or both test suites only when the change crosses package boundaries or the narrow check reveals a broader risk.
+- Keep progress updates and final reports concise: report decisions, changed files, validation, and blockers without replaying command output or restating the full task.
 
 ## Validation
 

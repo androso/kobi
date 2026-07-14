@@ -5,6 +5,7 @@ import {
   Plus,
   CircleHelp,
   LogOut,
+  Users,
   type LucideIcon
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -29,6 +30,8 @@ export function Sidebar({ onOpenCreateClass, onOpenHelp }: SidebarProps) {
   const monitoringClassId = useClassStore((state) => state.monitoringClassId);
   const classes = useClassStore((state) => state.classes);
   const monitoringClass = classes.find((c) => c.id === monitoringClassId) ?? null;
+  const rosterClassId = location.pathname.match(/^\/teacher\/classes\/([^/]+)\/students$/)?.[1];
+  const classroomId = rosterClassId ?? monitoringClassId;
 
   function handleLogout() {
     logout();
@@ -91,6 +94,14 @@ export function Sidebar({ onOpenCreateClass, onOpenHelp }: SidebarProps) {
               />
             );
           })}
+          {classroomId ? (
+            <PortalNavButton
+              active={location.pathname === `/teacher/classes/${classroomId}/students`}
+              icon={Users}
+              label="Estudiantes"
+              onClick={() => navigate(`/teacher/classes/${classroomId}/students`)}
+            />
+          ) : null}
         </nav>
       </div>
 

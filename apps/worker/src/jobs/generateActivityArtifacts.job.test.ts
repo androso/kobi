@@ -161,6 +161,7 @@ describe("generateActivityArtifacts job planning", () => {
     expect(openAiCalls).toBe(0);
     expect(supabase.likeFilters).toContain("activities.bundle_ref=artifact-bundles/openai/%");
   });
+
 });
 
 const lessonState: LessonState = {
@@ -279,20 +280,21 @@ function fakeSupabase(options: { openAiGenerationCount?: number; segments?: Less
   const bundleRefs: string[] = [];
   const likeFilters: string[] = [];
   let nextActivityId = 0;
+  const state: FakeQueryState = {
+    insertedCandidates,
+    bundleRefs,
+    likeFilters,
+    nextActivityId: () => {
+      nextActivityId += 1;
+      return `activity-${nextActivityId}`;
+    },
+    openAiGenerationCount: options.openAiGenerationCount ?? 0,
+    segments: options.segments ?? [],
+  };
 
   const client = {
     from(table: string) {
-      return new FakeQuery(table, {
-        insertedCandidates,
-        bundleRefs,
-        likeFilters,
-        nextActivityId: () => {
-          nextActivityId += 1;
-          return `activity-${nextActivityId}`;
-        },
-        openAiGenerationCount: options.openAiGenerationCount ?? 0,
-        segments: options.segments ?? [],
-      });
+      return new FakeQuery(table, state);
     },
   } as unknown as SupabaseClient;
 

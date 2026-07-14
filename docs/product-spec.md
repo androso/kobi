@@ -71,6 +71,10 @@ Put one name on each area (one person can own two small ones). Agree the shared 
 
 **Never cut:** teacher approval gate, verified artifact delivery, curriculum grounding with visible evidence.
 
+### Student identity
+
+Teachers create, reset, deactivate, and reactivate durable student accounts from each class roster. Students sign in with a generated username and teacher-selected password. No age, birth date, or guardian data is collected. Pre-account student rows and their assignments remain historical and are excluded from the active roster.
+
 ## Definition of Done (no-mock test)
 
 - A teacher creates a class and runs a session on real audio with no developer help
