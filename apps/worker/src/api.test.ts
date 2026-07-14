@@ -86,8 +86,11 @@ describe("worker demo transcript API", () => {
         chunk_index: 0,
         status: "transcribed",
         storage_path: "demo-transcript/session-1/0.txt",
-        transcript_text: expect.stringContaining("Profesor:"),
+        transcript_text: expect.stringContaining("noticia"),
       }),
+    ]);
+    expect(supabase.curriculumChunks).toEqual([
+      expect.objectContaining({ grade: 7, subject: "lenguaje", unit: "U4", objective_code: "L7.4.2" }),
     ]);
     expect(boss.sent).toEqual([{ name: JOB_BUILD_LESSON_STATE, data: { sessionId: "session-1" } }]);
   });
@@ -298,7 +301,6 @@ class FakeQuery {
       return Promise.resolve({ data: null, error: null });
     }
     if (this.table === "segments") {
-      this.state.segments.push(value);
       return this;
     }
     return this;

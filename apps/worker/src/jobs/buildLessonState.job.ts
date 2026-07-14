@@ -5,6 +5,7 @@ import {
   type LessonState,
 } from "@kobi/ai-core";
 import type PgBoss from "pg-boss";
+import { JOB_BUILD_LESSON_STATE } from "../queue.js";
 
 export interface BuildLessonStateJobData {
   sessionId: string;
@@ -47,8 +48,8 @@ export async function processBuildLessonStateJob(
 
   const transcriptText = claim.transcript_text.trim();
   if (!transcriptText) {
-    await finalizeClaim(supabase, claim, silenceLessonState());
-    return "silent";
+    const finalized = await finalizeClaim(supabase, claim, silenceLessonState());
+    return finalized ? "silent" : "stale";
   }
 
   const classContext: LessonClassContext = {
@@ -77,7 +78,7 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
       if (result === "stale") {
         // Another worker finalized this claim while this job was building it.
         // Requeue so this consumed job does not strand the next transcribed range.
-        await boss.send("build-lesson-state", { sessionId: job.data.sessionId });
+        await boss.send(JOB_BUILD_LESSON_STATE, { sessionId: job.data.sessionId });
       }
     },
   );

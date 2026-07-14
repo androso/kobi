@@ -38,7 +38,7 @@ describe("processBuildLessonStateJob", () => {
   });
 
   it("re-enqueues the session when another worker finalized the claim first", async () => {
-    const client = fakeClient([claim({}), false]);
+    const client = fakeClient([claim({ transcript_text: " " }), false]);
     const send = vi.fn().mockResolvedValue("retry-job");
     let handler: ((jobs: Array<{ data: BuildLessonStateJobData }>) => Promise<void>) | undefined;
     const work = vi.fn(
