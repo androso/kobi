@@ -30,6 +30,25 @@ export type RecoveryEvidence = {
   checks: Check[];
 };
 
+const CHECKPOINT_SCHEDULER_JOB_NAME = "checkpoint-scheduler";
+const CHECKPOINT_SCHEDULER_CRON = "* * * * *";
+const REQUIRED_RLS_TABLES = [
+  "teacher_profiles",
+  "classes",
+  "students",
+  "student_profiles",
+  "sessions",
+  "audio_chunks",
+  "segments",
+  "checkpoints",
+  "session_activity_candidates",
+  "activity_bundles",
+  "activities",
+  "assignments",
+  "events",
+];
+const REQUIRED_QUEUES = ["transcribe-chunk", "build-lesson-state", "generate-activity-artifacts", CHECKPOINT_SCHEDULER_JOB_NAME, "evaluate-checkpoint"];
+
 async function count(query: SqlQuery): Promise<number> {
   const rows = (await query) as unknown as CountRow[];
   return Number(rows[0]?.count ?? 0);
@@ -68,6 +87,26 @@ export async function runRecoveryAudit(sql: RecoverySql, { environment, sessionI
     details: session ?? { session_id: sessionId, missing: true },
   });
 
+  const [teacherIdentity] = await sql<{
+    teacher_id: string;
+    auth_user_exists: boolean;
+    teacher_profile_exists: boolean;
+  }[]>`
+    select c.teacher_id,
+      (u.id is not null) as auth_user_exists,
+      (tp.id is not null) as teacher_profile_exists
+    from sessions s
+    join classes c on c.id = s.class_id
+    left join auth.users u on u.id = c.teacher_id
+    left join teacher_profiles tp on tp.id = c.teacher_id
+    where s.id = ${sessionId}
+  `;
+  checks.push({
+    name: "teacher_identity_consistency",
+    ok: Boolean(teacherIdentity?.auth_user_exists && teacherIdentity.teacher_profile_exists),
+    details: teacherIdentity ?? { session_id: sessionId, missing: true },
+  });
+
   record(checks, "assignment_ownership", await count(sql`
     select count(*)::int as count from assignments a
     join sessions s on s.id = a.session_id
@@ -82,10 +121,20 @@ export async function runRecoveryAudit(sql: RecoverySql, { environment, sessionI
       or c.difficulty_band <> a.variant or c.status <> 'approved'
     )
   `));
+  record(checks, "assigned_activity_verification", await count(sql`
+    select count(*)::int as count from assignments a
+    left join activities act on act.id = a.activity_id
+    where a.session_id = ${sessionId} and (act.id is null or act.status <> 'verified')
+  `));
   record(checks, "completion_event_consistency", await count(sql`
     select count(*)::int as count from assignments a
     where a.session_id = ${sessionId} and a.status = 'completed'
       and not exists (select 1 from events e where e.assignment_id = a.id and e.type = 'complete')
+  `));
+  record(checks, "completion_event_assignment_consistency", await count(sql`
+    select count(*)::int as count from events e
+    join assignments a on a.id = e.assignment_id
+    where a.session_id = ${sessionId} and e.type = 'complete' and a.status <> 'completed'
   `));
   record(checks, "missing_audio_objects", await count(sql`
     select count(*)::int as count from audio_chunks ac
@@ -108,16 +157,19 @@ export async function runRecoveryAudit(sql: RecoverySql, { environment, sessionI
     select count(*)::int as count from (values ('audio-chunks')) required(id)
     where not exists (select 1 from storage.buckets b where b.id = required.id)
   `));
+  record(checks, "private_audio_bucket", await count(sql`
+    select count(*)::int as count from storage.buckets b
+    where b.id = 'audio-chunks' and b.public is distinct from false
+  `));
 
-  const requiredRlsTables = ["students", "sessions", "session_activity_candidates", "activity_bundles", "activities", "assignments", "events"];
   const rlsRows = await sql<{ tablename: string; rowsecurity: boolean; policy_count: number }[]>`
     select c.relname as tablename, c.relrowsecurity as rowsecurity, count(p.policyname)::int as policy_count
     from pg_class c join pg_namespace n on n.oid = c.relnamespace
     left join pg_policies p on p.schemaname = n.nspname and p.tablename = c.relname
-    where n.nspname = 'public' and c.relname = any(${sql.array(requiredRlsTables, 25)})
+    where n.nspname = 'public' and c.relname = any(${sql.array(REQUIRED_RLS_TABLES, 25)})
     group by c.relname, c.relrowsecurity
   `;
-  const invalidRls = requiredRlsTables.filter((table) => {
+  const invalidRls = REQUIRED_RLS_TABLES.filter((table) => {
     const row = rlsRows.find((candidate) => candidate.tablename === table);
     return !row?.rowsecurity || row.policy_count === 0;
   });
@@ -127,7 +179,6 @@ export async function runRecoveryAudit(sql: RecoverySql, { environment, sessionI
     select nspname as schema_name from pg_namespace where nspname in ('pgboss', 'pgboss_archive') order by nspname
   `;
   checks.push({ name: "queue_schema", ok: queueSchemas.some((row) => row.schema_name === "pgboss"), details: { schemas: queueSchemas } });
-  const requiredQueues = ["transcribe-chunk", "build-lesson-state", "generate-activity-artifacts", "checkpoint-scheduler", "evaluate-checkpoint"];
   const [queueTable] = await sql<{ relation_name: string | null }[]>`
     select to_regclass('pgboss.queue')::text as relation_name
   `;
@@ -135,14 +186,40 @@ export async function runRecoveryAudit(sql: RecoverySql, { environment, sessionI
     checks.push({
       name: "queue_registrations",
       ok: false,
-      details: { missing_table: "pgboss.queue", missing_queues: requiredQueues, queues: [] },
+      details: { missing_table: "pgboss.queue", missing_queues: REQUIRED_QUEUES, queues: [] },
     });
   } else {
     const queueRows = await sql<{ name: string }[]>`
-      select name from pgboss.queue where name = any(${sql.array(requiredQueues, 25)}) order by name
+      select name from pgboss.queue where name = any(${sql.array(REQUIRED_QUEUES, 25)}) order by name
     `;
-    const missingQueues = requiredQueues.filter((name) => !queueRows.some((row) => row.name === name));
+    const missingQueues = REQUIRED_QUEUES.filter((name) => !queueRows.some((row) => row.name === name));
     checks.push({ name: "queue_registrations", ok: missingQueues.length === 0, details: { missing_queues: missingQueues, queues: queueRows } });
+  }
+
+  const [scheduleTable] = await sql<{ relation_name: string | null }[]>`
+    select to_regclass('pgboss.schedule')::text as relation_name
+  `;
+  if (!scheduleTable?.relation_name) {
+    checks.push({
+      name: "checkpoint_scheduler_schedule",
+      ok: false,
+      details: {
+        missing_table: "pgboss.schedule",
+        expected: { name: CHECKPOINT_SCHEDULER_JOB_NAME, cron: CHECKPOINT_SCHEDULER_CRON },
+      },
+    });
+  } else {
+    const [schedule] = await sql<{ name: string; cron: string }[]>`
+      select name, cron from pgboss.schedule where name = ${CHECKPOINT_SCHEDULER_JOB_NAME}
+    `;
+    checks.push({
+      name: "checkpoint_scheduler_schedule",
+      ok: schedule?.name === CHECKPOINT_SCHEDULER_JOB_NAME && schedule.cron === CHECKPOINT_SCHEDULER_CRON,
+      details: {
+        expected: { name: CHECKPOINT_SCHEDULER_JOB_NAME, cron: CHECKPOINT_SCHEDULER_CRON },
+        actual: schedule ?? null,
+      },
+    });
   }
 
   const evidence: RecoveryEvidence = {
