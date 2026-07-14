@@ -17,11 +17,11 @@ const DEFAULT_AUDIO_BUCKET = "audio-chunks";
 const DEMO_MODE = "demo";
 const DEMO_CURRICULUM = {
   grade: 7,
-  subject: "matematicas",
-  unit: "geometria-triangulos-cuadrilateros",
-  objective_code: "M7.GEO.1",
+  subject: "lenguaje",
+  unit: "U4",
+  objective_code: "L7.4.2",
   text:
-    "Conozcamos los triangulos y cuadrilateros: identifica segmentos, lados, vertices y angulos en figuras planas. Clasifica figuras con tres lados como triangulos y figuras con cuatro lados como cuadrilateros, usando el conteo de lados, vertices y angulos.",
+    "Reconoce la estructura de la noticia: identifica el titular, la entradilla, el cuerpo y la fuente en textos breves.",
 };
 
 class ApiRequestError extends Error {
@@ -199,6 +199,10 @@ async function createManualLessonState(
     .from("segments")
     .insert({
       session_id: sessionId,
+      // Manual fallback rows are outside the non-negative audio range and do
+      // not advance the worker's contiguous transcript cursor.
+      from_chunk_index: -1,
+      to_chunk_index: -1,
       lesson_state: lessonState,
       confidence: lessonState.confidence,
       transcript_summary: lessonState.transcript_summary,

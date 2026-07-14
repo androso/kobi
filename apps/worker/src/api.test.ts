@@ -92,6 +92,25 @@ describe("worker demo transcript API", () => {
     expect(boss.sent).toEqual([{ name: JOB_BUILD_LESSON_STATE, data: { sessionId: "session-1" } }]);
   });
 
+  it("keeps manual lesson-state fallback rows valid with reserved boundaries", async () => {
+    const supabase = fakeSupabase();
+    const response = await callRoute(
+      "/api/sessions/session-1/manual-lesson-state",
+      supabase,
+      fakeBoss(),
+      { topic: "La noticia" },
+    );
+
+    expect(response.statusCode).toBe(201);
+    expect(supabase.segments).toEqual([
+      expect.objectContaining({
+        session_id: "session-1",
+        from_chunk_index: -1,
+        to_chunk_index: -1,
+      }),
+    ]);
+  });
+
   it("returns 409 when activity candidates are requested before lesson_state exists", async () => {
     const response = await callRoute(
       "/api/sessions/session-1/activity-candidates",
@@ -278,6 +297,10 @@ class FakeQuery {
       this.state.curriculumChunks.push(value);
       return Promise.resolve({ data: null, error: null });
     }
+    if (this.table === "segments") {
+      this.state.segments.push(value);
+      return this;
+    }
     return this;
   }
 
@@ -306,12 +329,16 @@ class FakeQuery {
   }
 
   single() {
-    if (this.table !== "audio_chunks" || !this.pendingInsert) {
+    if (!this.pendingInsert) {
       return Promise.resolve({ data: null, error: { message: `unexpected single on ${this.table}` } });
     }
 
-    const row = { id: `audio-chunk-${this.state.audioChunks.length + 1}`, ...this.pendingInsert };
-    this.state.audioChunks.push(row);
+    const id = this.table === "segments"
+      ? `segment-${this.state.segments.length}`
+      : `audio-chunk-${this.state.audioChunks.length + 1}`;
+    const row = { id, ...this.pendingInsert };
+    if (this.table === "segments") this.state.segments.push(row);
+    else this.state.audioChunks.push(row);
     return Promise.resolve({ data: { id: row.id }, error: null });
   }
 
