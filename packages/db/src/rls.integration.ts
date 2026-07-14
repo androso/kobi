@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import process from "node:process";
 import postgres, { type TransactionSql } from "postgres";
+import { loadRootEnv } from "./loadEnv";
 
+loadRootEnv();
 const databaseUrl = process.env.DATABASE_URL;
 
 if (!databaseUrl) {
@@ -16,6 +18,10 @@ const classA = "20000000-0000-4000-8000-000000000001";
 const classB = "20000000-0000-4000-8000-000000000002";
 const sessionA = "30000000-0000-4000-8000-000000000001";
 const sessionB = "30000000-0000-4000-8000-000000000002";
+const studentA = "40000000-0000-4000-8000-000000000001";
+const bundleRef = "rls-test/bundle.html";
+const activityA = "50000000-0000-4000-8000-000000000001";
+const candidateA = "60000000-0000-4000-8000-000000000001";
 
 async function asRole<T>(
   tx: TransactionSql,
@@ -58,6 +64,19 @@ async function main() {
     await tx`insert into sessions (id, class_id) values
       (${sessionA}, ${classA}), (${sessionB}, ${classB})`;
 
+    await asRole(tx, "service_role", null, async () => {
+      await tx`insert into students (id, class_id, display_name, access_token)
+        values (${studentA}, ${classA}, 'Student A', 'rls-test-student-token')`;
+      await tx`insert into activity_bundles (ref, index_html, checksum)
+        values (${bundleRef}, '<!doctype html>', 'rls-test-checksum')`;
+      await tx`insert into activities
+        (id, manifest, bundle_ref, evidence, verifier_scores, curriculum_tags, source, status)
+        values (${activityA}, '{}'::jsonb, ${bundleRef}, '[]'::jsonb, '{}'::jsonb, '{}'::text[], 'new', 'verified')`;
+      await tx`insert into session_activity_candidates
+        (id, session_id, activity_id, difficulty_band, status, source, context_snapshot, evidence, verifier_scores)
+        values (${candidateA}, ${sessionA}, ${activityA}, 'core', 'ready', 'new', '{}'::jsonb, '[]'::jsonb, '{}'::jsonb)`;
+    });
+
     await asRole(tx, "authenticated", teacherA, async () => {
       const profiles = await tx`select id from teacher_profiles order by id`;
       assert.deepEqual(profiles.map((row) => row.id), [teacherA]);
@@ -67,6 +86,28 @@ async function main() {
 
       const sessions = await tx`select id from sessions order by id`;
       assert.deepEqual(sessions.map((row) => row.id), [sessionA]);
+
+      const students = await tx`select id, class_id, display_name, joined_at
+        from students where id = ${studentA}`;
+      assert.deepEqual(students.map((row) => row.id), [studentA]);
+      await expectRejected(
+        tx,
+        (savepoint) => savepoint`select access_token from students where id = ${studentA}`,
+        "teacher must not read student bearer tokens",
+      );
+
+      const approved = await tx`update session_activity_candidates
+        set status = 'approved', approved_at = now()
+        where id = ${candidateA}
+        returning id`;
+      assert.deepEqual(approved.map((row) => row.id), [candidateA]);
+      await expectRejected(
+        tx,
+        (savepoint) => savepoint`update session_activity_candidates
+          set activity_id = ${activityA}
+          where id = ${candidateA}`,
+        "teacher must only update candidate approval fields",
+      );
 
       await tx`insert into classes (teacher_id, name, join_code, grade, subject, unit)
         values (${teacherA}, 'Teacher A second class', 'RLSA03', 7, 'lenguaje', 'U1')`;
