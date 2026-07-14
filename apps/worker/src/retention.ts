@@ -36,12 +36,7 @@ export interface RetentionResult {
   checkpointsDeleted: number;
   candidateContextsRedacted: number;
   audioCleanupFailed: boolean;
-}
-
-export class SessionDeletionTimeoutError extends Error {
-  constructor(sessionId: string) {
-    super(`retention session jobs did not quiesce before timeout: ${sessionId}`);
-  }
+  quiesceTimedOut: boolean;
 }
 
 export async function isSessionDeletionRequested(
@@ -77,7 +72,7 @@ export async function quiesceSessionJobs(
   supabase: SupabaseClient,
   sessionId: string,
   options: { timeoutMs?: number; pollMs?: number } = {},
-): Promise<void> {
+): Promise<boolean> {
   const timeoutMs = options.timeoutMs ?? 10_000;
   const pollMs = options.pollMs ?? 100;
   const deadline = Date.now() + timeoutMs;
@@ -96,8 +91,8 @@ export async function quiesceSessionJobs(
       .eq("session_id", sessionId)
       .eq("status", "transcribing");
     if (error) throw new Error(`retention active job lookup failed: ${error.message}`);
-    if ((data ?? []).length === 0) return;
-    if (Date.now() >= deadline) throw new SessionDeletionTimeoutError(sessionId);
+    if ((data ?? []).length === 0) return true;
+    if (Date.now() >= deadline) return false;
     await new Promise((resolve) => setTimeout(resolve, pollMs));
   }
 }
@@ -115,7 +110,11 @@ const REDACTED_SESSION_CONTEXT = {
 
 export async function runRetentionCleanup(
   supabase: SupabaseClient,
-  options: { sessionId?: string; reason?: "scheduled" | "manual" } = {},
+  options: {
+    sessionId?: string;
+    reason?: "scheduled" | "manual";
+    quiesce?: { timeoutMs?: number; pollMs?: number };
+  } = {},
 ): Promise<RetentionResult> {
   const reason = options.reason ?? "scheduled";
   const config = readRetentionConfig();
@@ -126,6 +125,7 @@ export async function runRetentionCleanup(
     checkpointsDeleted: 0,
     candidateContextsRedacted: 0,
     audioCleanupFailed: false,
+    quiesceTimedOut: false,
   };
   const { data: attempt, error: attemptError } = await supabase
     .from("retention_deletion_attempts")
@@ -137,8 +137,12 @@ export async function runRetentionCleanup(
   try {
     if (reason === "manual" && options.sessionId) {
       await requestSessionDataDeletion(supabase, options.sessionId);
-      await quiesceSessionJobs(supabase, options.sessionId);
+      result.quiesceTimedOut = !(await quiesceSessionJobs(supabase, options.sessionId, options.quiesce));
     }
+
+    const candidateSourceSessionIds = options.sessionId
+      ? null
+      : await loadExpiredCandidateSourceSessionIds(supabase, cutoff(config.lessonStateSummary));
 
     try {
       let audioQuery = supabase.from("audio_chunks").select("id, storage_path");
@@ -188,15 +192,17 @@ export async function runRetentionCleanup(
     if (checkpointError) throw new Error(`retention checkpoint cleanup failed: ${checkpointError.message}`);
     result.checkpointsDeleted = checkpoints?.length ?? 0;
 
-    let candidateQuery = supabase
-      .from("session_activity_candidates")
-      .update({ context_snapshot: REDACTED_SESSION_CONTEXT });
-    candidateQuery = options.sessionId
-      ? candidateQuery.eq("session_id", options.sessionId)
-      : candidateQuery.lt("created_at", cutoff(config.lessonStateSummary));
-    const { data: candidates, error: candidateError } = await candidateQuery.select("id");
-    if (candidateError) throw new Error(`retention candidate snapshot cleanup failed: ${candidateError.message}`);
-    result.candidateContextsRedacted = candidates?.length ?? 0;
+    if (options.sessionId || (candidateSourceSessionIds?.length ?? 0) > 0) {
+      let candidateQuery = supabase
+        .from("session_activity_candidates")
+        .update({ context_snapshot: REDACTED_SESSION_CONTEXT });
+      candidateQuery = options.sessionId
+        ? candidateQuery.eq("session_id", options.sessionId)
+        : candidateQuery.in("session_id", candidateSourceSessionIds ?? []);
+      const { data: candidates, error: candidateError } = await candidateQuery.select("id");
+      if (candidateError) throw new Error(`retention candidate snapshot cleanup failed: ${candidateError.message}`);
+      result.candidateContextsRedacted = candidates?.length ?? 0;
+    }
 
     const { error: completionError } = await supabase
       .from("retention_deletion_attempts")
@@ -211,4 +217,27 @@ export async function runRetentionCleanup(
     safeLog("error", "retention.failed", { reason, outcome: category });
     throw error;
   }
+}
+
+async function loadExpiredCandidateSourceSessionIds(
+  supabase: SupabaseClient,
+  lessonStateCutoff: string,
+): Promise<string[]> {
+  const [{ data: oldSessions, error: sessionError }, { data: oldLessonStates, error: lessonStateError }] =
+    await Promise.all([
+      supabase.from("sessions").select("id").lt("started_at", lessonStateCutoff),
+      supabase.from("segments").select("session_id").lt("created_at", lessonStateCutoff),
+    ]);
+
+  if (sessionError) throw new Error(`retention source session lookup failed: ${sessionError.message}`);
+  if (lessonStateError) throw new Error(`retention source lesson-state lookup failed: ${lessonStateError.message}`);
+
+  return [
+    ...new Set(
+      [
+        ...(oldSessions ?? []).map((row) => row.id),
+        ...(oldLessonStates ?? []).map((row) => row.session_id),
+      ].filter((id): id is string => typeof id === "string"),
+    ),
+  ];
 }

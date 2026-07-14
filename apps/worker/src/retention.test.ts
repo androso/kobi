@@ -40,6 +40,7 @@ describe("retention cleanup", () => {
       summariesDeleted: 1,
       checkpointsDeleted: 1,
       candidateContextsRedacted: 1,
+      quiesceTimedOut: false,
     });
     expect(supabase.audioChunks[0]?.transcript_text).toBeNull();
     expect(supabase.segments).toHaveLength(0);
@@ -58,6 +59,40 @@ describe("retention cleanup", () => {
     expect(supabase.sessions[0]?.classroom_data_deletion_requested_at).toEqual(expect.any(String));
     expect(supabase.audioChunks[0]?.status).toBe("failed");
   });
+
+  it("continues manual cleanup when a blocking writer outlives the quiesce window", async () => {
+    const supabase = fakeSupabase({ blockingTranscription: true });
+
+    const result = await runRetentionCleanup(supabase.client, {
+      sessionId: "session-1",
+      reason: "manual",
+      quiesce: { timeoutMs: 0, pollMs: 0 },
+    });
+
+    expect(result).toMatchObject({
+      quiesceTimedOut: true,
+      transcriptsCleared: 1,
+      summariesDeleted: 1,
+      checkpointsDeleted: 1,
+      candidateContextsRedacted: 1,
+    });
+    expect(supabase.attempts[0]?.status).toBe("completed");
+  });
+
+  it("redacts a fresh candidate when its source session is older than the lesson-state window", async () => {
+    const supabase = fakeSupabase({
+      candidateCreatedAt: new Date().toISOString(),
+      sessionStartedAt: "2020-01-01T00:00:00.000Z",
+      segments: [],
+    });
+
+    const result = await runRetentionCleanup(supabase.client);
+
+    expect(result.candidateContextsRedacted).toBe(1);
+    expect(supabase.candidates[0]?.context_snapshot).toEqual(
+      expect.objectContaining({ latest_topic: "[redacted]" }),
+    );
+  });
 });
 
 interface FakeState {
@@ -71,14 +106,20 @@ interface FakeState {
   storageBuckets: string[];
 }
 
-function fakeSupabase(options: { storageError?: string } = {}) {
+function fakeSupabase(options: {
+  storageError?: string;
+  blockingTranscription?: boolean;
+  candidateCreatedAt?: string;
+  sessionStartedAt?: string;
+  segments?: Array<Record<string, unknown>>;
+} = {}) {
   const state: FakeState = {
     attempts: [],
-    audioChunks: [{ id: "audio-1", session_id: "session-1", status: "pending", storage_path: "session-1/audio.webm", transcript_text: "sensitive" }],
-    segments: [{ id: "segment-1", created_at: "2020-01-01T00:00:00.000Z" }],
-    checkpoints: [{ id: "checkpoint-1", created_at: "2020-01-01T00:00:00.000Z" }],
-    candidates: [{ id: "candidate-1", created_at: "2020-01-01T00:00:00.000Z", context_snapshot: { latest_topic: "La noticia" } }],
-    sessions: [{ id: "session-1", classroom_data_deletion_requested_at: null }],
+    audioChunks: [{ id: "audio-1", session_id: "session-1", status: options.blockingTranscription ? "transcribing" : "pending", storage_path: "session-1/audio.webm", transcript_text: "sensitive" }],
+    segments: options.segments ?? [{ id: "segment-1", session_id: "session-1", created_at: "2020-01-01T00:00:00.000Z" }],
+    checkpoints: [{ id: "checkpoint-1", session_id: "session-1", created_at: "2020-01-01T00:00:00.000Z" }],
+    candidates: [{ id: "candidate-1", session_id: "session-1", created_at: options.candidateCreatedAt ?? "2020-01-01T00:00:00.000Z", context_snapshot: { latest_topic: "La noticia" } }],
+    sessions: [{ id: "session-1", started_at: options.sessionStartedAt ?? "2026-07-01T00:00:00.000Z", classroom_data_deletion_requested_at: null }],
     storageError: options.storageError,
     storageBuckets: [],
   };
