@@ -73,6 +73,18 @@ const config = {
   commitSha: "commit-1",
 };
 
+test("audits missing audio objects across the restored backup", async () => {
+  const { calls, sql } = createFakeSql({ missingAudioCount: 2 });
+  const evidence = await runRecoveryAudit(sql, config);
+
+  assert.equal(evidence.passed, false);
+  assert.equal(evidence.checks.find((check) => check.name === "missing_audio_objects")?.details.count, 2);
+
+  const audioQuery = calls.find((call) => call.text.includes("select count(*)::int as count from audio_chunks ac"));
+  assert.ok(audioQuery);
+  assert.doesNotMatch(audioQuery.text, /where ac\.session_id/);
+});
+
 test("records a missing pg-boss table without skipping the evidence result", async () => {
   const { calls, sql } = createFakeSql({ queueTable: null });
   const evidence = await runRecoveryAudit(sql, config);

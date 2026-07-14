@@ -89,7 +89,7 @@ export async function runRecoveryAudit(sql: RecoverySql, { environment, sessionI
   `));
   record(checks, "missing_audio_objects", await count(sql`
     select count(*)::int as count from audio_chunks ac
-    where ac.session_id = ${sessionId} and not exists (
+    where not exists (
       select 1 from storage.objects o where o.bucket_id = 'audio-chunks' and o.name = ac.storage_path
     )
   `));
