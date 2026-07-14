@@ -27,6 +27,7 @@ import {
   submitManualLessonState,
   uploadAudioChunk,
 } from "../../lib/audioApi";
+import { closeTeacherSession } from "./sessionReports";
 
 const AUDIO_CHUNK_MS = 15_000;
 const isDemoMode = isDemoProjectMode();
@@ -1028,14 +1029,18 @@ export function LiveClassMonitor() {
     }
   }
 
-  function stopRecording() {
+  async function stopRecording() {
     stopBrowserRecording();
     setIsRecording(false);
     setUploadStatus(apiSessionIdRef.current ? "Sesion enviada al worker" : uploadStatus);
 
     if (activeClass) {
       if (apiSessionIdRef.current && supabase) {
-        void supabase.from("sessions").update({ status: "completed", ended_at: new Date().toISOString() }).eq("id", apiSessionIdRef.current);
+        try {
+          await closeTeacherSession(supabase, apiSessionIdRef.current);
+        } catch (error) {
+          setRecordingError(error instanceof Error ? error.message : "No se pudo cerrar la sesion.");
+        }
       }
       const session = buildSession(activeClass, elapsed, latestLessonState);
       setCompletedSessionClassId(activeClass.id);
@@ -1046,7 +1051,7 @@ export function LiveClassMonitor() {
 
   function toggleRecording() {
     if (isRecording) {
-      stopRecording();
+      void stopRecording();
       return;
     }
     void startRecording();

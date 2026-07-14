@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export interface SessionReport {
   id: string; class_id: string; class_name: string; subject: string; unit: string;
-  status: "active" | "completed"; started_at: string; ended_at: string | null;
+  status: "active" | "ended"; started_at: string; ended_at: string | null;
   duration_seconds: number; topics: string[]; objective: string | null;
   assignment_count: number; completed_count: number; completion_rate: number;
   average_score: number; score_distribution: { low: number; middle: number; high: number };
@@ -12,6 +12,23 @@ export interface SessionReport {
 }
 
 export const REPORT_PAGE_SIZE = 20;
+
+export async function closeTeacherSession(
+  client: SupabaseClient,
+  sessionId: string,
+  endedAt = new Date().toISOString(),
+) {
+  const { data, error } = await client
+    .from("sessions")
+    .update({ status: "ended", ended_at: endedAt })
+    .eq("id", sessionId)
+    .eq("status", "active")
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  if (!data) throw new Error("Session was not closed");
+}
 
 export async function loadSessionReports(client: SupabaseClient, page: number, classId?: string) {
   const to = new Date();
