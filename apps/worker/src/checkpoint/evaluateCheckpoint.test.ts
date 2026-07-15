@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LessonState } from "@kobi/ai-core";
-import type { SessionContext } from "@kobi/activities";
+import type { SessionContext } from "@kobi/activities/contracts";
 import {
   evaluateCheckpoint,
   validateCheckpointConfig,

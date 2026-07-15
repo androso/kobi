@@ -4,7 +4,7 @@ import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import type { LessonState } from "@kobi/ai-core";
-import type { SessionContext } from "@kobi/activities";
+import type { SessionContext } from "@kobi/activities/contracts";
 
 const DEFAULT_CHECKPOINT_MODEL = "gpt-5.4-mini";
 

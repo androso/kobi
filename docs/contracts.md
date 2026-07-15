@@ -44,6 +44,8 @@ Produced by the planner/generator, checked by the verifier, stored in `activitie
 
 For the teacher approval flow, Area C writes support/core/challenge rows to `session_activity_candidates`. The teacher may assign selected students to support or challenge; every unselected student receives the approved core candidate by default. Area E records the final per-student delivery in `assignments.variant`.
 
+Assignment rows are only valid for approved candidates from the same session: `assignments.candidate_id`, `activity_id`, and `variant` must match the selected `session_activity_candidates` row, and the assigned student must belong to the session's class.
+
 ```json
 {
   "contract_version": "activity-artifact/v1",
@@ -95,6 +97,7 @@ For the teacher approval flow, Area C writes support/core/challenge rows to `ses
 - Allowed families are `match_classify`, `sequence_order`, and `guided_practice`.
 - `content.items[]` is required and must include prompts plus answer keys; hints default to an empty list when omitted.
 - `bundle_ref` must be unguessable and authorized by assignment/class before iframe delivery.
+- Students authenticate with teacher-managed username/password accounts. Delivery derives the student mapping from `auth.uid()`; assignment reads, dismissals, telemetry, and completion are restricted to that mapping by RLS. `join_class_by_code` and browser-held student bearer tokens are not part of the active contract.
 - The parent injects only manifest, assignment id, and difficulty band. It must not inject Supabase credentials, student PII, raw transcript, or broader class/session context.
 - The iframe communicates only through the Activity SDK over `postMessage`: `getManifest()`, `getBand()`, `reportAttempt()`, `reportHint()`, and `reportComplete()`.
 - The parent validates message source, schema, assignment authorization, method allowlist, payload size, and telemetry rate limits.
@@ -116,4 +119,4 @@ Written to the `events` table on every student interaction; read back for the li
 
 See [`docs/area-bc-contract.md`](area-bc-contract.md) for the full write-up shared with Androso. Returned by `retrieveCurriculumMatches()` in `packages/curriculum`.
 
-Status: `lesson_state` and `curriculum_match` are implemented (see `packages/ai-core`, `packages/curriculum`) — these are the two contracts Isaac (Areas A/B) is responsible for. Gate 0 for `ActivityArtifact` is recorded here. Area C/E/F should freeze the exact TypeScript schemas, fixtures, telemetry shape, and sandbox contract before parallel implementation starts.
+Status: `lesson_state` and `curriculum_match` are **shipped** (see `packages/ai-core`, `packages/curriculum`). `ActivityArtifact`, telemetry, and sandbox contracts are **shipped** in `packages/activities` and consumed by `apps/web` and `apps/worker`; Gate 0 for the artifact contract is recorded here.

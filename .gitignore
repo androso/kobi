@@ -16,3 +16,4 @@ apps/web/src/features/teacher/assets/
 evals/tmp/curriculum/**
 content/tmp/curriculum/**
 packages/evals/tmp/curriculum/**
+*.pdf

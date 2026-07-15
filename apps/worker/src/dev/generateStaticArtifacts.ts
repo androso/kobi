@@ -2,7 +2,7 @@ import {
   buildActivitySessionContext,
   createActivityArtifactCandidates,
   verifyActivityArtifact,
-} from "@kobi/activities";
+} from "@kobi/activities/server";
 import { staticActivityContext } from "./staticActivityContext.js";
 
 const sessionContext = buildActivitySessionContext([staticActivityContext.lessonState]);

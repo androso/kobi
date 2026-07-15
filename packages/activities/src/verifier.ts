@@ -2,7 +2,6 @@ import {
   ACTIVITY_ARTIFACT_CONTRACT_VERSION,
   ACTIVITY_SDK_VERSION,
   activityArtifactCandidateSchema,
-  activitySdkMessageSchema,
   type ActivityArtifact,
   type ActivityArtifactCandidate,
   type ActivityRubricScores,
@@ -87,10 +86,6 @@ export function verifyActivityArtifact(
     artifact,
     errors,
   };
-}
-
-export function validateActivitySdkMessage(message: unknown) {
-  return activitySdkMessageSchema.safeParse(message);
 }
 
 function checkHtmlShape(bundleHtml: string): string[] {

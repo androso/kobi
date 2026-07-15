@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { lessonStateSchema, type LessonState } from "@kobi/ai-core";
-import { buildActivitySessionContext } from "@kobi/activities";
+import { buildActivitySessionContext } from "@kobi/activities/server";
 import {
   buildCurriculumQueryText,
   retrieveCurriculumMatches,
@@ -38,6 +38,20 @@ export interface EvaluateCheckpointJobResult {
   evaluated: boolean;
   ready: boolean | null;
   skippedReason: string | null;
+}
+
+export function buildGenerateActivityArtifactsJobData(input: {
+  sessionId: string;
+  lessonState: LessonState;
+  curriculumMatches: CurriculumMatch[];
+  curriculumFallback?: { grade: number; subject: string; unit?: string };
+}) {
+  return {
+    sessionId: input.sessionId,
+    lessonState: input.lessonState,
+    curriculumMatches: input.curriculumMatches,
+    ...(input.curriculumFallback ? { curriculumFallback: input.curriculumFallback } : {}),
+  };
 }
 
 /**
@@ -78,7 +92,7 @@ export async function runEvaluateCheckpointJob(
 ): Promise<EvaluateCheckpointJobResult> {
   const evaluator = options.evaluator ?? createCheckpointEvaluatorFromEnv();
   const curriculumRetriever = options.curriculumRetriever ?? retrieveCurriculumMatches;
-  const { sessionId, grade = 7, subject = "lenguaje", unit } = data;
+  const { sessionId } = data;
 
   const since = await loadLastReadyCheckpointAt(supabase, sessionId);
   const lessonStates = await loadLessonStatesSince(supabase, sessionId, since);
@@ -108,20 +122,61 @@ export async function runEvaluateCheckpointJob(
 
   const latestLessonState = lessonStates.at(-1)!;
   const queryText = buildCurriculumQueryText(latestLessonState);
+  const retrievalContext = await resolveRetrievalContext(supabase, data);
   const curriculumMatches = await curriculumRetriever(supabase, {
     queryText,
-    grade,
-    subject,
-    unit,
+    grade: retrievalContext.grade,
+    subject: retrievalContext.subject,
+    unit: retrievalContext.unit,
   });
 
-  await boss.send(JOB_GENERATE_ACTIVITY_ARTIFACTS, {
+  await boss.send(JOB_GENERATE_ACTIVITY_ARTIFACTS, buildGenerateActivityArtifactsJobData({
     sessionId,
     lessonState: latestLessonState,
     curriculumMatches,
-  });
+    curriculumFallback: retrievalContext,
+  }));
 
   return { evaluated: true, ready: true, skippedReason: null };
+}
+
+async function resolveRetrievalContext(
+  supabase: SupabaseClient,
+  data: EvaluateCheckpointJobData,
+): Promise<{ grade: number; subject: string; unit?: string }> {
+  if (data.grade && data.subject) {
+    return { grade: data.grade, subject: data.subject, unit: data.unit };
+  }
+
+  const { data: row, error } = await supabase
+    .from("sessions")
+    .select("classes(grade, subject, unit)")
+    .eq("id", data.sessionId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`evaluateCheckpoint job: failed to load session class context: ${error.message}`);
+  }
+
+  const classContext = normalizeClassContext(row?.classes);
+  return {
+    grade: data.grade ?? classContext?.grade ?? 7,
+    subject: data.subject ?? classContext?.subject ?? "lenguaje",
+    unit: data.unit ?? classContext?.unit,
+  };
+}
+
+function normalizeClassContext(value: unknown): { grade: number; subject: string; unit: string } | null {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw || typeof raw !== "object") return null;
+
+  const row = raw as Record<string, unknown>;
+  const grade = Number(row.grade);
+  const subject = typeof row.subject === "string" ? row.subject : "";
+  const unit = typeof row.unit === "string" ? row.unit : "";
+
+  if (!Number.isInteger(grade) || grade <= 0 || !subject) return null;
+  return { grade, subject, unit };
 }
 
 async function loadLastReadyCheckpointAt(

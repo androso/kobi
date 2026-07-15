@@ -1,7 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { LiveClassMonitor } from "./LiveClassMonitor";
 import { useClassStore } from "../../lib/store";
 
@@ -47,11 +47,7 @@ const mocks = vi.hoisted(() => {
   return {
     candidate,
     listStudents: vi.fn(async () => [{ id: "student-1", displayName: "Ana" }]),
-    loadOrCreateReadyCandidates: vi.fn(async () => ({
-      sessionId: "session-1",
-      candidates: [candidate],
-      created: true,
-    })),
+    requestActivityCandidates: vi.fn(async () => ({ inserted: 1, reused: 0, generated: 0, skippedReason: null })),
     publishAssignments: vi.fn(async () => [
       {
         id: "assignment-1",
@@ -61,20 +57,68 @@ const mocks = vi.hoisted(() => {
         variant: "core",
       },
     ]),
+    createBackendSession: vi.fn(async () => ({ sessionId: "session-1" })),
+    submitDemoTranscript: vi.fn(async () => [
+      { audioChunkId: "chunk-0", chunkIndex: 0, totalChunks: 2, done: false },
+      { audioChunkId: "chunk-1", chunkIndex: 1, totalChunks: 2, done: true },
+    ]),
+    supabaseFrom: vi.fn(() => ({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn(async () => ({ data: null, error: null })),
+    })),
   };
 });
 
-vi.mock("../../lib/supabase", () => ({ supabase: {} }));
+vi.mock("../../lib/supabase", () => ({ supabase: { from: mocks.supabaseFrom } }));
+
+vi.mock("../../lib/audioApi", () => ({
+  createBackendSession: mocks.createBackendSession,
+  isAudioApiConfigured: () => true,
+  isDemoProjectMode: () => true,
+  requestActivityCandidates: mocks.requestActivityCandidates,
+  resolveBackendClassId: (classId: string) => classId,
+  submitDemoTranscript: mocks.submitDemoTranscript,
+  submitManualLessonState: vi.fn(),
+  uploadAudioChunk: vi.fn(),
+}));
 
 vi.mock("../activityDelivery/artifactDelivery", () => ({
   SupabaseActivityDeliveryStore: class {
     listStudents = mocks.listStudents;
+    listCandidates = vi.fn(async () => [mocks.candidate]);
   },
-  loadOrCreateReadyCandidates: mocks.loadOrCreateReadyCandidates,
   publishAssignments: mocks.publishAssignments,
 }));
 
+afterEach(() => {
+  vi.useRealTimers();
+  vi.clearAllMocks();
+  Object.defineProperty(navigator, "mediaDevices", {
+    configurable: true,
+    value: undefined,
+  });
+});
+
 describe("LiveClassMonitor activity delivery", () => {
+  it("shows an honest empty analysis state without mock lesson metrics", () => {
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText(/esperando análisis de la sesión/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^ecosistemas$/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/pulso de participación/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^hora de actividad$/i })).toBeInTheDocument();
+  });
+
   it("renders generated candidates and publishes assignments", async () => {
     const user = userEvent.setup();
     useClassStore.getState().resetClasses();
@@ -102,5 +146,54 @@ describe("LiveClassMonitor activity delivery", () => {
       }),
     );
     expect(await screen.findByText(/Publicado para 1 estudiantes/i)).toBeInTheDocument();
+  });
+
+  it("processes the full demo transcript from Iniciar grabacion without requesting microphone access", async () => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: vi.fn() },
+    });
+
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.createBackendSession).toHaveBeenCalledWith({ classId: "class-1" });
+    expect(mocks.submitDemoTranscript).toHaveBeenCalledWith({ sessionId: "session-1" });
+    expect(navigator.mediaDevices?.getUserMedia).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /pausar/i })).toBeInTheDocument();
+  });
+
+  it("loads the artifact flow directly after pausing without opening the session summary", async () => {
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /pausar/i }));
+
+    expect(screen.queryByText(/sesión finalizada/i)).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /aprobar y entregar actividad/i })).toBeInTheDocument();
   });
 });

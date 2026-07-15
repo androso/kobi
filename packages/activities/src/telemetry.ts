@@ -1,4 +1,4 @@
-import { validateActivitySdkMessage } from "./verifier.js";
+import { activitySdkMessageSchema } from "./types.js";
 import type { ActivitySdkEvent } from "./types.js";
 
 export interface ParentTelemetryContext {
@@ -43,7 +43,7 @@ export function authorizeActivityTelemetryMessage(
     return { ok: false, error: "telemetry rate limit exceeded" };
   }
 
-  const parsed = validateActivitySdkMessage(
+  const parsed = activitySdkMessageSchema.safeParse(
     messageWithParentAssignmentId(message, context.assignmentId),
   );
   if (!parsed.success) {

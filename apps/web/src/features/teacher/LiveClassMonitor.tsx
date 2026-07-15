@@ -6,18 +6,12 @@ import {
   AlertTriangle,
   Leaf,
   Circle,
-  CheckCircle2,
-  ArrowRight,
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
-import type { DifficultyBand } from "@kobi/activities";
+import type { DifficultyBand } from "@kobi/activities/contracts";
 import { Sidebar } from "./components/Sidebar";
-import { WaveformVisualizer } from "./components/WaveformVisualizer";
-import { KobiMascot } from "./components/KobiMascot";
 import { useClassStore, type SavedSession, type ClassItem } from "../../lib/store";
 import { supabase } from "../../lib/supabase";
 import {
-  loadOrCreateReadyCandidates,
   publishAssignments,
   SupabaseActivityDeliveryStore,
   type DeliveryCandidate,
@@ -26,12 +20,28 @@ import {
 import {
   createBackendSession,
   isAudioApiConfigured,
+  isDemoProjectMode,
+  requestActivityCandidates,
   resolveBackendClassId,
+  submitDemoTranscript,
   submitManualLessonState,
   uploadAudioChunk,
 } from "../../lib/audioApi";
 
 const AUDIO_CHUNK_MS = 15_000;
+const isDemoMode = isDemoProjectMode();
+
+interface LessonStateSnapshot {
+  topic: string;
+  objective_guess: string | null;
+  key_terms: string[];
+  transcript_summary: string;
+  confidence: number;
+  evidence: {
+    quoted_phrases: string[];
+    reason: string;
+  };
+}
 
 function logRecorder(message: string, details?: Record<string, unknown>) {
   if (!import.meta.env.DEV) return;
@@ -50,17 +60,19 @@ const SUBJECT_META: Record<
 };
 
 // Construye una sesión guardada a partir de la clase monitoreada y los datos en vivo
-function buildSession(cls: ClassItem, durationSeconds: number): SavedSession {
+function buildSession(
+  cls: ClassItem,
+  durationSeconds: number,
+  lessonState: LessonStateSnapshot | null,
+): SavedSession {
   const meta = SUBJECT_META[cls.icon] ?? SUBJECT_META.pen;
-  const summaryPoints = [
-    `Tema trabajado: ${MOCK_INSIGHTS.detectedTopic}.`,
-    `Objetivo de la sesión: ${MOCK_INSIGHTS.currentObjective}`,
-    `Conceptos clave abordados: ${MOCK_INSIGHTS.keywords.join(", ")}.`,
-  ];
-  const nextSteps = [
-    ...MOCK_INSIGHTS.misconceptions.map((m) => `Reforzar: ${m.title.toLowerCase()}.`),
-    `Asignar la actividad sugerida: ${MOCK_INSIGHTS.suggestedActivity}.`,
-  ];
+  const summaryPoints = lessonState
+    ? [
+        lessonState.transcript_summary,
+        lessonState.objective_guess ? `Objetivo: ${lessonState.objective_guess}` : "",
+        lessonState.key_terms.length > 0 ? `Conceptos clave: ${lessonState.key_terms.join(", ")}.` : "",
+      ].filter((point): point is string => Boolean(point))
+    : [];
   return {
     id: `session-${Date.now()}`,
     classId: cls.id,
@@ -76,33 +88,10 @@ function buildSession(cls: ClassItem, durationSeconds: number): SavedSession {
     }),
     duration: formatTime(durationSeconds),
     summaryPoints,
-    nextSteps,
+    nextSteps: [],
     transcript: [],
   };
 }
-
-// ---------------------------------------------------------------------------
-// Datos de sesión simulados — reemplazar con datos en tiempo real del backend
-// cuando la transcripción esté implementada.
-// ---------------------------------------------------------------------------
-const MOCK_INSIGHTS = {
-  totalSeconds: 29 * 60 + 41,
-  detectedTopic: "Ecosistemas",
-  currentObjective: "Analizar el flujo de energía a través de los niveles tróficos.",
-  keywords: ["Fotosíntesis", "Descomponedores", "Niveles tróficos", "Pirámide de energía"],
-  highlightedKeyword: "Niveles tróficos",
-  misconceptions: [
-    {
-      title: "Confusión entre energía y materia",
-      description:
-        '3 estudiantes preguntaron si la energía se "recicla" como el agua. Confusión común con la Ley de Conservación de la Materia.',
-    },
-  ],
-  engagementPulse: [40, 65, 85, 70, 95, 60, 45],
-  suggestedActivity: "Juego de redes de energía",
-};
-
-// ---------------------------------------------------------------------------
 
 function formatTime(seconds: number) {
   const m = Math.floor(Math.abs(seconds) / 60)
@@ -114,23 +103,8 @@ function formatTime(seconds: number) {
 
 // -- Sub-componentes ---------------------------------------------------------
 
-function NotificationBar() {
-  return (
-    <div className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 inline-flex items-center gap-2.5 w-fit self-start shrink-0">
-      <Sparkles className="h-4 w-4 text-violet-500 animate-bounce" />
-      <span className="text-sm text-slate-600">Kobi está trabajando</span>
-      <div className="flex gap-1">
-        <div className="w-1.5 h-1.5 rounded-full bg-violet-300" />
-        <div className="w-1.5 h-1.5 rounded-full bg-violet-400" />
-        <div className="w-1.5 h-1.5 rounded-full bg-violet-600" />
-      </div>
-    </div>
-  );
-}
-
 function TranscriptPlayerCard({
   elapsed,
-  remaining,
   isRecording,
   onToggleRecording,
   uploadStatus,
@@ -138,7 +112,6 @@ function TranscriptPlayerCard({
   uploadedChunkCount,
 }: {
   elapsed: number;
-  remaining: number;
   isRecording: boolean;
   onToggleRecording: () => void;
   uploadStatus: string | null;
@@ -154,10 +127,10 @@ function TranscriptPlayerCard({
 
   return (
     <div className="bg-white rounded-[20px] shadow-sm border border-slate-200 overflow-hidden flex flex-col flex-1 min-h-0">
-      {/* Encabezado de transcripción */}
+      {/* Recording status */}
       <div className="flex items-center justify-between px-6 pt-5 pb-3 shrink-0">
         <span className="text-[10px] font-bold tracking-widest uppercase text-slate-400">
-          Transcripción en vivo
+          Grabación de clase
         </span>
         {isRecording ? (
           <span className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest uppercase text-emerald-600">
@@ -172,7 +145,7 @@ function TranscriptPlayerCard({
         )}
       </div>
 
-      {/* Cuerpo de la transcripción (desplazable) */}
+      {/* Honest recording state; transcript text is not exposed by the current contract. */}
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-6 flex flex-col gap-4">
         {isRecording ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center gap-3 py-10">
@@ -181,9 +154,7 @@ function TranscriptPlayerCard({
             </span>
             <div>
               <p className="text-sm font-bold text-slate-700">Grabando audio...</p>
-              <p className="text-xs text-slate-400 mt-1 max-w-xs">
-                La transcripción en vivo estará disponible próximamente.
-              </p>
+              <p className="text-xs text-slate-400 mt-1 max-w-xs">Los fragmentos se envían al análisis de la sesión.</p>
             </div>
           </div>
         ) : (
@@ -194,16 +165,11 @@ function TranscriptPlayerCard({
             <div>
               <p className="text-sm font-bold text-slate-700">Listo para grabar</p>
               <p className="text-xs text-slate-400 mt-1 max-w-xs">
-                Inicia la grabación para comenzar la transcripción y el análisis en tiempo real.
+                Inicia la grabación para comenzar el análisis de la sesión.
               </p>
             </div>
           </div>
         )}
-      </div>
-
-      {/* Visualizador de forma de onda */}
-      <div className="h-24 bg-[#f8f7f5] border-y border-slate-200 px-4 shrink-0">
-        <WaveformVisualizer active={isRecording} />
       </div>
 
       {/* Controles de grabación */}
@@ -223,26 +189,24 @@ function TranscriptPlayerCard({
           ) : null}
         </div>
 
-        {isRecording ? (
-          <div className="flex items-center gap-3">
-            <button
-              className="w-11 h-11 rounded-xl bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50 transition-all active:scale-90"
-              type="button"
-            >
-              <Pause className="h-5 w-5" />
-            </button>
-            <button
-              onClick={onToggleRecording}
-              className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-3 font-bold text-sm transition-all hover:shadow-lg active:scale-95"
-              type="button"
-            >
-              <StopCircle className="h-5 w-5" />
-              <span>
-                DETENER{" "}
-                <span className="opacity-75 font-normal">{formatTime(remaining)}</span>
-              </span>
-            </button>
-          </div>
+        {isRecording && isDemoMode ? (
+          <button
+            onClick={onToggleRecording}
+            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-3 font-bold text-sm transition-all hover:shadow-lg active:scale-95"
+            type="button"
+          >
+            <Pause className="h-5 w-5" />
+            PAUSAR
+          </button>
+        ) : isRecording ? (
+          <button
+            onClick={onToggleRecording}
+            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-3 font-bold text-sm transition-all hover:shadow-lg active:scale-95"
+            type="button"
+          >
+            <StopCircle className="h-5 w-5" />
+            DETENER
+          </button>
         ) : (
           <button
             onClick={onToggleRecording}
@@ -258,7 +222,23 @@ function TranscriptPlayerCard({
   );
 }
 
-function InsightsPanel() {
+function InsightsPanel({ lessonState }: { lessonState: LessonStateSnapshot | null }) {
+  if (!lessonState) {
+    return (
+      <div className="bg-white rounded-[28px] p-6 border border-slate-200 shadow-sm h-full flex items-center justify-center">
+        <div className="max-w-sm text-center">
+          <Sparkles className="mx-auto h-8 w-8 text-slate-300" />
+          <h2 className="mt-3 text-base font-bold text-slate-700">Esperando análisis de la sesión</h2>
+          <p className="mt-2 text-sm text-slate-400">
+            El tema, objetivo y evidencia aparecerán cuando el worker guarde un lesson_state.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const keywords = lessonState.key_terms;
+
   return (
     <div className="bg-white rounded-[28px] p-6 border border-slate-200 shadow-sm h-full flex flex-col gap-6 overflow-y-auto">
       {/* Tema detectado */}
@@ -268,7 +248,7 @@ function InsightsPanel() {
         </label>
         <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full border-2 border-emerald-600 text-emerald-700 bg-emerald-50 font-bold text-base w-fit">
           <Leaf className="h-4 w-4" />
-          {MOCK_INSIGHTS.detectedTopic}
+          {lessonState.topic}
         </span>
       </div>
 
@@ -279,7 +259,7 @@ function InsightsPanel() {
         </label>
         <div className="bg-slate-50 rounded-2xl p-4 border border-violet-400">
           <p className="text-sm text-slate-700 italic font-medium">
-            "{MOCK_INSIGHTS.currentObjective}"
+            {lessonState.objective_guess ?? "Sin objetivo identificado"}
           </p>
         </div>
       </div>
@@ -290,11 +270,11 @@ function InsightsPanel() {
           Palabras clave detectadas
         </label>
         <div className="flex flex-wrap gap-2">
-          {MOCK_INSIGHTS.keywords.map((kw) => (
+          {keywords.map((kw) => (
             <span
               key={kw}
               className={`px-3 py-1 rounded-lg text-xs font-bold border transition-colors ${
-                kw === MOCK_INSIGHTS.highlightedKeyword
+                kw === keywords[0]
                   ? "border-[#004ac6] text-[#004ac6] bg-blue-50"
                   : "border-slate-200 text-slate-600 hover:bg-slate-50"
               }`}
@@ -310,54 +290,28 @@ function InsightsPanel() {
         <label className="text-[10px] font-bold tracking-widest uppercase text-slate-400">
           Conceptos erróneos detectados
         </label>
-        {MOCK_INSIGHTS.misconceptions.map((m) => (
-          <div
-            key={m.title}
-            className="bg-red-50 rounded-2xl p-4 border border-red-100 flex gap-3"
-          >
+        {lessonState.evidence.reason ? (
+          <div className="bg-red-50 rounded-2xl p-4 border border-red-100 flex gap-3">
             <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
             <div className="flex flex-col gap-1">
-              <h4 className="font-bold text-red-800 text-sm">{m.title}</h4>
+              <h4 className="font-bold text-red-800 text-sm">Evidencia del analisis</h4>
               <p className="text-red-700 text-xs leading-relaxed opacity-80">
-                {m.description}
+                {lessonState.evidence.reason}
               </p>
             </div>
           </div>
-        ))}
-      </div>
-
-      {/* Pulso de participación */}
-      <div className="flex flex-col gap-2">
-        <label className="text-[10px] font-bold tracking-widest uppercase text-slate-400">
-          Pulso de participación
-        </label>
-        <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200">
-          <div className="flex justify-between items-end h-20 gap-1.5 px-2">
-            {MOCK_INSIGHTS.engagementPulse.map((pct, i) => (
-              <div
-                key={i}
-                className="flex-1 rounded-t-full bg-gradient-to-t from-violet-600 to-violet-400"
-                style={{ height: `${pct}%` }}
-              />
-            ))}
-          </div>
-          <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase px-2 mt-2">
-            <span>T-20m</span>
-            <span>T-10m</span>
-            <span>AHORA</span>
-          </div>
-        </div>
+        ) : (
+          <p className="text-sm text-slate-400">No hay evidencia adicional registrada.</p>
+        )}
       </div>
     </div>
   );
 }
 
 function SuggestedActivityFAB({
-  activity,
   loading,
   onGenerate,
 }: {
-  activity: string;
   loading: boolean;
   onGenerate: () => void;
 }) {
@@ -370,7 +324,7 @@ function SuggestedActivityFAB({
         type="button"
       >
         <Sparkles className="h-4 w-4" />
-        {loading ? "Generando actividad..." : `Hora de actividad: ${activity}`}
+        {loading ? "Generando actividad..." : "Hora de actividad"}
       </button>
     </div>
   );
@@ -740,13 +694,35 @@ function ManualFallbackForm({
   );
 }
 
+function normalizeLessonState(value: unknown): LessonStateSnapshot | null {
+  if (!value || typeof value !== "object") return null;
+
+  const row = value as Record<string, unknown>;
+  const evidence = row.evidence && typeof row.evidence === "object"
+    ? row.evidence as Record<string, unknown>
+    : {};
+
+  return {
+    topic: typeof row.topic === "string" ? row.topic : "Tema detectado",
+    objective_guess: typeof row.objective_guess === "string" ? row.objective_guess : null,
+    key_terms: Array.isArray(row.key_terms) ? row.key_terms.filter((term): term is string => typeof term === "string") : [],
+    transcript_summary: typeof row.transcript_summary === "string" ? row.transcript_summary : "",
+    confidence: typeof row.confidence === "number" ? row.confidence : 0,
+    evidence: {
+      quoted_phrases: Array.isArray(evidence.quoted_phrases)
+        ? evidence.quoted_phrases.filter((phrase): phrase is string => typeof phrase === "string")
+        : [],
+      reason: typeof evidence.reason === "string" ? evidence.reason : "",
+    },
+  };
+}
+
 // -- Página ------------------------------------------------------------------
 
 export function LiveClassMonitor() {
-  const navigate = useNavigate();
   const [elapsed, setElapsed] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
-  const [finishedSession, setFinishedSession] = useState<SavedSession | null>(null);
+  const [completedSessionClassId, setCompletedSessionClassId] = useState<string | null>(null);
   const [activitySessionId, setActivitySessionId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<DeliveryCandidate[]>([]);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
@@ -758,11 +734,14 @@ export function LiveClassMonitor() {
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [uploadedChunkCount, setUploadedChunkCount] = useState(0);
+  const [apiSessionId, setApiSessionId] = useState<string | null>(null);
+  const [latestLessonState, setLatestLessonState] = useState<LessonStateSnapshot | null>(null);
 
   const monitoringClassId = useClassStore((state) => state.monitoringClassId);
   const classes = useClassStore((state) => state.classes);
   const endSession = useClassStore((state) => state.endSession);
   const monitoringClass = classes.find((c) => c.id === monitoringClassId) ?? null;
+  const activeClass = monitoringClass ?? classes.find((c) => c.id === completedSessionClassId) ?? null;
   const deliveryStore = useMemo(
     () => (supabase ? new SupabaseActivityDeliveryStore(supabase) : null),
     [],
@@ -786,6 +765,7 @@ export function LiveClassMonitor() {
   const recordingStartedAtRef = useRef<number | null>(null);
   const rotationTimerRef = useRef<number | null>(null);
   const isStoppingRef = useRef(false);
+  const pendingAudioUploadsRef = useRef<Set<Promise<void>>>(new Set());
 
   // Timer runs only while recording
   useEffect(() => {
@@ -796,11 +776,60 @@ export function LiveClassMonitor() {
 
   useEffect(() => {
     return () => {
-      stopBrowserRecording();
+      void stopBrowserRecording();
     };
   }, []);
 
-  function stopBrowserRecording() {
+  useEffect(() => {
+    if (!apiSessionId || !supabase) return;
+
+    let cancelled = false;
+    const activeSessionId = apiSessionId;
+    const supabaseClient = supabase;
+
+    async function loadLatestSegment() {
+      const { data, error } = await supabaseClient
+        .from("segments")
+        .select("lesson_state")
+        .eq("session_id", activeSessionId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (cancelled || error || !data?.lesson_state) return;
+      setLatestLessonState(normalizeLessonState(data.lesson_state));
+    }
+
+    void loadLatestSegment();
+    const intervalId = window.setInterval(loadLatestSegment, 3_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [apiSessionId]);
+
+  useEffect(() => {
+    if (!isDemoMode || !apiSessionId || !activeClass || !deliveryStore) return;
+
+    let cancelled = false;
+    const activeSessionId = apiSessionId;
+
+    async function loadReadyCandidates() {
+      const loaded = await loadCandidatesForSession(activeSessionId, { allowEmpty: true });
+      if (!cancelled && loaded) {
+        setUploadStatus("Actividades listas para aprobar");
+      }
+    }
+
+    void loadReadyCandidates();
+    const intervalId = window.setInterval(loadReadyCandidates, 4_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [apiSessionId, activeClass, deliveryStore]);
+
+  async function stopBrowserRecording() {
     isStoppingRef.current = true;
 
     if (rotationTimerRef.current !== null) {
@@ -811,13 +840,19 @@ export function LiveClassMonitor() {
     const recorder = mediaRecorderRef.current;
     if (recorder && recorder.state !== "inactive") {
       logRecorder("stopping recorder", { state: recorder.state });
+      const stopped = new Promise<void>((resolve) => {
+        recorder.addEventListener("stop", () => resolve(), { once: true });
+      });
       recorder.stop();
+      await stopped;
     }
 
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     logRecorder("microphone tracks stopped");
     mediaRecorderRef.current = null;
     mediaStreamRef.current = null;
+
+    await Promise.all(Array.from(pendingAudioUploadsRef.current));
   }
 
   async function ensureBackendSession() {
@@ -827,13 +862,37 @@ export function LiveClassMonitor() {
       throw new Error("Configura VITE_KOBI_API_URL para enviar audio al worker.");
     }
 
-    if (!monitoringClass) {
+    if (!activeClass) {
       throw new Error("Selecciona una clase antes de iniciar la sesion.");
     }
 
-    const { sessionId } = await createBackendSession({ classId: resolveBackendClassId(monitoringClass.id) });
+    const { sessionId } = await createBackendSession({ classId: resolveBackendClassId(activeClass.id) });
     apiSessionIdRef.current = sessionId;
+    setApiSessionId(sessionId);
     return sessionId;
+  }
+
+  async function processDemoTranscript() {
+    setElapsed(0);
+    setUploadedChunkCount(0);
+    setRecordingError(null);
+    setLatestLessonState(null);
+
+    try {
+      const sessionId = await ensureBackendSession();
+      apiSessionIdRef.current = sessionId;
+      setApiSessionId(sessionId);
+      chunkIndexRef.current = 0;
+      isStoppingRef.current = false;
+      setUploadStatus("Procesando transcripcion demo completa");
+      setIsRecording(true);
+      const acceptedChunks = await submitDemoTranscript({ sessionId });
+      setUploadedChunkCount(acceptedChunks.length);
+      setUploadStatus("Transcripcion demo completa enviada al worker");
+    } catch (error) {
+      setRecordingError(error instanceof Error ? error.message : "No se pudo iniciar la demo.");
+      setUploadStatus(null);
+    }
   }
 
   async function handleAudioChunk(audio: Blob) {
@@ -884,7 +943,9 @@ export function LiveClassMonitor() {
   // fragmentos periodicos que sean decodificables de forma independiente.
   function attachRecorderHandlers(recorder: MediaRecorder) {
     recorder.ondataavailable = (event) => {
-      void handleAudioChunk(event.data);
+      const upload = handleAudioChunk(event.data);
+      pendingAudioUploadsRef.current.add(upload);
+      void upload.finally(() => pendingAudioUploadsRef.current.delete(upload));
     };
     recorder.onerror = () => {
       setRecordingError("No se pudo grabar el audio del navegador.");
@@ -915,6 +976,11 @@ export function LiveClassMonitor() {
   }
 
   async function startRecording() {
+    if (isDemoMode) {
+      await processDemoTranscript();
+      return;
+    }
+
     setElapsed(0);
     setUploadedChunkCount(0);
     setRecordingError(null);
@@ -971,21 +1037,22 @@ export function LiveClassMonitor() {
     }
   }
 
-  function stopRecording() {
-    stopBrowserRecording();
+  async function stopRecording() {
     setIsRecording(false);
+    await stopBrowserRecording();
     setUploadStatus(apiSessionIdRef.current ? "Sesion enviada al worker" : uploadStatus);
 
-    if (monitoringClass) {
-      const session = buildSession(monitoringClass, elapsed);
+    if (activeClass) {
+      const session = buildSession(activeClass, elapsed, latestLessonState);
+      setCompletedSessionClassId(activeClass.id);
       endSession(session); // guarda en historial + limpia el monitor activo
-      setFinishedSession(session);
+      void handleGenerateActivity();
     }
   }
 
   function toggleRecording() {
     if (isRecording) {
-      stopRecording();
+      void stopRecording();
       return;
     }
     void startRecording();
@@ -1003,8 +1070,38 @@ export function LiveClassMonitor() {
     }
   }
 
+  async function loadCandidatesForSession(
+    sessionId: string,
+    options: { allowEmpty: boolean } = { allowEmpty: false },
+  ) {
+    if (!activeClass || !deliveryStore) {
+      if (!options.allowEmpty) {
+        setActivityError("Selecciona una clase y configura Supabase para generar la actividad.");
+      }
+      return false;
+    }
+
+    const readyCandidates = await deliveryStore.listCandidates(sessionId);
+    if (readyCandidates.length === 0) {
+      if (!options.allowEmpty) setActivityError("Todavia no hay actividades listas para esta sesion.");
+      return false;
+    }
+
+    const loadedStudents = await deliveryStore.listStudents(activeClass.id);
+    setActivitySessionId(sessionId);
+    setCandidates(readyCandidates);
+    setStudents(loadedStudents);
+    setSelectedCandidateId(
+      readyCandidates.find((candidate) => candidate.difficultyBand === "core")?.id ??
+        readyCandidates[0]?.id ??
+        null,
+    );
+    setActivityError(null);
+    return true;
+  }
+
   async function handleGenerateActivity() {
-    if (!monitoringClass || !deliveryStore) {
+    if (!activeClass || !deliveryStore) {
       setActivityError("Selecciona una clase y configura Supabase para generar la actividad.");
       return;
     }
@@ -1014,16 +1111,16 @@ export function LiveClassMonitor() {
     setPublishStatus(null);
 
     try {
-      const result = await loadOrCreateReadyCandidates(deliveryStore, monitoringClass.id);
-      const loadedStudents = await deliveryStore.listStudents(monitoringClass.id);
-      setActivitySessionId(result.sessionId);
-      setCandidates(result.candidates);
-      setStudents(loadedStudents);
-      setSelectedCandidateId(
-        result.candidates.find((candidate) => candidate.difficultyBand === "core")?.id ??
-          result.candidates[0]?.id ??
-          null,
-      );
+      if (apiSessionIdRef.current && await loadCandidatesForSession(apiSessionIdRef.current, { allowEmpty: true })) {
+        return;
+      }
+
+      const sessionId = apiSessionIdRef.current ?? (await ensureBackendSession());
+      await requestActivityCandidates({ sessionId });
+
+      if (!await loadCandidatesForSession(sessionId)) {
+        setActivityError("La generacion termino, pero aun no hay actividades listas para esta sesion.");
+      }
     } catch (error) {
       setActivityError(error instanceof Error ? error.message : "No se pudo generar la actividad.");
     } finally {
@@ -1050,7 +1147,7 @@ export function LiveClassMonitor() {
   }
 
   async function handlePublish() {
-    if (!monitoringClass || !activitySessionId || !deliveryStore) return;
+    if (!activeClass || !activitySessionId || !deliveryStore) return;
 
     setActivityLoading(true);
     setActivityError(null);
@@ -1060,7 +1157,7 @@ export function LiveClassMonitor() {
       const published = await publishAssignments({
         store: deliveryStore,
         sessionId: activitySessionId,
-        classId: monitoringClass.id,
+        classId: activeClass.id,
         candidates,
         approvedBands,
         overridesByBand,
@@ -1072,8 +1169,6 @@ export function LiveClassMonitor() {
       setActivityLoading(false);
     }
   }
-
-  const remaining = MOCK_INSIGHTS.totalSeconds - elapsed;
 
   return (
     <main className="min-h-screen bg-[#eef3fb] overflow-hidden">
@@ -1097,22 +1192,20 @@ export function LiveClassMonitor() {
                         Listo para grabar
                       </span>
                     )}
-                    {monitoringClass && (
-                      <span className="text-sm text-slate-500">{monitoringClass.focus}</span>
+                    {activeClass && (
+                      <span className="text-sm text-slate-500">{activeClass.focus}</span>
                     )}
                   </div>
                   <h1 className="text-2xl font-bold text-slate-900 tracking-tight">
-                    {monitoringClass ? monitoringClass.title : "Monitoreo en vivo"}
+                    {activeClass ? activeClass.title : "Monitoreo en vivo"}
                   </h1>
                 </div>
               </div>
 
-              <NotificationBar />
               <div className="grid grid-cols-12 gap-5 flex-1 min-h-0">
                 <div className="col-span-7 flex flex-col min-h-0">
                   <TranscriptPlayerCard
                     elapsed={elapsed}
-                    remaining={remaining}
                     isRecording={isRecording}
                     onToggleRecording={toggleRecording}
                     uploadStatus={uploadStatus}
@@ -1121,13 +1214,24 @@ export function LiveClassMonitor() {
                   />
                 </div>
                 <div className="col-span-5 min-h-0">
-                  <InsightsPanel />
+                  <InsightsPanel lessonState={latestLessonState} />
                 </div>
               </div>
               {activityError ? (
                 <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">
                   {activityError}
                 </div>
+              ) : null}
+              {activityLoading && candidates.length === 0 ? (
+                <section className="rounded-[24px] border border-violet-100 bg-white p-5 shadow-sm">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-violet-500">
+                    Preparando prototipos
+                  </p>
+                  <h2 className="mt-1 text-xl font-bold text-slate-900">Generando actividad...</h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Kobi esta buscando candidatos de Apoyo, Base y Reto para esta sesion.
+                  </p>
+                </section>
               ) : null}
               <ActivityCandidatePanel
                 candidates={candidates}
@@ -1148,112 +1252,9 @@ export function LiveClassMonitor() {
         </div>
       </div>
       <SuggestedActivityFAB
-        activity={MOCK_INSIGHTS.suggestedActivity}
         loading={activityLoading}
         onGenerate={handleGenerateActivity}
       />
-
-      {/* Resumen de fin de sesión */}
-      {finishedSession && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" />
-          <div className="relative w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden z-10 animate-in fade-in zoom-in-95 duration-200 max-h-[88vh] flex flex-col bg-gradient-to-br from-violet-100 via-rose-50 to-white">
-
-            {/* Hero — estilo tarjeta suave con número marca de agua */}
-            <div className="relative px-7 pt-7 pb-6">
-              {/* Kobi asomándose en la esquina */}
-              <KobiMascot className="pointer-events-none absolute top-4 right-5 h-16 w-16 text-slate-900 -rotate-6 select-none" />
-
-              <div className="flex items-center gap-2 mb-4">
-                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500">
-                  Sesión finalizada
-                </span>
-              </div>
-
-              <p className="text-sm text-slate-500 leading-relaxed max-w-[72%]">
-                Tu sesión de <span className="font-bold text-slate-700">{finishedSession.title}</span> quedó guardada con su resumen y transcripción.
-              </p>
-
-              {/* Métrica hero — duración con decimales atenuados */}
-              <div className="mt-6 flex items-end justify-between">
-                <div className="flex items-baseline">
-                  <span className="text-5xl font-bold text-slate-900 tabular-nums">
-                    {finishedSession.duration.split(":")[0]}
-                  </span>
-                  <span className="text-5xl font-bold text-slate-400 tabular-nums">
-                    :{finishedSession.duration.split(":")[1]}
-                  </span>
-                </div>
-                <button
-                  onClick={() => {
-                    setFinishedSession(null);
-                    navigate("/teacher/repositories");
-                  }}
-                  className="group flex items-center gap-3 text-sm font-medium text-slate-600"
-                  type="button"
-                >
-                  <span className="text-right leading-tight">
-                    Duración
-                    <br />
-                    de la sesión
-                  </span>
-                  <span className="w-8 h-px bg-slate-300 group-hover:w-10 transition-all" />
-                  <ArrowRight className="h-4 w-4 shrink-0" />
-                </button>
-              </div>
-
-              {/* Botón principal tipo píldora oscura */}
-              <button
-                onClick={() => {
-                  setFinishedSession(null);
-                  navigate("/teacher/repositories");
-                }}
-                className="mt-6 w-full py-3.5 rounded-full bg-slate-900 text-white font-bold text-sm hover:bg-slate-800 transition-all active:scale-[0.98]"
-                type="button"
-              >
-                Ver en Clases anteriores
-              </button>
-            </div>
-
-            {/* Detalle — resumen y próximos pasos */}
-            <div className="bg-white/70 backdrop-blur-sm px-7 py-6 overflow-y-auto flex flex-col gap-5">
-              <div>
-                <h4 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Resumen</h4>
-                <ul className="space-y-2">
-                  {finishedSession.summaryPoints.map((p, i) => (
-                    <li key={i} className="flex gap-2.5 text-sm text-slate-600 leading-relaxed">
-                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-2 shrink-0" />
-                      <span>{p}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <h4 className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Próximos pasos</h4>
-                <ul className="space-y-2">
-                  {finishedSession.nextSteps.map((s, i) => (
-                    <li key={i} className="flex gap-2.5 text-sm text-slate-600 leading-relaxed">
-                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300 mt-2 shrink-0" />
-                      <span>{s}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <button
-                onClick={() => {
-                  setFinishedSession(null);
-                  navigate("/teacher");
-                }}
-                className="self-start text-sm font-bold text-slate-500 hover:text-slate-800 transition"
-                type="button"
-              >
-                Volver al panel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   );
 }

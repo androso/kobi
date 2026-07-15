@@ -2,19 +2,16 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   activityManifestSchema,
   authorizeActivityTelemetryMessage,
-  buildActivitySessionContext,
-  createActivityArtifactCandidates,
-  resolveApprovedActivityForBand,
-  verifyActivityArtifact,
-  type ActivityArtifactCandidate,
   type ActivityEvidence,
   type ActivityManifest,
   type ActivityVerifierScores,
   type DifficultyBand,
-} from "@kobi/activities";
+  resolveApprovedActivityForBand,
+} from "@kobi/activities/contracts";
 
 type CandidateStatus = "ready" | "approved" | "rejected" | "superseded";
 type ActivitySource = "seeded" | "reused" | "new";
+const orderedBands: DifficultyBand[] = ["support", "core", "challenge"];
 
 export interface DeliveryCandidate {
   id: string;
@@ -37,7 +34,7 @@ export interface StudentForAssignment {
 
 export interface AssignmentUpsert {
   session_id: string;
-  candidate_id: string | null;
+  candidate_id: string;
   activity_id: string;
   student_id: string;
   variant: DifficultyBand;
@@ -65,14 +62,7 @@ export interface StudentAssignment {
 }
 
 export interface ActivityDeliveryStore {
-  ensureActiveSession(classId: string): Promise<string>;
   listCandidates(sessionId: string): Promise<DeliveryCandidate[]>;
-  saveVerifiedCandidate(input: {
-    sessionId: string;
-    candidate: ActivityArtifactCandidate;
-    artifact: ReturnType<typeof verifyActivityArtifact>["artifact"];
-    contextSnapshot: Record<string, unknown>;
-  }): Promise<DeliveryCandidate>;
   listStudents(classId: string): Promise<StudentForAssignment[]>;
   updateCandidateStatuses(
     sessionId: string,
@@ -97,84 +87,6 @@ export interface ActivityDeliveryStore {
   }): Promise<void>;
 }
 
-const lessonState = {
-  topic: "La noticia y sus partes",
-  objective_guess: "Identificar titular, entradilla y fuente en una noticia breve",
-  key_terms: ["titular", "entradilla", "fuente", "hecho principal"],
-  transcript_summary:
-    "La docente explico las partes de una noticia con ejemplos del periodico escolar.",
-  confidence: 0.88,
-  evidence: {
-    quoted_phrases: ["titular de la noticia", "la fuente nos dice quien informa"],
-    reason: "La clase se centro en reconocer partes de una noticia.",
-  },
-};
-
-const curriculumMatches = [
-  {
-    objective_code: "L7.4.2",
-    unit: "U4",
-    grade: 7,
-    subject: "lenguaje",
-    text: "Reconoce la estructura de la noticia: titular, entradilla, cuerpo y fuente.",
-    similarity: 0.91,
-  },
-  {
-    objective_code: "L7.4.3",
-    unit: "U4",
-    grade: 7,
-    subject: "lenguaje",
-    text: "Distingue informacion principal y secundaria en textos periodisticos.",
-    similarity: 0.84,
-  },
-];
-
-const orderedBands: DifficultyBand[] = ["support", "core", "challenge"];
-
-export async function loadOrCreateReadyCandidates(
-  store: ActivityDeliveryStore,
-  classId: string,
-) {
-  const sessionId = await store.ensureActiveSession(classId);
-  const existing = await store.listCandidates(sessionId);
-  const hasAllBands = orderedBands.every((band) =>
-    existing.some((candidate) => candidate.difficultyBand === band),
-  );
-
-  if (hasAllBands) {
-    return { sessionId, candidates: sortCandidates(existing), created: false };
-  }
-
-  const sessionContext = buildActivitySessionContext([lessonState]);
-  const contextSnapshot = { lessonState, curriculumMatches, sessionContext };
-  const generated = createActivityArtifactCandidates({
-    lessonState,
-    sessionContext,
-    curriculumMatches,
-  });
-  const created: DeliveryCandidate[] = [];
-
-  for (const candidate of generated) {
-    if (existing.some((row) => row.difficultyBand === candidate.manifest.difficulty_band)) continue;
-
-    const result = verifyActivityArtifact(candidate);
-    if (!result.ok) {
-      throw new Error(`El verificador rechazo ${candidate.manifest.difficulty_band}: ${result.errors.join("; ")}`);
-    }
-
-    created.push(
-      await store.saveVerifiedCandidate({
-        sessionId,
-        candidate,
-        artifact: result.artifact,
-        contextSnapshot,
-      }),
-    );
-  }
-
-  return { sessionId, candidates: sortCandidates([...existing, ...created]), created: created.length > 0 };
-}
-
 export function buildAssignmentUpserts(input: {
   sessionId: string;
   students: StudentForAssignment[];
@@ -184,6 +96,16 @@ export function buildAssignmentUpserts(input: {
 }): AssignmentUpsert[] {
   if (!input.approvedBands.includes("core")) {
     throw new Error("La actividad core debe estar aprobada antes de publicar.");
+  }
+
+  for (const candidate of input.candidates) {
+    if (candidate.sessionId !== input.sessionId) {
+      throw new Error("La actividad candidata no pertenece a esta sesion.");
+    }
+
+    if (candidate.manifest.difficulty_band !== candidate.difficultyBand) {
+      throw new Error("La variante de la candidata no coincide con su manifest.");
+    }
   }
 
   const approvals = input.candidates.map((candidate) => ({
@@ -199,6 +121,10 @@ export function buildAssignmentUpserts(input: {
 
     if (!approved) {
       throw new Error("No hay actividad core aprobada para asignar.");
+    }
+
+    if (!approved.candidate_id) {
+      throw new Error("La actividad aprobada no tiene candidata asociada.");
     }
 
     return {
@@ -272,29 +198,6 @@ export async function handleStudentActivityMessage(input: {
 export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
   constructor(private readonly client: SupabaseClient) {}
 
-  async ensureActiveSession(classId: string) {
-    const { data: existing, error: selectError } = await this.client
-      .from("sessions")
-      .select("id")
-      .eq("class_id", classId)
-      .eq("status", "active")
-      .order("started_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (selectError) throw new Error(selectError.message);
-    if (existing?.id) return String(existing.id);
-
-    const { data, error } = await this.client
-      .from("sessions")
-      .insert({ class_id: classId, status: "active" })
-      .select("id")
-      .single();
-
-    if (error) throw new Error(error.message);
-    return String(data.id);
-  }
-
   async listCandidates(sessionId: string) {
     const { data: candidateRows, error } = await this.client
       .from("session_activity_candidates")
@@ -315,66 +218,6 @@ export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
       const activity = required(activityById.get(row.activity_id), "No se encontro la actividad candidata.");
       return candidateFromRows(row, activity, required(bundleByRef.get(activity.bundle_ref), "No se encontro el bundle."));
     });
-  }
-
-  async saveVerifiedCandidate(input: {
-    sessionId: string;
-    candidate: ActivityArtifactCandidate;
-    artifact: ReturnType<typeof verifyActivityArtifact>["artifact"];
-    contextSnapshot: Record<string, unknown>;
-  }) {
-    const checksum = checksumText(input.candidate.bundle_html);
-
-    const { error: bundleError } = await this.client
-      .from("activity_bundles")
-      .upsert({
-        ref: input.candidate.bundle_ref,
-        index_html: input.candidate.bundle_html,
-        checksum,
-      }, { onConflict: "ref" });
-
-    if (bundleError) throw new Error(bundleError.message);
-
-    const { data: activity, error: activityError } = await this.client
-      .from("activities")
-      .upsert({
-        contract_version: input.artifact.contract_version,
-        manifest: input.artifact.manifest,
-        bundle_ref: input.artifact.bundle_ref,
-        evidence: input.artifact.evidence,
-        status: input.artifact.status,
-        source: "new",
-        verifier_scores: input.artifact.verifier_scores,
-        parent_id: input.artifact.parent_id,
-        curriculum_tags: [input.artifact.manifest.curriculum.objective],
-      }, { onConflict: "bundle_ref" })
-      .select("id,contract_version,manifest,bundle_ref,evidence,status,source,verifier_scores")
-      .single();
-
-    if (activityError) throw new Error(activityError.message);
-
-    const { data: candidateRow, error: candidateError } = await this.client
-      .from("session_activity_candidates")
-      .insert({
-        session_id: input.sessionId,
-        activity_id: activity.id,
-        difficulty_band: input.artifact.manifest.difficulty_band,
-        status: "ready",
-        source: "new",
-        context_snapshot: input.contextSnapshot,
-        evidence: input.artifact.evidence,
-        verifier_scores: input.artifact.verifier_scores,
-      })
-      .select("id,session_id,activity_id,difficulty_band,status,source,evidence,verifier_scores,created_at")
-      .single();
-
-    if (candidateError) throw new Error(candidateError.message);
-
-    return candidateFromRows(
-      candidateRow as CandidateRow,
-      activity as ActivityRow,
-      { ref: input.candidate.bundle_ref, index_html: input.candidate.bundle_html },
-    );
   }
 
   async listStudents(classId: string) {
@@ -399,7 +242,8 @@ export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
       const { error } = await this.client
         .from("session_activity_candidates")
         .update({ status: update.status, approved_at: update.approvedAt })
-        .eq("id", update.candidateId);
+        .eq("id", update.candidateId)
+        .eq("session_id", _sessionId);
 
       if (error) throw new Error(error.message);
     }
@@ -517,6 +361,7 @@ export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {
     if (error) throw new Error(error.message);
     return new Map(((data ?? []) as BundleRow[]).map((row) => [row.ref, row] as const));
   }
+
 }
 
 function requestedBandForStudent(
@@ -563,18 +408,10 @@ function candidateFromRows(
   };
 }
 
+
 function required<T>(value: T | undefined, message: string): T {
   if (!value) throw new Error(message);
   return value;
-}
-
-function checksumText(value: string) {
-  let hash = 2166136261;
-  for (let i = 0; i < value.length; i += 1) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `fnv1a-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
 interface CandidateRow {
