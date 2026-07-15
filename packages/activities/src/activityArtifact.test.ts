@@ -69,8 +69,45 @@ describe("activity artifact contracts", () => {
       expect(result.ok).toBe(true);
       expect(result.artifact.status).toBe("verified");
       expect(result.artifact.evidence[0].objective_code).toBe("L7.4.2");
+      expect(candidate.bundle_html).toContain('<textarea id="response"');
+      expect(candidate.bundle_html).toContain("score: computeScore(), total: answers.length");
+      expect(candidate.bundle_html).not.toContain("const correct = selected.size > 0");
       expect(candidate.bundle_html).not.toContain("preview-assignment");
       expect(candidate.bundle_html).not.toContain("assignment_id:");
+      const inlineScript = candidate.bundle_html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+      expect(inlineScript).toBeDefined();
+      expect(() => new Function(inlineScript ?? "")).not.toThrow();
+    }
+  });
+
+  it("renders an order interaction when the shared plan uses a sequence mechanic", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const candidates = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+      activitySetId: "set-sequence",
+      gamePlan: {
+        family: "sequence_order",
+        mechanic: "timeline_builder",
+        learning_goal: "Ordenar la estructura de una noticia.",
+        interaction_metaphor: "linea de tiempo",
+        kobi_visual_direction: "Azul Kobi",
+        rationale: "La secuencia aumenta en complejidad por banda.",
+        band_requirements: {
+          support: "Dos pasos guiados.",
+          core: "Tres pasos.",
+          challenge: "Cuatro pasos con evidencia.",
+        },
+      },
+    });
+
+    for (const candidate of candidates) {
+      expect(candidate.manifest.family).toBe("sequence_order");
+      expect(candidate.manifest.content.items[0].prompt).toContain("Ordena");
+      expect(candidate.bundle_html).toContain('id="order"');
+      expect(candidate.bundle_html).toContain('interactionMode === "sequence_order"');
+      expect(verifyActivityArtifact(candidate).ok).toBe(true);
     }
   });
 

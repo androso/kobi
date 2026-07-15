@@ -61,7 +61,7 @@ export function createActivityArtifactCandidates(
       },
       est_minutes: spec.estMinutes,
       content: {
-        items: buildItemsForBand(band, input.sessionContext, primaryMatch),
+        items: buildItemsForBand(band, input.sessionContext, primaryMatch, gamePlan),
         telemetry_events: ["attempt", "hint", "complete"],
       },
       entry: "index.html",
@@ -112,35 +112,41 @@ function buildItemsForBand(
   band: DifficultyBand,
   context: SessionContext,
   match: CurriculumMatch,
+  gamePlan: GamePlan,
 ) {
   const terms = context.vocabulary.length > 0 ? context.vocabulary : extractTerms(match.text);
-  const boundedTerms = terms.length > 0 ? terms.slice(0, 4) : ["idea principal", "vocabulario", "evidencia"];
+  const boundedTerms = Array.from(
+    new Set([...terms, "idea principal", "vocabulario", "evidencia", "conclusion"]),
+  ).slice(0, 4);
+  const bandTermCount = band === "support" ? 2 : band === "core" ? 3 : 4;
 
-  if (band === "support") {
+  if (gamePlan.family === "sequence_order") {
+    const steps = [
+      "Identificar la idea principal",
+      "Reconocer vocabulario clave",
+      "Relacionar una evidencia",
+      "Explicar la conclusion",
+    ].slice(0, bandTermCount);
     return [
       {
-        prompt: `Clasifica estas palabras del tema "${context.latest_topic}" como ideas clave de la clase.`,
-        answer_key: boundedTerms,
+        prompt: `Ordena ${steps.length} pasos para explicar ${context.latest_topic} usando el objetivo ${match.objective_code}.`,
+        answer_key: steps,
         hints: [
-          "Busca palabras que la docente repitio o explico con ejemplos.",
-          "Relaciona cada palabra con el objetivo de la unidad.",
+          "Empieza por reconocer de que trata el texto.",
+          "La evidencia debe aparecer antes de la conclusion.",
         ],
       },
     ];
   }
 
-  if (band === "challenge") {
+  if (gamePlan.family === "match_classify") {
     return [
       {
-        prompt: `Ordena los pasos para explicar el objetivo ${match.objective_code} a otro estudiante.`,
-        answer_key: [
-          "Identificar la idea principal",
-          "Reconocer vocabulario clave",
-          "Justificar con evidencia del texto",
-        ],
+        prompt: `Selecciona ${bandTermCount} conceptos que ayudan a explicar ${context.latest_topic}.`,
+        answer_key: boundedTerms.slice(0, bandTermCount),
         hints: [
-          "Primero ubica de que trata el texto.",
-          "La justificacion debe aparecer despues de reconocer las pistas.",
+          "Empieza por la opcion que reconoces con mayor seguridad.",
+          "Comprueba cada seleccion antes de completar.",
         ],
       },
     ];
@@ -148,11 +154,11 @@ function buildItemsForBand(
 
   return [
     {
-      prompt: `Responde usando el objetivo ${match.objective_code}: ${context.latest_objective ?? context.latest_topic}.`,
-      answer_key: boundedTerms.slice(0, 3),
+      prompt: `Escribe una respuesta sobre ${context.latest_objective ?? context.latest_topic} usando ${bandTermCount} ideas clave.`,
+      answer_key: boundedTerms.slice(0, bandTermCount),
       hints: [
-        "Vuelve al vocabulario clave antes de responder.",
-        "Tu respuesta debe conectarse con una evidencia del texto.",
+        "Escribe una oracion completa.",
+        "Revisa que tu explicacion tenga inicio y cierre.",
       ],
     },
   ];
@@ -160,13 +166,7 @@ function buildItemsForBand(
 
 function renderActivityHtml(manifest: ActivityManifest): string {
   const item = manifest.content.items[0];
-  const answers = item.answer_key;
-  const buttons = answers
-    .map(
-      (answer, index) =>
-        `<button class="option" data-answer="${escapeHtml(answer)}">${index + 1}. ${escapeHtml(answer)}</button>`,
-    )
-    .join("\n");
+  const interactionHtml = renderInteraction(manifest);
   const manifestJson = JSON.stringify(manifest).replace(/</g, "\\u003c");
 
   return `<!doctype html>
@@ -189,7 +189,8 @@ function renderActivityHtml(manifest: ActivityManifest): string {
     .actions button { border: 0; border-radius: 999px; padding: 10px 16px; background: #2563eb; color: white; font-weight: 700; cursor: pointer; }
     #feedback { min-height: 1.5rem; margin-top: 12px; font-weight: 700; }
     .progress { height: 10px; border-radius: 999px; background: #dbeafe; overflow: hidden; margin: 16px 0; }
-    .progress span { display:block; width: 35%; height:100%; background:#2563eb; }
+    .progress span { display:block; width: 0; height:100%; background:#2563eb; transition: width .2s ease; }
+    textarea { box-sizing: border-box; width: 100%; min-height: 130px; border: 2px solid #93c5fd; border-radius: 14px; padding: 12px; font: inherit; }
     :focus-visible { outline: 3px solid #f59e0b; outline-offset: 3px; }
     @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
     @media (max-width: 520px) { .actions { flex-direction: column; } .actions button { width: 100%; } }
@@ -202,7 +203,7 @@ function renderActivityHtml(manifest: ActivityManifest): string {
       <h1 id="activity-title">${escapeHtml(manifest.title)}</h1>
       <div class="progress" aria-label="Progreso"><span></span></div>
       <p class="prompt">${escapeHtml(item.prompt)}</p>
-      <div id="options">${buttons}</div>
+      <div id="interaction">${interactionHtml}</div>
       <div class="actions">
         <button id="hint" type="button">Pedir pista</button>
         <button id="complete" type="button">Completar</button>
@@ -213,7 +214,11 @@ function renderActivityHtml(manifest: ActivityManifest): string {
   <script>
     const SDK_VERSION = "${ACTIVITY_SDK_VERSION}";
     const manifest = ${manifestJson};
+    const interactionMode = manifest.family;
+    const answers = manifest.content.items[0].answer_key;
     let selected = new Set();
+    let ordered = [];
+    let responseText = "";
     let hintIndex = 0;
 
     function emit(method, payload) {
@@ -234,6 +239,40 @@ function renderActivityHtml(manifest: ActivityManifest): string {
     function reportHint(payload) { emit("reportHint", payload); }
     function reportComplete(payload) { emit("reportComplete", payload); }
 
+    function normalizeAnswer(value) {
+      return String(value).toLocaleLowerCase("es-SV").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    }
+
+    function computeScore() {
+      if (interactionMode === "sequence_order") {
+        return ordered.reduce((score, answer, index) => score + (answer === answers[index] ? 1 : 0), 0);
+      }
+      if (interactionMode === "guided_practice") {
+        const normalizedResponse = normalizeAnswer(responseText);
+        return answers.filter((answer) => normalizedResponse.includes(normalizeAnswer(answer))).length;
+      }
+
+      const correctSelections = answers.filter((answer) => selected.has(answer)).length;
+      const incorrectSelections = Array.from(selected).filter((answer) => !answers.includes(answer)).length;
+      return Math.max(0, correctSelections - incorrectSelections);
+    }
+
+    function currentAnswer() {
+      if (interactionMode === "sequence_order") return ordered;
+      if (interactionMode === "guided_practice") return responseText;
+      return Array.from(selected);
+    }
+
+    function reportCurrentAttempt() {
+      const score = computeScore();
+      const correct = score === answers.length;
+      reportAttempt({ item_index: 0, correct, answer: currentAnswer() });
+      document.querySelector(".progress span").style.width = String(Math.round((score / answers.length) * 100)) + "%";
+      document.getElementById("feedback").textContent = correct
+        ? "Respuesta correcta."
+        : "Sigue intentando o pide una pista.";
+    }
+
     getManifest();
     getBand();
 
@@ -242,12 +281,28 @@ function renderActivityHtml(manifest: ActivityManifest): string {
         const answer = button.dataset.answer;
         const pressed = button.getAttribute("aria-pressed") === "true";
         button.setAttribute("aria-pressed", String(!pressed));
-        if (pressed) selected.delete(answer); else selected.add(answer);
-        const correct = selected.size > 0;
-        reportAttempt({ item_index: 0, correct, answer: Array.from(selected) });
-        document.getElementById("feedback").textContent = correct ? "Respuesta registrada." : "Elige una respuesta.";
+        if (interactionMode === "sequence_order") {
+          const position = ordered.indexOf(answer);
+          if (position >= 0) ordered.splice(position, 1); else ordered.push(answer);
+          document.getElementById("order").textContent = ordered.length > 0
+            ? "Tu orden: " + ordered.join(" -> ")
+            : "Selecciona las tarjetas en el orden correcto.";
+        } else if (pressed) {
+          selected.delete(answer);
+        } else {
+          selected.add(answer);
+        }
+        reportCurrentAttempt();
       });
     });
+
+    const response = document.getElementById("response");
+    if (response) {
+      response.addEventListener("change", () => {
+        responseText = response.value;
+        reportCurrentAttempt();
+      });
+    }
 
     document.getElementById("hint").addEventListener("click", () => {
       const hints = manifest.content.items[0].hints;
@@ -257,12 +312,38 @@ function renderActivityHtml(manifest: ActivityManifest): string {
     });
 
     document.getElementById("complete").addEventListener("click", () => {
-      reportComplete({ score: selected.size, total: manifest.content.items[0].answer_key.length, completed_at: new Date().toISOString() });
+      reportComplete({ score: computeScore(), total: answers.length, completed_at: new Date().toISOString() });
       document.getElementById("feedback").textContent = "Actividad completada. Gracias.";
     });
   </script>
 </body>
 </html>`;
+}
+
+function renderInteraction(manifest: ActivityManifest): string {
+  const answers = manifest.content.items[0].answer_key;
+  if (manifest.family === "guided_practice") {
+    return '<label for="response">Tu respuesta</label><textarea id="response" placeholder="Escribe aqui y usa las ideas clave de la clase."></textarea>';
+  }
+
+  const choices = manifest.family === "sequence_order"
+    ? rotateChoices(answers)
+    : rotateChoices([...answers, "Detalle sin evidencia", "Concepto fuera del objetivo"]);
+  const buttons = choices
+    .map(
+      (answer, index) =>
+        `<button class="option" type="button" aria-pressed="false" data-answer="${escapeHtml(answer)}">${index + 1}. ${escapeHtml(answer)}</button>`,
+    )
+    .join("\n");
+
+  return manifest.family === "sequence_order"
+    ? `${buttons}<p id="order">Selecciona las tarjetas en el orden correcto.</p>`
+    : buttons;
+}
+
+function rotateChoices(values: string[]): string[] {
+  if (values.length < 2) return values;
+  return [...values.slice(1), values[0]];
 }
 
 function buildSuccessCriteria(band: DifficultyBand): string[] {
