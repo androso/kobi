@@ -54,6 +54,6 @@ Area A's output — see `docs/contracts.md` for the full shape (`topic`, `object
 
 - **Embeddings**: OpenAI `text-embedding-3-small`, requested with 768 dimensions for both curriculum ingestion and live lesson queries. `OPENAI_EMBEDDING_MODEL` can override the model, but ingestion and retrieval must use the same model and dimensions.
 - **Vector store**: Supabase pgvector, cosine distance, `ivfflat` index — fine at this corpus size (one textbook unit).
-- **Chunking**: hand-authored, one chunk per objective code, ~150-300 tokens — no PDF-parsing pipeline for the hackathon.
+- **Chunking**: teacher-uploaded PDFs are split per page with LangChain's TypeScript `RecursiveCharacterTextSplitter` using 1,000-character chunks and 200-character overlap, preserving exact page citations and unit boundaries. The structured seed path remains hand-authored at one chunk per objective code.
 
 None of this should matter to how you build Area C — it's here so you know why the contract looks the way it does.
