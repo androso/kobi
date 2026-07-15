@@ -71,6 +71,26 @@ describe("generateActivityArtifacts job planning", () => {
     ]);
   });
 
+  it("accepts a complete exact-curriculum legacy repository set", () => {
+    const legacySet = (["support", "core", "challenge"] as const).map((band) => ({
+      ...repositoryRow(band, 0.9),
+      activity_set_id: null,
+    }));
+
+    const planned = planSessionArtifacts({
+      reusableSet: legacySet,
+      openAiCandidates: [],
+      staticCandidates: [],
+    });
+
+    expect(planned).toHaveLength(3);
+    expect(planned.map((artifact) => artifact.reusable?.id)).toEqual([
+      "activity-support",
+      "activity-core",
+      "activity-challenge",
+    ]);
+  });
+
   it("persists medium-match generations as adapted with parent lineage", async () => {
     const parent = repositoryRow("core", 0.6);
     const supabase = fakeSupabase({ repositoryRows: [parent] });
@@ -169,7 +189,7 @@ describe("generateActivityArtifacts job planning", () => {
     }
   });
 
-  it("counts only OpenAI bundle refs against the per-session OpenAI quota", async () => {
+  it("counts new and adapted OpenAI bundle refs against the per-session quota", async () => {
     const supabase = fakeSupabase({ openAiGenerationCount: 3 });
     let openAiCalls = 0;
 
@@ -190,6 +210,7 @@ describe("generateActivityArtifacts job planning", () => {
     );
 
     expect(openAiCalls).toBe(0);
+    expect(supabase.inFilters).toContain("source=new,adapted");
     expect(supabase.likeFilters).toContain("activities.bundle_ref=artifact-bundles/openai/%");
   });
 
@@ -323,12 +344,14 @@ function fakeSupabase(options: {
   }> = [];
   const bundleRefs: string[] = [];
   const likeFilters: string[] = [];
+  const inFilters: string[] = [];
   const activityUpserts: Array<Record<string, unknown>> = [];
   let nextActivityId = 0;
   const state: FakeQueryState = {
     insertedCandidates,
     bundleRefs,
     likeFilters,
+    inFilters,
     nextActivityId: () => {
       nextActivityId += 1;
       return `activity-${nextActivityId}`;
@@ -345,13 +368,14 @@ function fakeSupabase(options: {
     },
   } as unknown as SupabaseClient;
 
-  return { client, insertedCandidates, bundleRefs, likeFilters, activityUpserts };
+  return { client, insertedCandidates, bundleRefs, likeFilters, inFilters, activityUpserts };
 }
 
 interface FakeQueryState {
   insertedCandidates: unknown[];
   bundleRefs: string[];
   likeFilters: string[];
+  inFilters: string[];
   nextActivityId: () => string;
   openAiGenerationCount: number;
   segments: LessonState[];
@@ -402,6 +426,11 @@ class FakeQuery {
   }
 
   overlaps() {
+    return this;
+  }
+
+  in(column: string, values: string[]) {
+    this.state.inFilters.push(`${column}=${values.join(",")}`);
     return this;
   }
 

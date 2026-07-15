@@ -306,6 +306,36 @@ describe("OpenAI activity artifact generator", () => {
       "generic multiple-choice unless it is clearly the strongest fit",
     );
   });
+
+  it("uses the supplied adapted game plan in the generation prompt", () => {
+    const prompt = buildActivityGenerationPrompt({
+      lessonState,
+      sessionContext,
+      curriculumMatches,
+      bands: ["support", "core", "challenge"],
+      activitySetId,
+      gamePlan: {
+        family: "sequence_order",
+        mechanic: "timeline_builder",
+        learning_goal: "Ordenar los hechos de la noticia.",
+        interaction_metaphor: "linea de tiempo",
+        kobi_visual_direction: "Azul Kobi",
+        rationale: "Conserva el mecanismo de la actividad padre.",
+        band_requirements: {
+          support: "Dos pasos guiados.",
+          core: "Tres pasos.",
+          challenge: "Cuatro pasos con justificacion.",
+        },
+      },
+    });
+    const parsed = JSON.parse(prompt);
+
+    expect(parsed.artifact_contract.required_shared_game_plan).toMatchObject({
+      family: "sequence_order",
+      mechanic: "timeline_builder",
+      interaction_metaphor: "linea de tiempo",
+    });
+  });
 });
 
 function rawArtifact(

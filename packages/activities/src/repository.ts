@@ -78,6 +78,26 @@ export function pickCoherentActivitySet(
     .sort((left, right) => averageRank(right) - averageRank(left))[0] ?? [];
 }
 
+export function pickLegacyActivitySet(
+  rows: RankedActivityRepositoryRow[],
+  minimumScore = STRONG_REUSE_THRESHOLD,
+): RankedActivityRepositoryRow[] {
+  const setsByCurriculum = new Map<string, RankedActivityRepositoryRow[]>();
+
+  for (const row of rows) {
+    if (row.activity_set_id || row.rank_score < minimumScore) continue;
+    const key = curriculumKey(row);
+    const current = setsByCurriculum.get(key) ?? [];
+    current.push(row);
+    setsByCurriculum.set(key, current);
+  }
+
+  return [...setsByCurriculum.values()]
+    .map(bestRowPerBand)
+    .filter((set) => set.length === 3)
+    .sort((left, right) => averageRank(right) - averageRank(left))[0] ?? [];
+}
+
 export function pickAdaptationSource(
   rows: RankedActivityRepositoryRow[],
 ): RankedActivityRepositoryRow[] {
@@ -108,6 +128,11 @@ function bestRowPerBand(rows: RankedActivityRepositoryRow[]): RankedActivityRepo
     const row = picked.get(band);
     return row ? [row] : [];
   });
+}
+
+function curriculumKey(row: ActivityRepositoryRow): string {
+  const { grade, subject, unit, objective } = row.manifest.curriculum;
+  return JSON.stringify([grade, subject, unit, objective]);
 }
 
 function activitySearchText(row: ActivityRepositoryRow): string {

@@ -604,7 +604,8 @@ export function buildActivityGenerationPrompt(input: BuildPromptInput): string {
       requested_bands: input.bands,
       artifact_contract: {
         allowed_families: ["match_classify", "sequence_order", "guided_practice"],
-        required_shared_game_plan: createGamePlan(input.sessionContext, input.curriculumMatches),
+        required_shared_game_plan:
+          input.gamePlan ?? createGamePlan(input.sessionContext, input.curriculumMatches),
         required_new_manifest_fields: ["mechanic", "learning_design.learning_goal", "learning_design.interaction_summary", "learning_design.success_criteria", "visual_theme.scene", "visual_theme.accent"],
         content_modes: [
           "exercise items with prompts, answer keys, hints, and telemetry_events as an array or null",

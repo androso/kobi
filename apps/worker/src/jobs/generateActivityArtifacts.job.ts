@@ -10,6 +10,7 @@ import {
   hasMaterialContextChange,
   pickAdaptationSource,
   pickCoherentActivitySet,
+  pickLegacyActivitySet,
   rankActivityRepositoryRows,
   verifyActivityArtifact,
   type ActivityArtifact,
@@ -156,10 +157,12 @@ export async function runGenerateActivityArtifactsJob(
   const repositoryRows = await loadRepositoryRows(supabase, curriculumMatches);
   const rankedRows = rankActivityRepositoryRows(repositoryRows, curriculumMatches, sessionContext);
   const coherentSet = pickCoherentActivitySet(rankedRows);
-  const adaptationSource = coherentSet.length === 0 ? pickAdaptationSource(rankedRows) : [];
+  const legacySet = coherentSet.length === 0 ? pickLegacyActivitySet(rankedRows) : [];
+  const reusableSet = coherentSet.length === 3 ? coherentSet : legacySet;
+  const adaptationSource = reusableSet.length === 0 ? pickAdaptationSource(rankedRows) : [];
   const adapting = adaptationSource.length > 0;
   const parentIdByBand = adapting ? parentIdsByBand(adaptationSource) : {};
-  const missingBands = coherentSet.length === 3 ? [] : activityBands;
+  const missingBands = reusableSet.length === 3 ? [] : activityBands;
   const activitySetId = createActivitySetId();
   const gamePlan = adapting
     ? createAdaptedGamePlan(sessionContext, curriculumMatches, adaptationSource[0].manifest)
@@ -212,7 +215,7 @@ export async function runGenerateActivityArtifactsJob(
   }
 
   const planned = planSessionArtifacts({
-    reusableSet: coherentSet,
+    reusableSet,
     openAiCandidates,
     staticCandidates,
   });
@@ -398,7 +401,7 @@ async function countGeneratedSessionCandidates(
     .from("session_activity_candidates")
     .select("id, activities!inner(bundle_ref)")
     .eq("session_id", sessionId)
-    .eq("source", "new")
+    .in("source", ["new", "adapted"])
     .like("activities.bundle_ref", "artifact-bundles/openai/%");
 
   if (error) {
@@ -543,12 +546,18 @@ function completeRepositorySet(
 ): Map<DifficultyBand, RankedActivityRepositoryRow> | null {
   if (rows.length === 0) return null;
   const activitySetIds = rows.map((row) => row.activity_set_id);
-  if (activitySetIds.some((activitySetId) => !activitySetId)) return null;
-  const setIds = new Set(activitySetIds);
-  if (setIds.size !== 1) return null;
+  const namedSetIds = activitySetIds.filter((activitySetId): activitySetId is string => Boolean(activitySetId));
+  const isNamedSet = namedSetIds.length === rows.length && new Set(namedSetIds).size === 1;
+  const isLegacySet = namedSetIds.length === 0 && new Set(rows.map(repositoryCurriculumKey)).size === 1;
+  if (!isNamedSet && !isLegacySet) return null;
 
   const byBand = new Map(rows.map((row) => [row.manifest.difficulty_band, row] as const));
   return activityBands.every((band) => byBand.has(band)) ? byBand : null;
+}
+
+function repositoryCurriculumKey(row: RankedActivityRepositoryRow): string {
+  const { grade, subject, unit, objective } = row.manifest.curriculum;
+  return JSON.stringify([grade, subject, unit, objective]);
 }
 
 function completeCandidateSet(

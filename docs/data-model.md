@@ -57,11 +57,12 @@ activities (the repository — Area C, revised per D2)
   status (candidate|verified|rejected|superseded)
   embedding (vector(768), nullable) -- reserved for future semantic reuse; v0 ranking does not require it
   curriculum_tags (text[])
-  source (seeded|reused|new)
+  source (seeded|reused|adapted|new)
   verifier_scores (jsonb)
   times_used (int, default 0)
   avg_score (real, nullable)
   parent_id (FK -> activities.id, nullable)
+  activity_set_id (text, nullable) -- shared by one coherent support/core/challenge set
   created_at, updated_at
       │
       │ 1—N
@@ -72,7 +73,7 @@ session_activity_candidates
   activity_id (FK -> activities.id)
   difficulty_band (support|core|challenge)
   status (ready|approved|rejected|superseded)
-  source (seeded|reused|new)
+  source (seeded|reused|adapted|new)
   context_snapshot, evidence, verifier_scores (jsonb)
   created_at, approved_at
       │
