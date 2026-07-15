@@ -1,8 +1,10 @@
-import { google } from "@ai-sdk/google";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createOpenAI } from "@ai-sdk/openai";
 import { generateObject } from "ai";
 import { lessonStateSchema, type LessonState } from "./lessonState.schema.js";
 
 const DEFAULT_LESSON_STATE_MODEL = "gemini-2.0-flash";
+const DEFAULT_OPENAI_LESSON_STATE_MODEL = "gpt-4o-mini";
 const MAX_TRANSCRIPT_CHARS = 8_000;
 
 export interface BuildLessonStateInput {
@@ -11,6 +13,7 @@ export interface BuildLessonStateInput {
   /** Optional context to keep the model anchored, e.g. previous lesson_state. */
   previousLessonState?: LessonState | null;
   model?: string;
+  provider?: "gemini" | "openai";
 }
 
 /**
@@ -25,8 +28,10 @@ export async function buildLessonState(
     throw new Error("buildLessonState: transcriptText is required");
   }
 
+  const provider = input.provider ?? getLessonStateProvider();
+  const modelName = input.model ?? getDefaultLessonStateModel(provider);
   const { object } = await generateObject({
-    model: google(input.model ?? DEFAULT_LESSON_STATE_MODEL),
+    model: createLessonStateModel(provider, modelName),
     schema: lessonStateSchema,
     prompt: [
       "You are analyzing a short slice of a 7th-grade Lenguaje class transcript in El Salvador.",
@@ -53,6 +58,35 @@ export async function buildLessonState(
       reason: object.evidence.reason.trim(),
     },
   });
+}
+
+function getLessonStateProvider(): "gemini" | "openai" {
+  const provider = (process.env.LESSON_STATE_PROVIDER ?? "openai").trim().toLowerCase();
+  if (provider === "gemini" || provider === "openai") return provider;
+  throw new Error("buildLessonState: LESSON_STATE_PROVIDER must be either openai or gemini");
+}
+
+function getDefaultLessonStateModel(provider: "gemini" | "openai"): string {
+  return (
+    process.env.LESSON_STATE_MODEL ??
+    (provider === "openai" ? DEFAULT_OPENAI_LESSON_STATE_MODEL : DEFAULT_LESSON_STATE_MODEL)
+  );
+}
+
+function createLessonStateModel(provider: "gemini" | "openai", modelName: string) {
+  if (provider === "openai") {
+    const apiKey = process.env.OPENAI_API_KEY?.trim();
+    if (!apiKey) {
+      throw new Error("buildLessonState: OPENAI_API_KEY is required when LESSON_STATE_PROVIDER=openai");
+    }
+    return createOpenAI({ apiKey })(modelName);
+  }
+
+  const apiKey = (process.env.GEMINI_API_KEY ?? process.env.GOOGLE_GENERATIVE_AI_API_KEY)?.trim();
+  if (!apiKey) {
+    throw new Error("buildLessonState: GEMINI_API_KEY is required when LESSON_STATE_PROVIDER=gemini");
+  }
+  return createGoogleGenerativeAI({ apiKey })(modelName);
 }
 
 /**

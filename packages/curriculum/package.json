@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-sdk/google": "^1.1.0",
+    "@ai-sdk/openai": "^1.3.24",
     "@kobi/db": "workspace:*",
     "@supabase/supabase-js": "^2.45.4",
     "ai": "^4.0.0"
