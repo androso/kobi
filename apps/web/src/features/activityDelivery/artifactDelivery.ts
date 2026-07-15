@@ -199,10 +199,25 @@ export async function handleStudentActivityMessage(input: {
 }
 
 export function normalizeCompletionScore(score: unknown, total: unknown): number {
-  const rawScore = typeof score === "number" && Number.isFinite(score) ? score : 0;
-  const rawTotal = typeof total === "number" && Number.isFinite(total) ? total : null;
-  const normalized = rawTotal !== null && rawTotal > 0 ? rawScore / rawTotal : rawScore;
-  return Math.max(0, Math.min(1, normalized));
+  if (typeof score !== "number" || !Number.isFinite(score) || score < 0) {
+    throw new Error("Completion score must be a non-negative finite number.");
+  }
+
+  if (total === undefined) {
+    if (score > 1) {
+      throw new Error("Completion score must be normalized when total is omitted.");
+    }
+    return score;
+  }
+
+  if (typeof total !== "number" || !Number.isFinite(total) || total <= 0) {
+    throw new Error("Completion total must be a positive finite number.");
+  }
+  if (score > total) {
+    throw new Error("Completion score cannot exceed total.");
+  }
+
+  return score / total;
 }
 
 export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {

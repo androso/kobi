@@ -9,6 +9,7 @@ import type {
 import {
   buildAssignmentUpserts,
   handleStudentActivityMessage,
+  normalizeCompletionScore,
   publishAssignments,
   SupabaseActivityDeliveryStore,
 } from "./artifactDelivery";
@@ -312,5 +313,19 @@ describe("artifact delivery bridge", () => {
       score: 0.5,
       completedAt: "2026-07-15T12:00:00.000Z",
     });
+  });
+
+  it("accepts total-less normalized scores and rejects ambiguous raw counts", () => {
+    expect(normalizeCompletionScore(0.75, undefined)).toBe(0.75);
+    expect(normalizeCompletionScore(2, 4)).toBe(0.5);
+    expect(() => normalizeCompletionScore(2, undefined)).toThrow(
+      "Completion score must be normalized when total is omitted.",
+    );
+    expect(() => normalizeCompletionScore(2, 1)).toThrow(
+      "Completion score cannot exceed total.",
+    );
+    expect(() => normalizeCompletionScore(0, 0)).toThrow(
+      "Completion total must be a positive finite number.",
+    );
   });
 });

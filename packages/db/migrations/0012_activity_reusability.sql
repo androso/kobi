@@ -12,16 +12,18 @@ alter table assignments
   add constraint assignments_score_normalized
   check (score is null or (score >= 0 and score <= 1)) not valid;
 
-create or replace function update_activity_outcome_once()
+create or replace function public.update_activity_outcome_once()
 returns trigger
 language plpgsql
+security definer
+set search_path = pg_catalog
 as $$
 declare
   normalized_score real;
 begin
   if new.status = 'completed' and old.status is distinct from 'completed' then
     normalized_score := greatest(0, least(1, coalesce(new.score, 0)));
-    update activities
+    update public.activities
       set times_used = times_used + 1,
           avg_score = case
             when avg_score is null then normalized_score
@@ -34,8 +36,10 @@ begin
 end;
 $$;
 
+revoke all on function public.update_activity_outcome_once() from public, anon, authenticated;
+
 drop trigger if exists assignments_activity_outcome_once on assignments;
 create trigger assignments_activity_outcome_once
   after update of status on assignments
   for each row
-  execute function update_activity_outcome_once();
+  execute function public.update_activity_outcome_once();

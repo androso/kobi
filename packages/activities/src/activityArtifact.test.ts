@@ -234,6 +234,25 @@ describe("activity artifact contracts", () => {
     });
   });
 
+  it("rejects ambiguous or impossible completion scores", () => {
+    const authorizeComplete = (payload: Record<string, unknown>) =>
+      authorizeActivityTelemetryMessage(
+        {
+          sdk: "activity-sdk/v1",
+          type: "event",
+          method: "reportComplete",
+          payload,
+        },
+        { assignmentId: "assignment-1", sourceMatches: true },
+      );
+
+    expect(authorizeComplete({ score: 2 }).ok).toBe(false);
+    expect(authorizeComplete({ score: 2, total: 1 }).ok).toBe(false);
+    expect(authorizeComplete({ score: 0, total: 0 }).ok).toBe(false);
+    expect(authorizeComplete({ score: 0.75 }).ok).toBe(true);
+    expect(authorizeComplete({ score: 2, total: 4 }).ok).toBe(true);
+  });
+
   it("rejects telemetry with spoofed assignment ids or rate-limit violations", () => {
     const spoofed = authorizeActivityTelemetryMessage(
       {

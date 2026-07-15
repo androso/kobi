@@ -173,12 +173,30 @@ export const activityHintPayloadSchema = z.object({
   hint_index: z.number().int().nonnegative(),
 });
 
-export const activityCompletePayloadSchema = z.object({
-  assignment_id: z.string().min(1),
-  score: z.number().min(0),
-  total: z.number().min(0).optional(),
-  completed_at: z.string().datetime().optional(),
-});
+export const activityCompletePayloadSchema = z
+  .object({
+    assignment_id: z.string().min(1),
+    score: z.number().finite().min(0),
+    total: z.number().finite().positive().optional(),
+    completed_at: z.string().datetime().optional(),
+  })
+  .superRefine((payload, ctx) => {
+    if (payload.total === undefined && payload.score > 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["score"],
+        message: "score must be normalized to 0-1 when total is omitted",
+      });
+    }
+
+    if (payload.total !== undefined && payload.score > payload.total) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["score"],
+        message: "score cannot exceed total",
+      });
+    }
+  });
 
 export const activitySdkEventSchema = z.discriminatedUnion("method", [
   z.object({
