@@ -107,6 +107,12 @@ describe("activity artifact contracts", () => {
       expect(candidate.manifest.content.items[0].prompt).toContain("Ordena");
       expect(candidate.bundle_html).toContain('id="order"');
       expect(candidate.bundle_html).toContain('interactionMode === "sequence_order"');
+      if (candidate.manifest.difficulty_band === "challenge") {
+        expect(candidate.bundle_html).toContain('<textarea id="justification"');
+        expect(candidate.bundle_html).toContain("justificationText.trim().length < 8");
+      } else {
+        expect(candidate.bundle_html).not.toContain('<textarea id="justification"');
+      }
       expect(verifyActivityArtifact(candidate).ok).toBe(true);
     }
   });

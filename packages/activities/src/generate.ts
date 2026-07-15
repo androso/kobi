@@ -219,7 +219,9 @@ function renderActivityHtml(manifest: ActivityManifest): string {
     let selected = new Set();
     let ordered = [];
     let responseText = "";
+    let justificationText = "";
     let hintIndex = 0;
+    const requiresJustification = manifest.difficulty_band === "challenge" && interactionMode !== "guided_practice";
 
     function emit(method, payload) {
       window.parent.postMessage({ sdk: SDK_VERSION, type: "event", method, payload }, "*");
@@ -258,14 +260,17 @@ function renderActivityHtml(manifest: ActivityManifest): string {
     }
 
     function currentAnswer() {
-      if (interactionMode === "sequence_order") return ordered;
-      if (interactionMode === "guided_practice") return responseText;
-      return Array.from(selected);
+      const answer = interactionMode === "sequence_order"
+        ? ordered
+        : interactionMode === "guided_practice"
+          ? responseText
+          : Array.from(selected);
+      return requiresJustification ? { answer, justification: justificationText } : answer;
     }
 
     function reportCurrentAttempt() {
       const score = computeScore();
-      const correct = score === answers.length;
+      const correct = score === answers.length && (!requiresJustification || justificationText.trim().length >= 8);
       reportAttempt({ item_index: 0, correct, answer: currentAnswer() });
       document.querySelector(".progress span").style.width = String(Math.round((score / answers.length) * 100)) + "%";
       document.getElementById("feedback").textContent = correct
@@ -304,6 +309,14 @@ function renderActivityHtml(manifest: ActivityManifest): string {
       });
     }
 
+    const justification = document.getElementById("justification");
+    if (justification) {
+      justification.addEventListener("change", () => {
+        justificationText = justification.value;
+        reportCurrentAttempt();
+      });
+    }
+
     document.getElementById("hint").addEventListener("click", () => {
       const hints = manifest.content.items[0].hints;
       document.getElementById("feedback").textContent = hints[hintIndex] || "Ya usaste todas las pistas.";
@@ -312,6 +325,10 @@ function renderActivityHtml(manifest: ActivityManifest): string {
     });
 
     document.getElementById("complete").addEventListener("click", () => {
+      if (requiresJustification && justificationText.trim().length < 8) {
+        document.getElementById("feedback").textContent = "Explica brevemente tu decision antes de completar.";
+        return;
+      }
       reportComplete({ score: computeScore(), total: answers.length, completed_at: new Date().toISOString() });
       document.getElementById("feedback").textContent = "Actividad completada. Gracias.";
     });
@@ -326,6 +343,10 @@ function renderInteraction(manifest: ActivityManifest): string {
     return '<label for="response">Tu respuesta</label><textarea id="response" placeholder="Escribe aqui y usa las ideas clave de la clase."></textarea>';
   }
 
+  const justification = manifest.difficulty_band === "challenge"
+    ? '<label for="justification">Explica tu decision</label><textarea id="justification" placeholder="Justifica brevemente usando evidencia del objetivo."></textarea>'
+    : "";
+
   const choices = manifest.family === "sequence_order"
     ? rotateChoices(answers)
     : rotateChoices([...answers, "Detalle sin evidencia", "Concepto fuera del objetivo"]);
@@ -337,8 +358,8 @@ function renderInteraction(manifest: ActivityManifest): string {
     .join("\n");
 
   return manifest.family === "sequence_order"
-    ? `${buttons}<p id="order">Selecciona las tarjetas en el orden correcto.</p>`
-    : buttons;
+    ? `${buttons}<p id="order">Selecciona las tarjetas en el orden correcto.</p>${justification}`
+    : `${buttons}${justification}`;
 }
 
 function rotateChoices(values: string[]): string[] {
