@@ -807,7 +807,7 @@ async function createCurriculumUploadUrl(
   const sourceId = crypto.randomUUID();
   const safeFilename = sanitizeCurriculumFilename(body.filename);
   const storagePath = `${classId}/${sourceId}/${safeFilename}`;
-  const sourceDocument = `class-${classId}-curriculum`;
+  const sourceDocument = `class-${classId}-source-${sourceId}`;
   const bucket = process.env.CURRICULUM_BUCKET ?? DEFAULT_CURRICULUM_BUCKET;
 
   const { data: source, error: insertError } = await supabase

@@ -48,13 +48,40 @@ describe("curriculum upload and retrieve API", () => {
       },
     });
     expect(supabase.curriculumSources).toHaveLength(1);
+    const source = supabase.curriculumSources[0]!;
     expect(supabase.curriculumSources[0]).toMatchObject({
       class_id: CLASS_ID,
       status: "pending_upload",
       original_filename: "Unidad-4.pdf",
       size_bytes: 12_345,
-      source_document: `class-${CLASS_ID}-curriculum`,
+      source_document: `class-${CLASS_ID}-source-${source.id}`,
     });
+  });
+
+  it("assigns a distinct source document to each class upload", async () => {
+    const supabase = fakeSupabase();
+    const boss = fakeBoss();
+
+    for (const filename of ["Unidad 3.pdf", "Unidad 4.pdf"]) {
+      const response = await callRoute(
+        `/api/classes/${CLASS_ID}/curriculum/uploads`,
+        supabase,
+        boss,
+        {
+          filename,
+          contentType: "application/pdf",
+          sizeBytes: 12_345,
+        },
+      );
+      expect(response.statusCode).toBe(201);
+    }
+
+    expect(supabase.curriculumSources).toHaveLength(2);
+    const sourceDocuments = supabase.curriculumSources.map((source) => source.source_document);
+    expect(new Set(sourceDocuments).size).toBe(2);
+    for (const source of supabase.curriculumSources) {
+      expect(source.source_document).toBe(`class-${CLASS_ID}-source-${source.id}`);
+    }
   });
 
   it("rejects non-pdf content types before creating a source row", async () => {
