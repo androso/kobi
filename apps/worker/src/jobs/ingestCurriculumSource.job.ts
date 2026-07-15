@@ -118,6 +118,8 @@ export async function runIngestCurriculumSourceJob(
       throw new Error(`ingestCurriculumSource: failed to mark ready: ${readyError.message}`);
     }
 
+    await markOtherClassSourcesSuperseded(supabase, classId, sourceId);
+
     safeLog("info", "curriculum.ingest_ready", {
       sourceId,
       classId,
@@ -153,6 +155,32 @@ async function markFailed(supabase: SupabaseClient, sourceId: string, message: s
       `ingestCurriculumSource: failed to mark failed status: ${error.message}`,
       { cause: new Error(message) },
     );
+  }
+}
+
+async function markOtherClassSourcesSuperseded(
+  supabase: SupabaseClient,
+  classId: string,
+  sourceId: string,
+) {
+  const { error } = await supabase
+    .from("curriculum_sources")
+    .update({
+      status: "superseded",
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("class_id", classId)
+    .neq("id", sourceId)
+    .neq("status", "failed")
+    .neq("status", "superseded");
+
+  if (error) {
+    safeLog("error", "curriculum.supersede_old_sources_failed", {
+      classId,
+      sourceId,
+      outcome: classifySafeError(error),
+    });
   }
 }
 

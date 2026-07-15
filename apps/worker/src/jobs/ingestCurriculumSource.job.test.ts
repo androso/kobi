@@ -59,7 +59,13 @@ describe("ingestCurriculumSource job", () => {
           update(value: Record<string, unknown>) {
             updates.push(value);
             return {
-              eq: async () => ({ error: null }),
+              error: null,
+              eq() {
+                return this;
+              },
+              neq() {
+                return this;
+              },
             };
           },
         };
@@ -93,6 +99,7 @@ describe("ingestCurriculumSource job", () => {
       expect.arrayContaining([
         expect.objectContaining({ status: "processing" }),
         expect.objectContaining({ status: "ready", chunks_built: 3, page_count: 4 }),
+        expect.objectContaining({ status: "superseded" }),
       ]),
     );
   });
@@ -125,7 +132,10 @@ describe("ingestCurriculumSource job", () => {
           update(value: Record<string, unknown>) {
             updates.push(value);
             return {
-              eq: async () => ({ error: null }),
+              error: null,
+              eq() {
+                return this;
+              },
             };
           },
         };
