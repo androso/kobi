@@ -10,6 +10,7 @@ export * from "./checkpoints.js";
 export * from "./curriculumChunks.js";
 export * from "./activityBundles.js";
 export * from "./activities.js";
+export * from "./activityGenerationAttempts.js";
 export * from "./sessionActivityCandidates.js";
 export * from "./assignments.js";
 export * from "./events.js";

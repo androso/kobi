@@ -47,6 +47,7 @@ describe("generateActivityArtifacts job planning", () => {
       }),
     ]);
     expect(supabase.insertedCandidates).toHaveLength(3);
+    expect(supabase.rpcCalls).toContain("replace_session_activity_candidates");
   });
 
   it("uses one complete source set instead of mixing repository, OpenAI, and static bands", () => {
@@ -189,29 +190,36 @@ describe("generateActivityArtifacts job planning", () => {
     }
   });
 
-  it("counts new and adapted OpenAI bundle refs against the per-session quota", async () => {
-    const supabase = fakeSupabase({ openAiGenerationCount: 3 });
+  it("records failed OpenAI calls before fallback and enforces the per-session quota", async () => {
+    const supabase = fakeSupabase();
     let openAiCalls = 0;
 
-    await runGenerateActivityArtifactsJob(
-      supabase.client,
-      {
-        sessionId: "session-1",
-        lessonState,
-        curriculumMatches,
-      },
-      {
-        openAiGenerator: async () => {
-          openAiCalls += 1;
-          return { candidates: [candidate("core", "openai-core")], attempted: true, attempts: 1, errors: [] };
+    const run = () =>
+      runGenerateActivityArtifactsJob(
+        supabase.client,
+        {
+          sessionId: "session-1",
+          lessonState,
+          curriculumMatches,
         },
-        maxOpenAiGenerationsPerSession: 3,
-      },
-    );
+        {
+          openAiGenerator: async () => {
+            openAiCalls += 1;
+            throw new Error("review rejected the set");
+          },
+          maxOpenAiGenerationsPerSession: 1,
+        },
+      );
 
-    expect(openAiCalls).toBe(0);
-    expect(supabase.inFilters).toContain("source=new,adapted");
-    expect(supabase.likeFilters).toContain("activities.bundle_ref=artifact-bundles/openai/%");
+    await run();
+    await run();
+
+    expect(openAiCalls).toBe(1);
+    expect(supabase.generationAttempts).toHaveLength(1);
+    expect(supabase.generationAttempts[0]).toMatchObject({
+      session_id: "session-1",
+      provider: "openai",
+    });
   });
 
 });
@@ -334,7 +342,7 @@ function manifest(band: "support" | "core" | "challenge", title: string): Activi
 }
 
 function fakeSupabase(options: {
-  openAiGenerationCount?: number;
+  openAiAttemptCount?: number;
   segments?: LessonState[];
   repositoryRows?: RankedActivityRepositoryRow[];
 } = {}) {
@@ -346,6 +354,11 @@ function fakeSupabase(options: {
   const likeFilters: string[] = [];
   const inFilters: string[] = [];
   const activityUpserts: Array<Record<string, unknown>> = [];
+  const generationAttempts: Array<Record<string, unknown>> = Array.from(
+    { length: options.openAiAttemptCount ?? 0 },
+    (_, index) => ({ id: `attempt-${index}`, session_id: "session-1", provider: "openai" }),
+  );
+  const rpcCalls: string[] = [];
   let nextActivityId = 0;
   const state: FakeQueryState = {
     insertedCandidates,
@@ -356,7 +369,7 @@ function fakeSupabase(options: {
       nextActivityId += 1;
       return `activity-${nextActivityId}`;
     },
-    openAiGenerationCount: options.openAiGenerationCount ?? 0,
+    generationAttempts,
     segments: options.segments ?? [],
     repositoryRows: options.repositoryRows ?? [],
     activityUpserts,
@@ -366,9 +379,36 @@ function fakeSupabase(options: {
     from(table: string) {
       return new FakeQuery(table, state);
     },
+    async rpc(name: string, args: Record<string, unknown>) {
+      rpcCalls.push(name);
+      if (name === "claim_openai_activity_generation_attempt") {
+        const limit = Number(args.input_limit);
+        if (generationAttempts.length >= limit) return { data: false, error: null };
+        generationAttempts.push({
+          session_id: args.input_session_id,
+          provider: "openai",
+          activity_set_id: args.input_activity_set_id,
+        });
+        return { data: true, error: null };
+      }
+      if (name === "replace_session_activity_candidates") {
+        const candidates = Array.isArray(args.input_candidates) ? args.input_candidates : [];
+        insertedCandidates.splice(0, insertedCandidates.length, ...candidates);
+      }
+      return { data: null, error: null };
+    },
   } as unknown as SupabaseClient;
 
-  return { client, insertedCandidates, bundleRefs, likeFilters, inFilters, activityUpserts };
+  return {
+    client,
+    insertedCandidates,
+    bundleRefs,
+    likeFilters,
+    inFilters,
+    activityUpserts,
+    generationAttempts,
+    rpcCalls,
+  };
 }
 
 interface FakeQueryState {
@@ -377,7 +417,7 @@ interface FakeQueryState {
   likeFilters: string[];
   inFilters: string[];
   nextActivityId: () => string;
-  openAiGenerationCount: number;
+  generationAttempts: Array<Record<string, unknown>>;
   segments: LessonState[];
   repositoryRows: RankedActivityRepositoryRow[];
   activityUpserts: Array<Record<string, unknown>>;
@@ -475,16 +515,6 @@ class FakeQuery {
     }
 
     if (this.table === "session_activity_candidates" && this.operation === "select") {
-      if (this.selected.includes("activities!inner")) {
-        return {
-          data: Array.from({ length: this.state.openAiGenerationCount }, (_, index) => ({
-            id: `candidate-${index}`,
-            activities: { bundle_ref: `artifact-bundles/openai/${index}/index.html` },
-          })),
-          error: null,
-        };
-      }
-
       return { data: [], error: null };
     }
 

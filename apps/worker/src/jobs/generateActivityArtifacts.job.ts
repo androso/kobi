@@ -178,15 +178,19 @@ export async function runGenerateActivityArtifactsJob(
 
   let openAiCandidates: ActivityArtifactCandidate[] = [];
   if (missingBands.length > 0 && options.openAiGenerator) {
-    const generatedCount = await countGeneratedSessionCandidates(supabase, sessionId);
     const maxOpenAiGenerationsPerSession = options.maxOpenAiGenerationsPerSession ?? 3;
+    const generationAttemptClaimed = await claimOpenAiGenerationAttempt(
+      supabase,
+      sessionId,
+      activitySetId,
+      maxOpenAiGenerationsPerSession,
+    );
 
-    if (generatedCount < maxOpenAiGenerationsPerSession) {
+    if (generationAttemptClaimed) {
       try {
         console.info("[activityGenerator] requesting OpenAI candidates", {
           sessionId,
           bands: missingBands,
-          generatedCount,
           generationLimit: maxOpenAiGenerationsPerSession,
         });
         const result = await options.openAiGenerator({
@@ -257,11 +261,7 @@ export async function runGenerateActivityArtifactsJob(
     return { inserted: 0, reused: 0, generated: 0, skippedReason: "no persisted candidates" };
   }
 
-  await markSessionCandidatesSuperseded(supabase, sessionId);
-
-  for (const candidate of candidatesToInsert) {
-    await insertSessionCandidate(supabase, candidate);
-  }
+  await replaceSessionCandidates(supabase, sessionId, candidatesToInsert);
 
   const result = {
     inserted: candidatesToInsert.length,
@@ -393,22 +393,23 @@ async function hasCurrentReadyCandidates(
   return previousContext ? !hasMaterialContextChange(previousContext, nextContext) : false;
 }
 
-async function countGeneratedSessionCandidates(
+async function claimOpenAiGenerationAttempt(
   supabase: SupabaseClient,
   sessionId: string,
-): Promise<number> {
-  const { data, error } = await supabase
-    .from("session_activity_candidates")
-    .select("id, activities!inner(bundle_ref)")
-    .eq("session_id", sessionId)
-    .in("source", ["new", "adapted"])
-    .like("activities.bundle_ref", "artifact-bundles/openai/%");
+  activitySetId: string,
+  limit: number,
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("claim_openai_activity_generation_attempt", {
+    input_session_id: sessionId,
+    input_activity_set_id: activitySetId,
+    input_limit: limit,
+  });
 
   if (error) {
-    throw new Error(`generateActivityArtifacts job: failed to count generated candidates: ${error.message}`);
+    throw new Error(`generateActivityArtifacts job: failed to claim OpenAI attempt: ${error.message}`);
   }
 
-  return data?.length ?? 0;
+  return data === true;
 }
 
 function parseSessionContext(value: unknown): SessionContext | null {
@@ -467,18 +468,6 @@ function withServerDerivedCandidateFields(
     activity_set_id: candidate.activity_set_id ?? `set-${createUnguessableBundleRef("static").split("/")[1]}`,
     status: "candidate",
   };
-}
-
-async function markSessionCandidatesSuperseded(supabase: SupabaseClient, sessionId: string) {
-  const { error } = await supabase
-    .from("session_activity_candidates")
-    .update({ status: "superseded" })
-    .eq("session_id", sessionId)
-    .eq("status", "ready");
-
-  if (error) {
-    throw new Error(`generateActivityArtifacts job: failed to supersede candidates: ${error.message}`);
-  }
 }
 
 async function persistGeneratedArtifact(
@@ -582,23 +571,25 @@ function completeCandidateSet(
   return activityBands.every((band) => byBand.has(band)) ? byBand : null;
 }
 
-async function insertSessionCandidate(
+async function replaceSessionCandidates(
   supabase: SupabaseClient,
-  input: SessionCandidateToInsert,
+  sessionId: string,
+  candidates: SessionCandidateToInsert[],
 ) {
-  const { error } = await supabase.from("session_activity_candidates").insert({
-    session_id: input.sessionId,
-    activity_id: input.activityId,
-    difficulty_band: input.band,
-    status: "ready",
-    source: input.source,
-    context_snapshot: input.sessionContext,
-    evidence: input.artifact.evidence,
-    verifier_scores: input.artifact.verifier_scores,
+  const { error } = await supabase.rpc("replace_session_activity_candidates", {
+    input_session_id: sessionId,
+    input_candidates: candidates.map((candidate) => ({
+      activity_id: candidate.activityId,
+      difficulty_band: candidate.band,
+      source: candidate.source,
+      context_snapshot: candidate.sessionContext,
+      evidence: candidate.artifact.evidence,
+      verifier_scores: candidate.artifact.verifier_scores,
+    })),
   });
 
   if (error) {
-    throw new Error(`generateActivityArtifacts job: failed to store session candidate: ${error.message}`);
+    throw new Error(`generateActivityArtifacts job: failed to replace session candidates: ${error.message}`);
   }
 }
 

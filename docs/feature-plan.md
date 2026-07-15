@@ -147,4 +147,5 @@ flowchart TD
 - Use one repair retry per candidate at most.
 - Deduplicate pending jobs by session/context version.
 - Cap generation attempts per session/class before falling back to static/pre-seeded artifacts.
+- Record each OpenAI attempt before the call so failures and review rejections consume the same per-session quota, and publish replacement candidate trios atomically under a per-session lock.
 - Keep model choice configurable and validated; pricing is an operational assumption, not an implementation acceptance criterion.

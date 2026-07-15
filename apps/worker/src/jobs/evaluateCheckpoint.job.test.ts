@@ -133,6 +133,7 @@ describe("evaluateCheckpoint job", () => {
       lessonState,
       curriculumMatches,
     });
+    expect(boss.sent[0].options).toEqual({ singletonKey: "session-1" });
   });
 
   it("uses session class metadata for curriculum retrieval when job data omits it", async () => {

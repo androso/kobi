@@ -29,6 +29,9 @@ export async function getQueue(): Promise<PgBoss> {
     // jobs to them; send() otherwise silently inserts nothing (no error).
     for (const name of QUEUE_NAMES) {
       await boss.createQueue(name);
+      if (name === JOB_GENERATE_ACTIVITY_ARTIFACTS) {
+        await boss.updateQueue(name, { name, policy: "singleton" });
+      }
     }
   }
   return boss;

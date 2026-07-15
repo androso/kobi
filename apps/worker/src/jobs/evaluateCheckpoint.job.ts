@@ -130,12 +130,16 @@ export async function runEvaluateCheckpointJob(
     unit: retrievalContext.unit,
   });
 
-  await boss.send(JOB_GENERATE_ACTIVITY_ARTIFACTS, buildGenerateActivityArtifactsJobData({
-    sessionId,
-    lessonState: latestLessonState,
-    curriculumMatches,
-    curriculumFallback: retrievalContext,
-  }));
+  await boss.send(
+    JOB_GENERATE_ACTIVITY_ARTIFACTS,
+    buildGenerateActivityArtifactsJobData({
+      sessionId,
+      lessonState: latestLessonState,
+      curriculumMatches,
+      curriculumFallback: retrievalContext,
+    }),
+    { singletonKey: sessionId },
+  );
 
   return { evaluated: true, ready: true, skippedReason: null };
 }

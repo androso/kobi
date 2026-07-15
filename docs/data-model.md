@@ -44,6 +44,15 @@ curriculum_chunks (standalone, Area B)
   id, grade, subject, unit, objective_code, text, embedding vector(768), created_at
   + ivfflat index, match_curriculum_chunks() RPC
 
+activity_generation_attempts
+  id (uuid, PK)
+  session_id (FK -> sessions.id)
+  provider (openai)
+  activity_set_id
+  created_at
+  unique(session_id, activity_set_id, provider)
+  -- durable spend-control ledger; failed and rejected calls still consume quota
+
 activity_bundles
   ref (text, PK)
   index_html, checksum, created_at
@@ -76,6 +85,9 @@ session_activity_candidates
   source (seeded|reused|adapted|new)
   context_snapshot, evidence, verifier_scores (jsonb)
   created_at, approved_at
+  + replace_session_activity_candidates() RPC publishes one complete three-band set
+    atomically under a per-session advisory lock
+
       │
       │ 1—N
       ▼
