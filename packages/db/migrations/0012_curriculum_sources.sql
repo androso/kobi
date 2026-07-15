@@ -13,11 +13,14 @@ do $$ begin
     'uploaded',
     'processing',
     'ready',
-    'failed'
+    'failed',
+    'superseded'
   );
 exception
   when duplicate_object then null;
 end $$;
+
+alter type curriculum_source_status add value if not exists 'superseded';
 
 create table if not exists curriculum_sources (
   id uuid primary key default gen_random_uuid() not null,
@@ -186,7 +189,8 @@ begin
       and source_document = p_source_document;
   else
     delete from curriculum_chunks
-    where class_id = p_class_id;
+    where class_id = p_class_id
+      and source_document = p_source_document;
   end if;
 
   insert into curriculum_chunks (

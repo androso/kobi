@@ -33,4 +33,5 @@ export const curriculumSourceStatusEnum = pgEnum("curriculum_source_status", [
   "processing",
   "ready",
   "failed",
+  "superseded",
 ]);

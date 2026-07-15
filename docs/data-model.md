@@ -42,7 +42,7 @@ student_profiles                audio_chunks     segments    checkpoints
 
 curriculum_sources (Area B teacher-fed material)
   id, class_id (FK -> classes.id), source_document, original_filename, content_type,
-  size_bytes, storage_path, status (pending_upload|uploaded|processing|ready|failed),
+  size_bytes, storage_path, status (pending_upload|uploaded|processing|ready|failed|superseded),
   error_message, page_count, chunks_built, created_at, updated_at
 
 curriculum_chunks (standalone / class-scoped, Area B)
