@@ -86,7 +86,7 @@ export function pickLegacyActivitySet(
 
   for (const row of rows) {
     if (row.activity_set_id || row.rank_score < minimumScore) continue;
-    const key = curriculumKey(row);
+    const key = legacyCoherenceKey(row);
     const current = setsByCurriculum.get(key) ?? [];
     current.push(row);
     setsByCurriculum.set(key, current);
@@ -130,9 +130,16 @@ function bestRowPerBand(rows: RankedActivityRepositoryRow[]): RankedActivityRepo
   });
 }
 
-function curriculumKey(row: ActivityRepositoryRow): string {
+function legacyCoherenceKey(row: ActivityRepositoryRow): string {
   const { grade, subject, unit, objective } = row.manifest.curriculum;
-  return JSON.stringify([grade, subject, unit, objective]);
+  return JSON.stringify([
+    grade,
+    subject,
+    unit,
+    objective,
+    row.manifest.family,
+    row.manifest.mechanic ?? null,
+  ]);
 }
 
 function activitySearchText(row: ActivityRepositoryRow): string {

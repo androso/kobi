@@ -44,7 +44,7 @@ Produced by the planner/generator, checked by the verifier, stored in `activitie
 
 For the teacher approval flow, Area C writes support/core/challenge rows to `session_activity_candidates`. The teacher may assign selected students to support or challenge; every unselected student receives the approved core candidate by default. Area E records the final per-student delivery in `assignments.variant`.
 
-Repository reuse prefers complete strong sets sharing one `activity_set_id`. Pre-set-id verified rows remain eligible only when a complete support/core/challenge trio clears the strong-reuse threshold and shares the exact grade, subject, unit, and objective; rows from different curriculum targets are never combined into a legacy fallback set.
+Repository reuse prefers complete strong sets sharing one `activity_set_id`. Pre-set-id verified rows remain eligible only when a complete support/core/challenge trio clears the strong-reuse threshold and shares the exact grade, subject, unit, objective, family, and mechanic signature; unrelated legacy interactions are never combined into a fallback set.
 
 Assignment rows are only valid for approved candidates from the same session: `assignments.candidate_id`, `activity_id`, and `variant` must match the selected `session_activity_candidates` row, and the assigned student must belong to the session's class.
 

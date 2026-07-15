@@ -548,16 +548,23 @@ function completeRepositorySet(
   const activitySetIds = rows.map((row) => row.activity_set_id);
   const namedSetIds = activitySetIds.filter((activitySetId): activitySetId is string => Boolean(activitySetId));
   const isNamedSet = namedSetIds.length === rows.length && new Set(namedSetIds).size === 1;
-  const isLegacySet = namedSetIds.length === 0 && new Set(rows.map(repositoryCurriculumKey)).size === 1;
+  const isLegacySet = namedSetIds.length === 0 && new Set(rows.map(repositoryLegacyCoherenceKey)).size === 1;
   if (!isNamedSet && !isLegacySet) return null;
 
   const byBand = new Map(rows.map((row) => [row.manifest.difficulty_band, row] as const));
   return activityBands.every((band) => byBand.has(band)) ? byBand : null;
 }
 
-function repositoryCurriculumKey(row: RankedActivityRepositoryRow): string {
+function repositoryLegacyCoherenceKey(row: RankedActivityRepositoryRow): string {
   const { grade, subject, unit, objective } = row.manifest.curriculum;
-  return JSON.stringify([grade, subject, unit, objective]);
+  return JSON.stringify([
+    grade,
+    subject,
+    unit,
+    objective,
+    row.manifest.family,
+    row.manifest.mechanic ?? null,
+  ]);
 }
 
 function completeCandidateSet(

@@ -32,6 +32,22 @@ describe("legacy activity repository reuse", () => {
     expect(pickLegacyActivitySet(rows)).toEqual([]);
   });
 
+  it("does not combine legacy bands with different families or mechanics", () => {
+    const mixedFamilies = [
+      repositoryRow("support", 0.91),
+      repositoryRow("core", 0.89),
+      repositoryRow("challenge", 0.9, "L7.4.2", { family: "sequence_order" }),
+    ];
+    const mixedMechanics = [
+      repositoryRow("support", 0.91, "L7.4.2", { mechanic: "sorting_board" }),
+      repositoryRow("core", 0.89, "L7.4.2", { mechanic: "sorting_board" }),
+      repositoryRow("challenge", 0.9, "L7.4.2", { mechanic: "matching_pairs" }),
+    ];
+
+    expect(pickLegacyActivitySet(mixedFamilies)).toEqual([]);
+    expect(pickLegacyActivitySet(mixedMechanics)).toEqual([]);
+  });
+
   it("does not treat named-set rows as legacy fallback rows", () => {
     const rows = [
       { ...repositoryRow("support", 0.91), activity_set_id: "set-a" },
@@ -47,17 +63,17 @@ function repositoryRow(
   band: DifficultyBand,
   rankScore: number,
   objective = "L7.4.2",
+  plan: {
+    family?: "match_classify" | "sequence_order" | "guided_practice";
+    mechanic?: "sorting_board" | "matching_pairs";
+  } = {},
 ): RankedActivityRepositoryRow {
   return {
     id: `legacy-${objective}-${band}`,
     contract_version: ACTIVITY_ARTIFACT_CONTRACT_VERSION,
     manifest: {
-      family:
-        band === "support"
-          ? "match_classify"
-          : band === "challenge"
-            ? "sequence_order"
-            : "guided_practice",
+      family: plan.family ?? "match_classify",
+      ...(plan.mechanic ? { mechanic: plan.mechanic } : {}),
       title: `Legacy ${band}`,
       difficulty_band: band,
       curriculum: { grade: 7, subject: "lenguaje", unit: "U4", objective },
