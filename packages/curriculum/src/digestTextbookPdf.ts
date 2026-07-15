@@ -1,23 +1,33 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { embedText } from "./embedCurriculumChunk.js";
-import type { CurriculumChunkInput } from "./types.js";
+import { replaceCurriculumSource } from "./replaceCurriculumSource.js";
+import type { CurriculumChunkInput, CurriculumChunkRow } from "./types.js";
 
 export interface DigestTextbookPdfInput {
-  sourcePath: string;
+  /** Local path for CLI/dev only. Prefer `pdfBytes` for the product path. */
+  sourcePath?: string;
+  /** Product path: PDF bytes already loaded from storage. */
+  pdfBytes?: Uint8Array;
   grade: number;
   subject: string;
   sourceDocument?: string;
+  classId?: string;
   unit?: string;
   pageStart?: number;
   pageEnd?: number;
+  /** Always true for product ingest; kept for CLI dry-run compatibility. */
   replaceSource?: boolean;
   dryRun?: boolean;
   minTextPageCoverage?: number;
   embedConcurrency?: number;
   insertBatchSize?: number;
+  maxPages?: number;
+  maxBytes?: number;
+  maxChunks?: number;
 }
 
 export interface DigestTextbookPdfResult {
@@ -41,14 +51,15 @@ export interface TextChunkBuildOptions {
   grade: number;
   subject: string;
   sourceDocument: string;
+  classId?: string;
   forcedUnit?: string;
-  targetWords?: number;
-  maxWords?: number;
+  chunkSize?: number;
+  chunkOverlap?: number;
 }
 
 interface PdfTextExtractor {
-  pageCount(sourcePath: string): Promise<number>;
-  extractPage(sourcePath: string, pageNumber: number): Promise<string>;
+  pageCount(): Promise<number>;
+  extractPage(pageNumber: number): Promise<string>;
   close?(): Promise<void>;
 }
 
@@ -60,10 +71,11 @@ interface TextParagraph {
 }
 
 interface NormalizedDigestInput {
-  sourcePath: string;
+  pdfBytes: Uint8Array;
   grade: number;
   subject: string;
   sourceDocument: string;
+  classId?: string;
   unit?: string;
   pageStart?: number;
   pageEnd?: number;
@@ -72,23 +84,37 @@ interface NormalizedDigestInput {
   minTextPageCoverage: number;
   embedConcurrency: number;
   insertBatchSize: number;
+  maxPages: number;
+  maxBytes: number;
+  maxChunks: number;
 }
 
-const DEFAULT_TARGET_WORDS = 240;
-const DEFAULT_MAX_WORDS = 320;
+const DEFAULT_CHUNK_SIZE = 1_000;
+const DEFAULT_CHUNK_OVERLAP = 200;
+const TEXT_SPLIT_SEPARATORS = ["\n\n", "\n", " ", ""];
 const DEFAULT_MIN_TEXT_PAGE_COVERAGE = 0.8;
-const DEFAULT_EMBED_CONCURRENCY = 3;
+const DEFAULT_EMBED_CONCURRENCY = 2;
 const DEFAULT_INSERT_BATCH_SIZE = 50;
+const DEFAULT_MAX_PAGES = 100;
+const DEFAULT_MAX_BYTES = 100 * 1024 * 1024;
+const DEFAULT_MAX_CHUNKS = 1_000;
+const EMBEDDING_DIMENSIONS = 768;
 
 export async function digestTextbookPdf(
   supabase: SupabaseClient,
   input: DigestTextbookPdfInput,
 ): Promise<DigestTextbookPdfResult> {
-  const normalized = normalizeDigestInput(input);
-  const extractor = await createPdfJsTextExtractor();
+  const normalized = await normalizeDigestInput(input);
+  if (normalized.pdfBytes.byteLength > normalized.maxBytes) {
+    throw new Error(
+      `digestTextbookPdf: PDF exceeds maxBytes ${normalized.maxBytes} (${normalized.pdfBytes.byteLength} bytes)`,
+    );
+  }
+
+  const extractor = await createPdfJsTextExtractor(normalized.pdfBytes);
 
   try {
-    const pageCount = await extractor.pageCount(normalized.sourcePath);
+    const pageCount = await extractor.pageCount();
     const pageStart = normalized.pageStart ?? 1;
     const pageEnd = normalized.pageEnd ?? pageCount;
 
@@ -101,11 +127,16 @@ export async function digestTextbookPdf(
     if (pageStart > pageEnd) {
       throw new Error("digestTextbookPdf: pageStart must be less than or equal to pageEnd");
     }
+    if (pageEnd - pageStart + 1 > normalized.maxPages) {
+      throw new Error(
+        `digestTextbookPdf: selected page span exceeds maxPages ${normalized.maxPages}`,
+      );
+    }
 
     const pages: ExtractedPdfPage[] = [];
     let pagesWithText = 0;
     for (let pageNumber = pageStart; pageNumber <= pageEnd; pageNumber += 1) {
-      const text = normalizePdfText(await extractor.extractPage(normalized.sourcePath, pageNumber));
+      const text = normalizePdfText(await extractor.extractPage(pageNumber));
       if (text) pagesWithText += 1;
       pages.push({ pageNumber, text });
     }
@@ -115,28 +146,37 @@ export async function digestTextbookPdf(
     if (textCoverage < normalized.minTextPageCoverage) {
       throw new Error(
         `digestTextbookPdf: only ${Math.round(textCoverage * 100)}% of selected pages yielded text; ` +
-          "this looks like a scanned PDF and needs OCR before ingestion.",
+          "this looks like a scanned PDF and needs OCR before ingestion (OCR_REQUIRED).",
       );
     }
 
-    const chunks = buildCurriculumChunksFromPages(pages, {
+    const chunks = await buildCurriculumChunksFromPages(pages, {
       grade: normalized.grade,
       subject: normalized.subject,
       sourceDocument: normalized.sourceDocument,
+      classId: normalized.classId,
       forcedUnit: normalized.unit,
     });
+
+    if (chunks.length > normalized.maxChunks) {
+      throw new Error(
+        `digestTextbookPdf: built ${chunks.length} chunks which exceeds maxChunks ${normalized.maxChunks}`,
+      );
+    }
 
     if (normalized.dryRun) {
       return buildResult(normalized.sourceDocument, pageCount, pagesRead, pagesWithText, chunks, 0, true);
     }
 
-    if (normalized.replaceSource) {
-      await deleteExistingSource(supabase, normalized.sourceDocument);
-    }
-
-    const inserted = await embedAndUpsertChunks(supabase, chunks, {
+    const rows = await embedChunks(chunks, {
       embedConcurrency: normalized.embedConcurrency,
       insertBatchSize: normalized.insertBatchSize,
+    });
+
+    const inserted = await replaceCurriculumSource(supabase, {
+      sourceDocument: normalized.sourceDocument,
+      classId: normalized.classId,
+      rows,
     });
 
     return buildResult(normalized.sourceDocument, pageCount, pagesRead, pagesWithText, chunks, inserted, false);
@@ -145,15 +185,16 @@ export async function digestTextbookPdf(
   }
 }
 
-export function buildCurriculumChunksFromPages(
+export async function buildCurriculumChunksFromPages(
   pages: ExtractedPdfPage[],
   options: TextChunkBuildOptions,
-): CurriculumChunkInput[] {
+): Promise<CurriculumChunkInput[]> {
   const grade = options.grade;
   const subject = normalizeSubject(options.subject);
   const sourceDocument = options.sourceDocument.trim();
-  const targetWords = options.targetWords ?? DEFAULT_TARGET_WORDS;
-  const maxWords = options.maxWords ?? DEFAULT_MAX_WORDS;
+  const classId = options.classId?.trim() || null;
+  const chunkSize = options.chunkSize ?? DEFAULT_CHUNK_SIZE;
+  const chunkOverlap = options.chunkOverlap ?? DEFAULT_CHUNK_OVERLAP;
 
   if (!Number.isInteger(grade) || grade <= 0) {
     throw new Error("buildCurriculumChunksFromPages: grade must be a positive integer");
@@ -164,80 +205,83 @@ export function buildCurriculumChunksFromPages(
   if (!sourceDocument) {
     throw new Error("buildCurriculumChunksFromPages: sourceDocument is required");
   }
+  if (!Number.isInteger(chunkSize) || chunkSize <= 0) {
+    throw new Error("buildCurriculumChunksFromPages: chunkSize must be a positive integer");
+  }
+  if (!Number.isInteger(chunkOverlap) || chunkOverlap < 0 || chunkOverlap >= chunkSize) {
+    throw new Error(
+      "buildCurriculumChunksFromPages: chunkOverlap must be a non-negative integer smaller than chunkSize",
+    );
+  }
 
   const paragraphs = collectParagraphs(pages, options.forcedUnit);
   const chunks: CurriculumChunkInput[] = [];
-  let chunkTexts: TextParagraph[] = [];
-  let currentWordCount = 0;
+  const chunkIndexesByUnit = new Map<string, number>();
+  const textSplitter = new RecursiveCharacterTextSplitter({
+    chunkSize,
+    chunkOverlap,
+    separators: TEXT_SPLIT_SEPARATORS,
+    keepSeparator: true,
+  });
 
-  function flush() {
-    if (chunkTexts.length === 0) return;
-    const text = chunkTexts.map((paragraph) => paragraph.text).join("\n\n").trim();
-    if (!text) {
-      chunkTexts = [];
-      currentWordCount = 0;
-      return;
-    }
-
-    const first = chunkTexts[0]!;
-    const last = chunkTexts.at(-1)!;
+  for (const group of groupParagraphsByPageAndUnit(paragraphs)) {
+    const first = group[0]!;
+    const last = group.at(-1)!;
     const unit = first.unit;
-    const chunkIndex = chunks.filter((chunk) => chunk.unit === unit).length;
-    const sourcePageStart = first.pageNumber;
-    const sourcePageEnd = last.pageNumber;
+    const sourcePage = first.pageNumber;
     const sectionTitle = first.sectionTitle ?? last.sectionTitle ?? null;
+    const pageText = group.map((paragraph) => paragraph.text).join("\n\n").trim();
+    const splitTexts = await textSplitter.splitText(pageText);
 
-    chunks.push({
-      grade,
-      subject,
-      unit,
-      objective_code: buildObjectiveCode({ grade, subject, unit, sourcePageStart, chunkIndex }),
-      text,
-      source_document: sourceDocument,
-      source_page_start: sourcePageStart,
-      source_page_end: sourcePageEnd,
-      section_title: sectionTitle,
-      chunk_index: chunkIndex,
-      content_hash: hashChunk({ sourceDocument, grade, subject, unit, sourcePageStart, chunkIndex, text }),
-    });
+    for (const splitText of splitTexts) {
+      const text = splitText.trim();
+      if (!text) continue;
 
-    chunkTexts = [];
-    currentWordCount = 0;
+      const chunkIndex = chunkIndexesByUnit.get(unit) ?? 0;
+      chunks.push({
+        grade,
+        subject,
+        unit,
+        objective_code: buildObjectiveCode({ grade, subject, unit, sourcePageStart: sourcePage, chunkIndex }),
+        text,
+        class_id: classId,
+        source_document: sourceDocument,
+        source_page_start: sourcePage,
+        source_page_end: sourcePage,
+        section_title: sectionTitle,
+        chunk_index: chunkIndex,
+        content_hash: hashChunk({
+          sourceDocument,
+          classId,
+          grade,
+          subject,
+          unit,
+          sourcePageStart: sourcePage,
+          chunkIndex,
+          text,
+        }),
+      });
+      chunkIndexesByUnit.set(unit, chunkIndex + 1);
+    }
   }
 
-  for (const paragraph of paragraphs.flatMap((paragraph) => splitLongParagraph(paragraph, maxWords))) {
-    const words = countWords(paragraph.text);
-    const nextUnit = chunkTexts[0]?.unit;
-    const unitChanged = nextUnit !== undefined && nextUnit !== paragraph.unit;
-    const wouldExceedMax = currentWordCount >= 40 && currentWordCount + words > maxWords;
-    if (unitChanged || wouldExceedMax) {
-      flush();
-    }
-
-    chunkTexts.push(paragraph);
-    currentWordCount += words;
-
-    if (currentWordCount >= targetWords) {
-      flush();
-    }
-  }
-
-  flush();
   return chunks;
 }
 
-function splitLongParagraph(paragraph: TextParagraph, maxWords: number): TextParagraph[] {
-  const words = paragraph.text.split(/\s+/).filter(Boolean);
-  if (words.length <= maxWords) return [paragraph];
+function groupParagraphsByPageAndUnit(paragraphs: TextParagraph[]): TextParagraph[][] {
+  const groups: TextParagraph[][] = [];
 
-  const parts: TextParagraph[] = [];
-  for (let index = 0; index < words.length; index += maxWords) {
-    parts.push({
-      ...paragraph,
-      text: words.slice(index, index + maxWords).join(" "),
-    });
+  for (const paragraph of paragraphs) {
+    const current = groups.at(-1);
+    const first = current?.[0];
+    if (!current || first?.pageNumber !== paragraph.pageNumber || first.unit !== paragraph.unit) {
+      groups.push([paragraph]);
+    } else {
+      current.push(paragraph);
+    }
   }
-  return parts;
+
+  return groups;
 }
 
 export function normalizePdfText(text: string): string {
@@ -319,6 +363,7 @@ function buildObjectiveCode(input: {
 
 function hashChunk(input: {
   sourceDocument: string;
+  classId: string | null;
   grade: number;
   subject: string;
   unit: string;
@@ -326,45 +371,28 @@ function hashChunk(input: {
   chunkIndex: number;
   text: string;
 }): string {
-  return createHash("sha256")
-    .update(JSON.stringify(input))
-    .digest("hex");
+  return createHash("sha256").update(JSON.stringify(input)).digest("hex");
 }
 
-async function embedAndUpsertChunks(
-  supabase: SupabaseClient,
+async function embedChunks(
   chunks: CurriculumChunkInput[],
   options: { embedConcurrency: number; insertBatchSize: number },
-): Promise<number> {
-  let inserted = 0;
+): Promise<CurriculumChunkRow[]> {
+  const rows: CurriculumChunkRow[] = [];
   for (let index = 0; index < chunks.length; index += options.insertBatchSize) {
     const batch = chunks.slice(index, index + options.insertBatchSize);
-    const rows = await mapWithConcurrency(batch, options.embedConcurrency, async (chunk) => ({
-      ...chunk,
-      embedding: await embedText(chunk.text, "RETRIEVAL_DOCUMENT"),
-    }));
-
-    const { error } = await supabase
-      .from("curriculum_chunks")
-      .upsert(rows, { onConflict: "content_hash" });
-    if (error) {
-      throw new Error(`digestTextbookPdf: failed to upsert curriculum_chunks: ${error.message}`);
-    }
-
-    inserted += rows.length;
+    const embedded = await mapWithConcurrency(batch, options.embedConcurrency, async (chunk) => {
+      const embedding = await embedText(chunk.text, "RETRIEVAL_DOCUMENT");
+      if (embedding.length !== EMBEDDING_DIMENSIONS) {
+        throw new Error(
+          `digestTextbookPdf: embedding length ${embedding.length} != ${EMBEDDING_DIMENSIONS}`,
+        );
+      }
+      return { ...chunk, embedding };
+    });
+    rows.push(...embedded);
   }
-
-  return inserted;
-}
-
-async function deleteExistingSource(supabase: SupabaseClient, sourceDocument: string): Promise<void> {
-  const { error } = await supabase
-    .from("curriculum_chunks")
-    .delete()
-    .eq("source_document", sourceDocument);
-  if (error) {
-    throw new Error(`digestTextbookPdf: failed to delete existing source rows: ${error.message}`);
-  }
+  return rows;
 }
 
 async function mapWithConcurrency<T, R>(
@@ -411,14 +439,13 @@ function buildResult(
   };
 }
 
-function normalizeDigestInput(input: DigestTextbookPdfInput): NormalizedDigestInput {
-  const sourcePath = path.resolve(input.sourcePath);
-  const sourceDocument = (input.sourceDocument ?? path.basename(sourcePath, path.extname(sourcePath))).trim();
+async function normalizeDigestInput(input: DigestTextbookPdfInput): Promise<NormalizedDigestInput> {
   const subject = normalizeSubject(input.subject);
+  const sourceDocument = (
+    input.sourceDocument ??
+    (input.sourcePath ? path.basename(input.sourcePath, path.extname(input.sourcePath)) : "")
+  ).trim();
 
-  if (!sourcePath) {
-    throw new Error("digestTextbookPdf: sourcePath is required");
-  }
   if (!Number.isInteger(input.grade) || input.grade <= 0) {
     throw new Error("digestTextbookPdf: grade must be a positive integer");
   }
@@ -429,28 +456,36 @@ function normalizeDigestInput(input: DigestTextbookPdfInput): NormalizedDigestIn
     throw new Error("digestTextbookPdf: sourceDocument is required");
   }
 
+  let pdfBytes = input.pdfBytes;
+  if (!pdfBytes) {
+    if (!input.sourcePath?.trim()) {
+      throw new Error("digestTextbookPdf: pdfBytes or sourcePath is required");
+    }
+    pdfBytes = new Uint8Array(await readFile(path.resolve(input.sourcePath)));
+  }
+
   return {
-    sourcePath,
+    pdfBytes,
     grade: input.grade,
     subject,
     sourceDocument,
+    classId: input.classId?.trim() || undefined,
     unit: input.unit?.trim() || undefined,
     pageStart: input.pageStart ?? 1,
     pageEnd: input.pageEnd,
-    replaceSource: input.replaceSource ?? false,
+    replaceSource: input.replaceSource ?? true,
     dryRun: input.dryRun ?? false,
     minTextPageCoverage: input.minTextPageCoverage ?? DEFAULT_MIN_TEXT_PAGE_COVERAGE,
     embedConcurrency: input.embedConcurrency ?? DEFAULT_EMBED_CONCURRENCY,
     insertBatchSize: input.insertBatchSize ?? DEFAULT_INSERT_BATCH_SIZE,
+    maxPages: input.maxPages ?? DEFAULT_MAX_PAGES,
+    maxBytes: input.maxBytes ?? DEFAULT_MAX_BYTES,
+    maxChunks: input.maxChunks ?? DEFAULT_MAX_CHUNKS,
   };
 }
 
 function normalizeSubject(subject: string): string {
   return subject.trim().toLocaleLowerCase("es-SV");
-}
-
-function countWords(text: string): number {
-  return text.split(/\s+/).filter(Boolean).length;
 }
 
 function isLikelyPageNoise(text: string): boolean {
@@ -459,41 +494,24 @@ function isLikelyPageNoise(text: string): boolean {
   return false;
 }
 
-async function createPdfJsTextExtractor(): Promise<PdfTextExtractor> {
+async function createPdfJsTextExtractor(pdfBytes: Uint8Array): Promise<PdfTextExtractor> {
   const pdfjs = await importPdfJs();
-  let loadingTask: { promise: Promise<PdfDocument>; destroy?: () => Promise<void> } | null = null;
-  let document: PdfDocument | null = null;
-  let loadedPath: string | null = null;
-
-  async function load(sourcePath: string): Promise<PdfDocument> {
-    if (document && loadedPath === sourcePath) return document;
-    if (loadingTask) await loadingTask.destroy?.();
-
-    const data = new Uint8Array(await readFile(sourcePath));
-    loadingTask = pdfjs.getDocument({ data, disableWorker: true });
-    document = await loadingTask.promise;
-    loadedPath = sourcePath;
-    return document;
-  }
+  const loadingTask = pdfjs.getDocument({ data: pdfBytes, disableWorker: true });
+  const document = await loadingTask.promise;
 
   return {
-    async pageCount(sourcePath: string) {
-      const pdf = await load(sourcePath);
-      return pdf.numPages;
+    async pageCount() {
+      return document.numPages;
     },
-    async extractPage(sourcePath: string, pageNumber: number) {
-      const pdf = await load(sourcePath);
-      const page = await pdf.getPage(pageNumber);
+    async extractPage(pageNumber: number) {
+      const page = await document.getPage(pageNumber);
       const content = await page.getTextContent();
       return content.items
         .map((item) => ("str" in item && typeof item.str === "string" ? item.str : ""))
         .join("\n");
     },
     async close() {
-      await loadingTask?.destroy?.();
-      document = null;
-      loadingTask = null;
-      loadedPath = null;
+      await loadingTask.destroy?.();
     },
   };
 }
