@@ -44,11 +44,13 @@ export function buildGenerateActivityArtifactsJobData(input: {
   sessionId: string;
   lessonState: LessonState;
   curriculumMatches: CurriculumMatch[];
+  curriculumFallback?: { grade: number; subject: string; unit?: string };
 }) {
   return {
     sessionId: input.sessionId,
     lessonState: input.lessonState,
     curriculumMatches: input.curriculumMatches,
+    ...(input.curriculumFallback ? { curriculumFallback: input.curriculumFallback } : {}),
   };
 }
 
@@ -132,6 +134,7 @@ export async function runEvaluateCheckpointJob(
     sessionId,
     lessonState: latestLessonState,
     curriculumMatches,
+    curriculumFallback: retrievalContext,
   }));
 
   return { evaluated: true, ready: true, skippedReason: null };

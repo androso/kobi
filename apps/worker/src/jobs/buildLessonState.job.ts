@@ -30,55 +30,99 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
       if (!job) return;
 
       const { sessionId } = job.data;
+      const startedAt = Date.now();
+      let stage = "loading transcribed chunks";
+      console.info("[buildLessonState] job started", { sessionId, jobId: job.id });
 
-      const { data: chunks, error: chunksError } = await supabase
-        .from("audio_chunks")
-        .select("transcript_text")
-        .eq("session_id", sessionId)
-        .eq("status", "transcribed")
-        .order("chunk_index", { ascending: false })
-        .limit(2);
+      try {
+        const { data: chunks, error: chunksError } = await supabase
+          .from("audio_chunks")
+          .select("transcript_text")
+          .eq("session_id", sessionId)
+          .eq("status", "transcribed")
+          .order("chunk_index", { ascending: false })
+          .limit(2);
 
-      if (chunksError) {
-        throw new Error(`buildLessonState job: failed to load chunks: ${chunksError.message}`);
-      }
+        if (chunksError) {
+          throw new Error(`buildLessonState job: failed to load chunks: ${chunksError.message}`);
+        }
 
-      const transcriptText = (chunks ?? [])
-        .map((chunk) => chunk.transcript_text)
-        .filter(Boolean)
-        .reverse()
-        .join("\n");
+        const transcriptText = (chunks ?? [])
+          .map((chunk) => chunk.transcript_text)
+          .filter(Boolean)
+          .reverse()
+          .join("\n");
 
-      if (!transcriptText) return;
+        if (!transcriptText) {
+          console.warn("[buildLessonState] skipped because recent chunks have no transcript", {
+            sessionId,
+            jobId: job.id,
+            chunkCount: chunks?.length ?? 0,
+          });
+          return;
+        }
 
-      const { data: previousSegment, error: previousSegmentError } = await supabase
-        .from("segments")
-        .select("lesson_state")
-        .eq("session_id", sessionId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        stage = "loading previous lesson_state";
+        const { data: previousSegment, error: previousSegmentError } = await supabase
+          .from("segments")
+          .select("lesson_state")
+          .eq("session_id", sessionId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      if (previousSegmentError) {
-        throw new Error(
-          `buildLessonState job: failed to load previous segment: ${previousSegmentError.message}`,
-        );
-      }
+        if (previousSegmentError) {
+          throw new Error(
+            `buildLessonState job: failed to load previous segment: ${previousSegmentError.message}`,
+          );
+        }
 
-      const lessonState: LessonState = await buildLessonState({
-        transcriptText,
-        previousLessonState: (previousSegment?.lesson_state as LessonState) ?? null,
-      });
+        stage = "calling lesson-state model";
+        console.info("[buildLessonState] requesting structured lesson_state", {
+          sessionId,
+          jobId: job.id,
+          transcriptChars: transcriptText.length,
+          hasPreviousLessonState: Boolean(previousSegment?.lesson_state),
+          provider: process.env.LESSON_STATE_PROVIDER ?? "openai",
+          model: process.env.LESSON_STATE_MODEL ?? "provider default",
+        });
+        const lessonState: LessonState = await buildLessonState({
+          transcriptText,
+          previousLessonState: (previousSegment?.lesson_state as LessonState) ?? null,
+        });
 
-      const { error: segmentError } = await supabase.from("segments").insert({
-        session_id: sessionId,
-        lesson_state: lessonState,
-        confidence: lessonState.confidence,
-        transcript_summary: lessonState.transcript_summary,
-      });
+        stage = "inserting lesson_state segment";
+        const { data: segment, error: segmentError } = await supabase
+          .from("segments")
+          .insert({
+            session_id: sessionId,
+            lesson_state: lessonState,
+            confidence: lessonState.confidence,
+            transcript_summary: lessonState.transcript_summary,
+          })
+          .select("id")
+          .single();
 
-      if (segmentError) {
-        throw new Error(`buildLessonState job: failed to insert segment: ${segmentError.message}`);
+        if (segmentError) {
+          throw new Error(`buildLessonState job: failed to insert segment: ${segmentError.message}`);
+        }
+        console.info("[buildLessonState] lesson_state persisted", {
+          sessionId,
+          jobId: job.id,
+          segmentId: segment.id,
+          topic: lessonState.topic,
+          confidence: lessonState.confidence,
+          durationMs: Date.now() - startedAt,
+        });
+      } catch (error) {
+        console.error("[buildLessonState] job failed", {
+          sessionId,
+          jobId: job.id,
+          stage,
+          durationMs: Date.now() - startedAt,
+          error: error instanceof Error ? error.stack ?? error.message : error,
+        });
+        throw error;
       }
     },
   );

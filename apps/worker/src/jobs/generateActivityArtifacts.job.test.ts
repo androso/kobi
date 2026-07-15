@@ -15,8 +15,9 @@ import {
 } from "./generateActivityArtifacts.job.js";
 
 describe("generateActivityArtifacts job planning", () => {
-  it("skips generation when retrieval returns no curriculum matches", async () => {
+  it("generates from lesson_state when retrieval returns no curriculum matches", async () => {
     const supabase = fakeSupabase();
+    let receivedMatches: CurriculumMatch[] = [];
 
     const result = await runGenerateActivityArtifactsJob(
       supabase.client,
@@ -24,21 +25,28 @@ describe("generateActivityArtifacts job planning", () => {
         sessionId: "session-1",
         lessonState,
         curriculumMatches: [],
+        curriculumFallback: { grade: 7, subject: "matematicas", unit: "algebra" },
       },
       {
-        openAiGenerator: async () => {
-          throw new Error("generator should not be called without curriculum matches");
+        openAiGenerator: async (input) => {
+          receivedMatches = input.curriculumMatches;
+          return { candidates: [], attempted: true, attempts: 1, errors: [] };
         },
       },
     );
 
-    expect(result).toEqual({
-      inserted: 0,
-      reused: 0,
-      generated: 0,
-      skippedReason: "no curriculum matches",
-    });
-    expect(supabase.insertedCandidates).toHaveLength(0);
+    expect(result.inserted).toBe(3);
+    expect(result.skippedReason).toBeNull();
+    expect(receivedMatches).toEqual([
+      expect.objectContaining({
+        objective_code: "UNMAPPED_LESSON_STATE",
+        grade: 7,
+        subject: "matematicas",
+        unit: "algebra",
+        similarity: 0,
+      }),
+    ]);
+    expect(supabase.insertedCandidates).toHaveLength(3);
   });
 
   it("uses reusable activities first, OpenAI candidates for missing bands, then static fallback", () => {

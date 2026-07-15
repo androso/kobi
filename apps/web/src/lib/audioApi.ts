@@ -4,6 +4,9 @@ const rawApiUrl = import.meta.env.VITE_KOBI_API_URL?.replace(/\/$/, "") ?? "";
 const API_URL = rawApiUrl || (import.meta.env.DEV ? "http://localhost:8787" : "");
 const DEMO_CLASS_ID = import.meta.env.VITE_KOBI_DEMO_CLASS_ID ?? "";
 const PROJECT_MODE = import.meta.env.VITE_KOBI_PROJECT_MODE ?? "live";
+const LESSON_STATE_RETRY_MS = 10_000;
+const LESSON_STATE_TIMEOUT_MS = 20 * 60_000;
+const LESSON_STATE_PENDING_ERROR = "No lesson_state is available for this session yet.";
 
 function logAudioApi(message: string, details?: Record<string, unknown>) {
   if (!import.meta.env.DEV) return;
@@ -228,17 +231,31 @@ export async function requestActivityCandidates({ sessionId }: RequestActivityCa
     sessionId,
   });
 
-  const response = await fetch(`${API_URL}/api/sessions/${sessionId}/activity-candidates`, {
-    method: "POST",
-    headers: await authenticatedHeaders({ "content-type": "application/json" }),
-  });
+  const deadline = Date.now() + LESSON_STATE_TIMEOUT_MS;
 
-  const payload = await parseApiResponse<{
-    inserted: number;
-    reused: number;
-    generated: number;
-    skippedReason: string | null;
-  }>(response);
-  logAudioApi("activity candidates requested", payload);
-  return payload;
+  for (;;) {
+    const response = await fetch(`${API_URL}/api/sessions/${sessionId}/activity-candidates`, {
+      method: "POST",
+      headers: await authenticatedHeaders({ "content-type": "application/json" }),
+    });
+
+    if (response.status === 409) {
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      if (body.error === LESSON_STATE_PENDING_ERROR && Date.now() < deadline) {
+        logAudioApi("lesson_state is still processing; retrying activity request", { sessionId });
+        await new Promise((resolve) => window.setTimeout(resolve, LESSON_STATE_RETRY_MS));
+        continue;
+      }
+      throw new Error(body.error ?? `Kobi API request failed with ${response.status}`);
+    }
+
+    const payload = await parseApiResponse<{
+      inserted: number;
+      reused: number;
+      generated: number;
+      skippedReason: string | null;
+    }>(response);
+    logAudioApi("activity candidates requested", payload);
+    return payload;
+  }
 }

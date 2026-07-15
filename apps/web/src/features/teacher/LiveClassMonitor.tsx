@@ -765,6 +765,7 @@ export function LiveClassMonitor() {
   const recordingStartedAtRef = useRef<number | null>(null);
   const rotationTimerRef = useRef<number | null>(null);
   const isStoppingRef = useRef(false);
+  const pendingAudioUploadsRef = useRef<Set<Promise<void>>>(new Set());
 
   // Timer runs only while recording
   useEffect(() => {
@@ -775,7 +776,7 @@ export function LiveClassMonitor() {
 
   useEffect(() => {
     return () => {
-      stopBrowserRecording();
+      void stopBrowserRecording();
     };
   }, []);
 
@@ -828,7 +829,7 @@ export function LiveClassMonitor() {
     };
   }, [apiSessionId, activeClass, deliveryStore]);
 
-  function stopBrowserRecording() {
+  async function stopBrowserRecording() {
     isStoppingRef.current = true;
 
     if (rotationTimerRef.current !== null) {
@@ -839,13 +840,19 @@ export function LiveClassMonitor() {
     const recorder = mediaRecorderRef.current;
     if (recorder && recorder.state !== "inactive") {
       logRecorder("stopping recorder", { state: recorder.state });
+      const stopped = new Promise<void>((resolve) => {
+        recorder.addEventListener("stop", () => resolve(), { once: true });
+      });
       recorder.stop();
+      await stopped;
     }
 
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     logRecorder("microphone tracks stopped");
     mediaRecorderRef.current = null;
     mediaStreamRef.current = null;
+
+    await Promise.all(Array.from(pendingAudioUploadsRef.current));
   }
 
   async function ensureBackendSession() {
@@ -936,7 +943,9 @@ export function LiveClassMonitor() {
   // fragmentos periodicos que sean decodificables de forma independiente.
   function attachRecorderHandlers(recorder: MediaRecorder) {
     recorder.ondataavailable = (event) => {
-      void handleAudioChunk(event.data);
+      const upload = handleAudioChunk(event.data);
+      pendingAudioUploadsRef.current.add(upload);
+      void upload.finally(() => pendingAudioUploadsRef.current.delete(upload));
     };
     recorder.onerror = () => {
       setRecordingError("No se pudo grabar el audio del navegador.");
@@ -1028,9 +1037,9 @@ export function LiveClassMonitor() {
     }
   }
 
-  function stopRecording() {
-    stopBrowserRecording();
+  async function stopRecording() {
     setIsRecording(false);
+    await stopBrowserRecording();
     setUploadStatus(apiSessionIdRef.current ? "Sesion enviada al worker" : uploadStatus);
 
     if (activeClass) {
@@ -1043,7 +1052,7 @@ export function LiveClassMonitor() {
 
   function toggleRecording() {
     if (isRecording) {
-      stopRecording();
+      void stopRecording();
       return;
     }
     void startRecording();

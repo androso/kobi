@@ -27,6 +27,8 @@ vi.mock("./jobs/generateActivityArtifacts.job.js", () => ({
 
 describe("worker demo transcript API", () => {
   const originalMode = process.env.KOBI_PROJECT_MODE;
+  const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
+  const originalActivityModel = process.env.OPENAI_ACTIVITY_MODEL;
 
   beforeEach(() => {
     process.env.KOBI_PROJECT_MODE = "demo";
@@ -35,6 +37,8 @@ describe("worker demo transcript API", () => {
 
   afterEach(() => {
     process.env.KOBI_PROJECT_MODE = originalMode;
+    restoreEnv("OPENAI_API_KEY", originalOpenAiApiKey);
+    restoreEnv("OPENAI_ACTIVITY_MODEL", originalActivityModel);
   });
 
   it("rejects demo chunks outside demo mode", async () => {
@@ -105,6 +109,8 @@ describe("worker demo transcript API", () => {
   });
 
   it("generates activity candidates on the worker from the latest lesson_state", async () => {
+    process.env.OPENAI_API_KEY = "sk-test";
+    process.env.OPENAI_ACTIVITY_MODEL = "gpt-activity-test";
     const supabase = fakeSupabase();
     supabase.segments.push({
       session_id: SESSION_ID,
@@ -125,11 +131,16 @@ describe("worker demo transcript API", () => {
       supabase.client,
       expect.objectContaining({ grade: 7, subject: "lenguaje", unit: "U4" }),
     );
-    expect(runGenerateActivityArtifactsJob).toHaveBeenCalledWith(supabase.client, {
-      sessionId: SESSION_ID,
-      lessonState,
-      curriculumMatches: [curriculumMatch],
-    });
+    expect(runGenerateActivityArtifactsJob).toHaveBeenCalledWith(
+      supabase.client,
+      {
+        sessionId: SESSION_ID,
+        lessonState,
+        curriculumMatches: [curriculumMatch],
+        curriculumFallback: { grade: 7, subject: "lenguaje", unit: "U4" },
+      },
+      { openAiGenerator: expect.any(Function) },
+    );
   });
 
   it("returns 401 for anonymous and expired tokens", async () => {
@@ -169,6 +180,11 @@ describe("worker demo transcript API", () => {
     expect(missing.statusCode).toBe(404);
   });
 });
+
+function restoreEnv(name: string, value: string | undefined) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
 
 async function callDemoRoute(
   supabase: ReturnType<typeof fakeSupabase>,
