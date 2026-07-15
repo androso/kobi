@@ -7,6 +7,7 @@ export const JOB_BUILD_LESSON_STATE = "build-lesson-state";
 export const JOB_GENERATE_ACTIVITY_ARTIFACTS = "generate-activity-artifacts";
 export const JOB_CHECKPOINT_SCHEDULER = "checkpoint-scheduler";
 export const JOB_EVALUATE_CHECKPOINT = "evaluate-checkpoint";
+export const JOB_INGEST_CURRICULUM_SOURCE = "ingest-curriculum-source";
 
 const QUEUE_NAMES = [
   JOB_TRANSCRIBE_CHUNK,
@@ -14,6 +15,7 @@ const QUEUE_NAMES = [
   JOB_GENERATE_ACTIVITY_ARTIFACTS,
   JOB_CHECKPOINT_SCHEDULER,
   JOB_EVALUATE_CHECKPOINT,
+  JOB_INGEST_CURRICULUM_SOURCE,
 ];
 
 /** Single pg-boss client for the worker process, backed by DATABASE_URL. */
