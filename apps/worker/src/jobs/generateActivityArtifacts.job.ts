@@ -31,11 +31,6 @@ export interface GenerateActivityArtifactsJobData {
   sessionId: string;
   lessonState: LessonState;
   curriculumMatches: CurriculumMatch[];
-  curriculumFallback?: {
-    grade: number;
-    subject: string;
-    unit?: string;
-  };
 }
 
 const activityBands: DifficultyBand[] = ["support", "core", "challenge"];
@@ -125,16 +120,10 @@ export async function runGenerateActivityArtifactsJob(
   options: GenerateActivityArtifactsJobOptions = {},
 ): Promise<GenerateActivityArtifactsJobResult> {
   const { sessionId, lessonState } = data;
-  const curriculumMatches =
-    data.curriculumMatches.length > 0
-      ? data.curriculumMatches
-      : data.curriculumFallback
-        ? [buildFallbackCurriculumMatch(lessonState, data.curriculumFallback)]
-        : [];
+  const curriculumMatches = data.curriculumMatches;
   console.info("[activityGenerator] planning candidates", {
     sessionId,
     curriculumMatchCount: curriculumMatches.length,
-    usingLessonStateFallback: data.curriculumMatches.length === 0 && curriculumMatches.length > 0,
   });
   if (curriculumMatches.length === 0) {
     console.warn("[activityGenerator] skipped because no curriculum matches were found", { sessionId });
@@ -255,26 +244,6 @@ export async function runGenerateActivityArtifactsJob(
   return result;
 }
 
-function buildFallbackCurriculumMatch(
-  lessonState: LessonState,
-  context: NonNullable<GenerateActivityArtifactsJobData["curriculumFallback"]>,
-): CurriculumMatch {
-  return {
-    objective_code: "UNMAPPED_LESSON_STATE",
-    unit: context.unit ?? "unmapped",
-    grade: context.grade,
-    subject: context.subject,
-    text: [
-      "No curriculum objective matched this lesson.",
-      `Live lesson topic: ${lessonState.topic}.`,
-      lessonState.objective_guess ? `Inferred objective: ${lessonState.objective_guess}.` : null,
-      `Lesson summary: ${lessonState.transcript_summary}`,
-    ]
-      .filter(Boolean)
-      .join(" "),
-    similarity: 0,
-  };
-}
 
 export function planSessionArtifacts(input: {
   reusableByBand: Partial<Record<DifficultyBand, RankedActivityRepositoryRow>>;
