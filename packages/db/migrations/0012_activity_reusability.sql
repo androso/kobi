@@ -21,8 +21,20 @@ as $$
 declare
   normalized_score real;
 begin
+  if old.status = 'completed' and (
+    new.status is distinct from old.status
+    or new.score is distinct from old.score
+    or new.completed_at is distinct from old.completed_at
+  ) then
+    raise check_violation using message = 'Completed assignments are immutable';
+  end if;
+
   if new.status = 'completed' and old.status is distinct from 'completed' then
-    normalized_score := greatest(0, least(1, coalesce(new.score, 0)));
+    if new.score is null then
+      raise check_violation using message = 'Completed assignments require a normalized score';
+    end if;
+
+    normalized_score := greatest(0, least(1, new.score));
     update public.activities
       set times_used = times_used + 1,
           avg_score = case
@@ -40,6 +52,6 @@ revoke all on function public.update_activity_outcome_once() from public, anon, 
 
 drop trigger if exists assignments_activity_outcome_once on assignments;
 create trigger assignments_activity_outcome_once
-  after update of status on assignments
+  before update of status, score, completed_at on assignments
   for each row
   execute function public.update_activity_outcome_once();

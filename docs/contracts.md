@@ -109,7 +109,7 @@ Assignment rows are only valid for approved candidates from the same session: `a
 ## 4. Telemetry event
 
 Written to the `events` table on every student interaction; read back for the live monitor and session report.
-Completion events retain `score` and optional `total` values, while `assignments.score` stores their normalized 0–1 outcome for repository ranking. A raw count requires a positive `total` and cannot exceed it; when `total` is omitted, `score` must already be normalized to 0–1.
+Completion events retain `score` and optional `total` values, while `assignments.score` stores their normalized 0–1 outcome for repository ranking. A raw count requires a positive `total` and cannot exceed it; when `total` is omitted, `score` must already be normalized to 0–1. Once an assignment reaches `completed`, its status, score, and completion timestamp are immutable so repository outcome aggregation runs exactly once.
 
 ```json
 {
