@@ -137,7 +137,6 @@ describe("worker demo transcript API", () => {
         sessionId: SESSION_ID,
         lessonState,
         curriculumMatches: [curriculumMatch],
-        curriculumFallback: { grade: 7, subject: "lenguaje", unit: "U4" },
       },
       { openAiGenerator: expect.any(Function) },
     );
