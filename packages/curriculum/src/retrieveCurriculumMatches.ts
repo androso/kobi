@@ -78,12 +78,17 @@ function validateMatches(rows: unknown[]): CurriculumMatch[] {
       throw new Error(`retrieveCurriculumMatches: RPC row ${index} was not an object`);
     }
 
-    const match = {
+    const match: CurriculumMatch = {
       objective_code: readString(row, "objective_code", index),
       unit: readString(row, "unit", index),
       grade: readNumber(row, "grade", index),
       subject: readString(row, "subject", index),
       text: readString(row, "text", index),
+      source_document: readOptionalString(row, "source_document", index),
+      source_page_start: readOptionalNumber(row, "source_page_start", index),
+      source_page_end: readOptionalNumber(row, "source_page_end", index),
+      section_title: readOptionalString(row, "section_title", index),
+      chunk_index: readOptionalNumber(row, "chunk_index", index),
       similarity: readNumber(row, "similarity", index),
     };
 
@@ -112,6 +117,27 @@ function readNumber(row: Record<string, unknown>, key: keyof CurriculumMatch, in
   const value = row[key];
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(`retrieveCurriculumMatches: RPC row ${index} missing ${key}`);
+  }
+
+  return value;
+}
+
+function readOptionalString(row: Record<string, unknown>, key: keyof CurriculumMatch, index: number): string | null {
+  const value = row[key];
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "string") {
+    throw new Error(`retrieveCurriculumMatches: RPC row ${index} invalid ${key}`);
+  }
+
+  const trimmed = value.trim();
+  return trimmed || null;
+}
+
+function readOptionalNumber(row: Record<string, unknown>, key: keyof CurriculumMatch, index: number): number | null {
+  const value = row[key];
+  if (value === null || value === undefined) return null;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new Error(`retrieveCurriculumMatches: RPC row ${index} invalid ${key}`);
   }
 
   return value;
