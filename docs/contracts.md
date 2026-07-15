@@ -107,6 +107,7 @@ Assignment rows are only valid for approved candidates from the same session: `a
 ## 4. Telemetry event
 
 Written to the `events` table on every student interaction; read back for the live monitor and session report.
+Completion events retain raw `score` and optional `total` values, while `assignments.score` stores their normalized 0–1 outcome for repository ranking.
 
 ```json
 {

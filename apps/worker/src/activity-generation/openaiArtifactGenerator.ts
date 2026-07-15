@@ -86,12 +86,37 @@ export const openAiActivityDraftResponseSchema = z
   })
   .strict();
 
+const activityReviewFindingSchema = z
+  .object({
+    difficulty_band: difficultyBandSchema.nullable(),
+    category: z.enum([
+      "curriculum_alignment",
+      "answer_correctness",
+      "age_fit",
+      "band_coherence",
+      "safety",
+      "usability",
+    ]),
+    severity: z.enum(["warning", "error"]),
+    message: z.string().min(1).max(500),
+  })
+  .strict();
+
+export const openAiActivityReviewResponseSchema = z
+  .object({
+    approved: z.boolean(),
+    findings: z.array(activityReviewFindingSchema).max(18),
+  })
+  .strict();
+
 export type OpenAiActivityDraftResponse = z.infer<typeof openAiActivityDraftResponseSchema>;
 export type OpenAiActivityDraft = z.infer<typeof rawArtifactDraftSchema>;
+export type OpenAiActivityReviewResponse = z.infer<typeof openAiActivityReviewResponseSchema>;
 
 export interface ActivityPromptTemplates {
   system: string;
   repair: string;
+  review: string;
 }
 
 export interface OpenAiActivityDraftRequest {
@@ -101,8 +126,11 @@ export interface OpenAiActivityDraftRequest {
   schemaName: string;
 }
 
+export type OpenAiActivityReviewRequest = OpenAiActivityDraftRequest;
+
 export interface OpenAiActivityDraftClient {
   generateActivityDrafts(request: OpenAiActivityDraftRequest): Promise<unknown>;
+  reviewActivityCandidates(request: OpenAiActivityReviewRequest): Promise<unknown>;
 }
 
 export interface GenerateOpenAiActivityCandidatesInput extends CreateActivityCandidatesInput {
@@ -169,6 +197,30 @@ export class ResponsesOpenAiActivityDraftClient implements OpenAiActivityDraftCl
 
     return response.output_parsed;
   }
+
+  async reviewActivityCandidates(request: OpenAiActivityReviewRequest): Promise<unknown> {
+    const response = await this.openai.responses.parse({
+      model: request.model,
+      input: [
+        { role: "system", content: request.systemPrompt },
+        { role: "user", content: request.userPrompt },
+      ],
+      store: false,
+      text: {
+        format: zodTextFormat(openAiActivityReviewResponseSchema, request.schemaName),
+        verbosity: "low",
+      },
+      reasoning: {
+        effort: "medium",
+      },
+    });
+
+    if (!response.output_parsed) {
+      throw new Error("OpenAI activity review returned no parsed output");
+    }
+
+    return response.output_parsed;
+  }
 }
 
 export function createOpenAiActivityDraftClient(apiKey: string): OpenAiActivityDraftClient {
@@ -220,12 +272,13 @@ export function validateOpenAiActivityConfig(env: NodeJS.ProcessEnv): {
 }
 
 export async function loadActivityPromptTemplates(): Promise<ActivityPromptTemplates> {
-  const [system, repair] = await Promise.all([
+  const [system, repair, review] = await Promise.all([
     readPromptFile("system.md"),
     readPromptFile("repair.md"),
+    readPromptFile("review.md"),
   ]);
 
-  return { system, repair };
+  return { system, repair, review };
 }
 
 async function readPromptFile(filename: string): Promise<string> {
@@ -331,11 +384,25 @@ export async function generateOpenAiActivityCandidates(
     recordMissingDraftBands(missingBands, repairAttempt.candidates, failedVerifierErrors);
   }
 
+  const candidates = bands.flatMap((band) => {
+    const candidate = accepted.get(band);
+    return candidate ? [candidate] : [];
+  });
+
+  if (candidates.length === bands.length) {
+    const review = await reviewOpenAiActivityCandidates(candidates, input, {
+      client: options.client,
+      model: options.model,
+      systemPrompt: templates.review,
+    });
+    errors.push(...review.errors);
+    if (!review.approved) {
+      return { candidates: [], attempted: true, attempts, errors };
+    }
+  }
+
   return {
-    candidates: bands.flatMap((band) => {
-      const candidate = accepted.get(band);
-      return candidate ? [candidate] : [];
-    }),
+    candidates,
     attempted: true,
     attempts,
     errors,
@@ -368,6 +435,52 @@ async function requestAndNormalizeDrafts(
   }
 }
 
+async function reviewOpenAiActivityCandidates(
+  candidates: ActivityArtifactCandidate[],
+  input: GenerateOpenAiActivityCandidatesInput,
+  request: {
+    client: OpenAiActivityDraftClient;
+    model: string;
+    systemPrompt: string;
+  },
+): Promise<{ approved: boolean; errors: string[] }> {
+  try {
+    const raw = await request.client.reviewActivityCandidates({
+      model: request.model,
+      systemPrompt: request.systemPrompt,
+      userPrompt: buildActivityReviewPrompt(candidates, input),
+      schemaName: "kobi_activity_review",
+    });
+    const parsed = openAiActivityReviewResponseSchema.safeParse(raw);
+    if (!parsed.success) {
+      return {
+        approved: false,
+        errors: parsed.error.issues.map(
+          (issue) => `AI review schema: ${issue.path.join(".")}: ${issue.message}`,
+        ),
+      };
+    }
+
+    const blockingFindings = parsed.data.findings.filter(
+      (finding) => finding.severity === "error",
+    );
+    const approved = parsed.data.approved && blockingFindings.length === 0;
+    const errors = parsed.data.findings.map(
+      (finding) =>
+        `AI review ${finding.severity} ${finding.difficulty_band ?? "set"}/${finding.category}: ${finding.message}`,
+    );
+    if (!approved && errors.length === 0) errors.push("AI review rejected the activity set");
+    return { approved, errors };
+  } catch (error) {
+    return {
+      approved: false,
+      errors: [
+        `AI review failed: ${error instanceof Error ? error.message : "unknown review error"}`,
+      ],
+    };
+  }
+}
+
 export function normalizeOpenAiActivityDrafts(
   raw: unknown,
   input: GenerateOpenAiActivityCandidatesInput,
@@ -384,8 +497,7 @@ export function normalizeOpenAiActivityDrafts(
   const requestedBands = new Set(input.bands);
   const evidence = evidenceFromCurriculumMatches(input.curriculumMatches);
   const primaryMatch = input.curriculumMatches[0];
-  const gamePlan = createGamePlan(input.sessionContext, input.curriculumMatches);
-  const activitySetId = `set-${primaryMatch.objective_code}-${gamePlan.mechanic}`.replace(/[^a-z0-9-]/gi, "-").toLocaleLowerCase("es-SV");
+  const gamePlan = input.gamePlan ?? createGamePlan(input.sessionContext, input.curriculumMatches);
   const errors: string[] = [];
   const candidates: ActivityArtifactCandidate[] = [];
   const seenRequestedBands = new Set<DifficultyBand>();
@@ -442,7 +554,7 @@ export function normalizeOpenAiActivityDrafts(
       verifier_scores: defaultInitialVerifierScores,
       evidence,
       parent_id: input.parentIdByBand?.[artifact.difficulty_band] ?? null,
-      activity_set_id: activitySetId,
+      activity_set_id: input.activitySetId,
       status: "candidate",
     });
   }
@@ -459,8 +571,11 @@ export function normalizeOpenAiActivityDrafts(
 function ensureSecurityAndDesignBrief(html: string): string {
   const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">`;
   const design = `<style>:focus-visible{outline:3px solid #f59e0b;outline-offset:3px}button{border-radius:14px;padding:12px 16px;background:#2563eb;color:white}body{font-family:system-ui,sans-serif;background:#eff6ff;color:#0f172a}@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}</style>`;
-  if (/<meta[^>]+http-equiv=["']Content-Security-Policy["']/i.test(html)) return html;
-  return html.replace(/<head>/i, `<head>${csp}${design}`);
+  const withoutModelCsp = html.replace(
+    /<meta\b(?=[^>]*\bhttp-equiv\s*=\s*["']Content-Security-Policy["'])[^>]*>/gi,
+    "",
+  );
+  return withoutModelCsp.replace(/<head(\s[^>]*)?>/i, (head) => `${head}${csp}${design}`);
 }
 
 function recordMissingDraftBands(
@@ -550,6 +665,42 @@ export function buildActivityGenerationPrompt(input: BuildPromptInput): string {
   );
 }
 
+export function buildActivityReviewPrompt(
+  candidates: ActivityArtifactCandidate[],
+  input: GenerateOpenAiActivityCandidatesInput,
+): string {
+  return JSON.stringify(
+    {
+      task: "Review this generated activity set. Approve only when it is safe and classroom-ready.",
+      required_game_plan:
+        input.gamePlan ?? createGamePlan(input.sessionContext, input.curriculumMatches),
+      review_criteria: [
+        "Each answer key is correct and supported by the curriculum evidence.",
+        "Spanish language and instructions are suitable for seventh-grade students.",
+        "Support, core, and challenge preserve one mechanic while increasing cognitive demand.",
+        "Hints scaffold without revealing answers.",
+        "The interaction is usable, self-contained, and does not request sensitive information.",
+      ],
+      lesson_state: minimizeLessonState(input.lessonState),
+      curriculum_matches: input.curriculumMatches.map((match) => ({
+        objective_code: match.objective_code,
+        unit: match.unit,
+        grade: match.grade,
+        subject: match.subject,
+        text: match.text,
+      })),
+      candidates: candidates.map((candidate) => ({
+        difficulty_band: candidate.manifest.difficulty_band,
+        manifest: candidate.manifest,
+        evidence: candidate.evidence,
+        index_html: candidate.bundle_html,
+      })),
+    },
+    null,
+    2,
+  );
+}
+
 function minimizeLessonState(lessonState: LessonState) {
   return {
     topic: lessonState.topic,
@@ -586,4 +737,8 @@ function truncateExample(value: string): string {
 export function createUnguessableBundleRef(namespace?: string): string {
   const path = namespace ? `${namespace}/${randomUUID()}` : randomUUID();
   return `artifact-bundles/${path}/index.html`;
+}
+
+export function createActivitySetId(): string {
+  return `set-${randomUUID()}`;
 }

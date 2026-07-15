@@ -67,6 +67,6 @@ Implemented exports:
 - `createActivityArtifactCandidates()` for deterministic support/core/challenge HTML fallback artifacts
 - `verifyActivityArtifact()` for schema, static bundle, SDK hook, and manifest/code consistency checks
 - `authorizeActivityTelemetryMessage()` for parent-owned assignment telemetry validation
-- repository ranking helpers that bias objective match, semantic context, verifier score, usage, outcomes, and set-level coherence
+- repository ranking helpers that bias objective match, current lesson context, verifier score, usage, outcomes, and set-level coherence
 
-The verifier currently performs deterministic checks plus local rubric scoring. Browser sandbox boot remains Area E-owned and should call these same schemas before teacher display.
+The package verifier performs deterministic checks plus local rubric scoring. The worker's OpenAI generation path adds a separate structured AI review gate before generated candidates can be persisted; browser sandbox boot remains Area E-owned.

@@ -276,4 +276,41 @@ describe("artifact delivery bridge", () => {
       payload: expect.objectContaining({ assignment_id: "assignment-1" }),
     });
   });
+
+  it("normalizes raw completion counts before storing assignment outcomes", async () => {
+    const fakeStore = store();
+    const assignment: StudentAssignment = {
+      id: "assignment-1",
+      sessionId: "session-1",
+      activityId: "activity-core",
+      studentId: "student-1",
+      variant: "core",
+      status: "assigned",
+      manifest: manifest("core"),
+      bundleHtml: "<!doctype html><html><body>ok</body></html>",
+    };
+
+    const result = await handleStudentActivityMessage({
+      store: fakeStore,
+      assignment,
+      sourceMatches: true,
+      message: {
+        sdk: "activity-sdk/v1",
+        type: "event",
+        method: "reportComplete",
+        payload: {
+          score: 2,
+          total: 4,
+          completed_at: "2026-07-15T12:00:00.000Z",
+        },
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(fakeStore.markAssignmentComplete).toHaveBeenCalledWith({
+      assignmentId: "assignment-1",
+      score: 0.5,
+      completedAt: "2026-07-15T12:00:00.000Z",
+    });
+  });
 });

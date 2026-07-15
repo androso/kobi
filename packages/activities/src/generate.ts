@@ -9,12 +9,14 @@ import {
   type SessionContext,
 } from "./types.js";
 import { evidenceFromCurriculumMatches } from "./sessionContext.js";
-import { createGamePlan } from "./gamePlan.js";
+import { createGamePlan, type GamePlan } from "./gamePlan.js";
 
 export interface CreateActivityCandidatesInput {
   lessonState: LessonState;
   sessionContext: SessionContext;
   curriculumMatches: CurriculumMatch[];
+  activitySetId: string;
+  gamePlan?: GamePlan;
 }
 
 const bandSpecs: Record<
@@ -42,8 +44,7 @@ export function createActivityArtifactCandidates(
 
   const primaryMatch = input.curriculumMatches[0];
   const evidence = evidenceFromCurriculumMatches(input.curriculumMatches);
-  const gamePlan = createGamePlan(input.sessionContext, input.curriculumMatches);
-  const activitySetId = `set-${stableHash(`${primaryMatch.objective_code}:${input.sessionContext.latest_topic}:${gamePlan.mechanic}`)}`;
+  const gamePlan = input.gamePlan ?? createGamePlan(input.sessionContext, input.curriculumMatches);
 
   return (["support", "core", "challenge"] as DifficultyBand[]).map((band) => {
     const spec = bandSpecs[band];
@@ -101,7 +102,7 @@ export function createActivityArtifactCandidates(
       },
       evidence,
       parent_id: null,
-      activity_set_id: activitySetId,
+      activity_set_id: input.activitySetId,
       status: "candidate",
     };
   });

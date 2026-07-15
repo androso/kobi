@@ -1,6 +1,7 @@
 import type { CurriculumMatch } from "@kobi/curriculum";
 import type {
   ActivityFamily,
+  ActivityManifest,
   ActivityMechanic,
   DifficultyBand,
   SessionContext,
@@ -62,5 +63,23 @@ export function createGamePlan(context: SessionContext, curriculumMatches: Curri
       core: "Manipulacion activa, feedback inmediato y aplicacion directa del objetivo.",
       challenge: "Justificacion, comparacion o sintesis breve antes de completar.",
     },
+  };
+}
+
+export function createAdaptedGamePlan(
+  context: SessionContext,
+  curriculumMatches: CurriculumMatch[],
+  parentManifest: ActivityManifest,
+): GamePlan {
+  const currentPlan = createGamePlan(context, curriculumMatches);
+  if (!parentManifest.mechanic) return currentPlan;
+
+  return {
+    ...currentPlan,
+    family: parentManifest.family,
+    mechanic: parentManifest.mechanic,
+    interaction_metaphor:
+      parentManifest.visual_theme?.scene ?? currentPlan.interaction_metaphor,
+    rationale: `Adapta el mecanismo ${parentManifest.mechanic} de una actividad verificada al contexto actual, conservando una sola experiencia para apoyo, core y reto.`,
   };
 }

@@ -4,11 +4,12 @@ import {
   activityManifestSchema,
   activityVerifierScoresSchema,
   buildActivitySessionContext,
+  createAdaptedGamePlan,
   createActivityArtifactCandidates,
+  createGamePlan,
   hasMaterialContextChange,
+  pickAdaptationSource,
   pickCoherentActivitySet,
-  pickReusableActivitiesByBand,
-  shouldAdaptRepositoryMatch,
   rankActivityRepositoryRows,
   verifyActivityArtifact,
   type ActivityArtifact,
@@ -24,6 +25,7 @@ import type { CurriculumMatch } from "@kobi/curriculum";
 import type PgBoss from "pg-boss";
 import {
   createOpenAiActivityGeneratorFromEnv,
+  createActivitySetId,
   createUnguessableBundleRef,
   type GenerateOpenAiActivityCandidatesInput,
   type OpenAiActivityGenerationResult,
@@ -154,16 +156,21 @@ export async function runGenerateActivityArtifactsJob(
   const repositoryRows = await loadRepositoryRows(supabase, curriculumMatches);
   const rankedRows = rankActivityRepositoryRows(repositoryRows, curriculumMatches, sessionContext);
   const coherentSet = pickCoherentActivitySet(rankedRows);
-  const reusableByBand = coherentSet.length > 0
-    ? Object.fromEntries(coherentSet.map((row) => [row.manifest.difficulty_band, row])) as Partial<Record<DifficultyBand, RankedActivityRepositoryRow>>
-    : pickReusableActivitiesByBand(rankedRows);
-  const adapting = coherentSet.length === 0 && shouldAdaptRepositoryMatch(rankedRows);
-  const parentIdByBand = parentIdsByBand(rankedRows);
-  const missingBands = activityBands.filter((band) => !reusableByBand[band]);
+  const adaptationSource = coherentSet.length === 0 ? pickAdaptationSource(rankedRows) : [];
+  const adapting = adaptationSource.length > 0;
+  const parentIdByBand = adapting ? parentIdsByBand(adaptationSource) : {};
+  const missingBands = coherentSet.length === 3 ? [] : activityBands;
+  const activitySetId = createActivitySetId();
+  const gamePlan = adapting
+    ? createAdaptedGamePlan(sessionContext, curriculumMatches, adaptationSource[0].manifest)
+    : createGamePlan(sessionContext, curriculumMatches);
+  const generatedSource: "adapted" | "new" = adapting ? "adapted" : "new";
   const staticCandidates = createActivityArtifactCandidates({
     lessonState,
     sessionContext,
     curriculumMatches,
+    activitySetId,
+    gamePlan,
   }).map((candidate) => withServerDerivedCandidateFields(candidate, parentIdByBand));
 
   let openAiCandidates: ActivityArtifactCandidate[] = [];
@@ -185,6 +192,8 @@ export async function runGenerateActivityArtifactsJob(
           curriculumMatches,
           bands: missingBands,
           parentIdByBand,
+          activitySetId,
+          gamePlan,
         });
         openAiCandidates = result.candidates;
         console.info("[activityGenerator] OpenAI candidates received", {
@@ -203,7 +212,7 @@ export async function runGenerateActivityArtifactsJob(
   }
 
   const planned = planSessionArtifacts({
-    reusableByBand,
+    reusableSet: coherentSet,
     openAiCandidates,
     staticCandidates,
   });
@@ -228,7 +237,7 @@ export async function runGenerateActivityArtifactsJob(
     }
 
     if (!artifact.candidate) continue;
-    const persisted = await persistGeneratedArtifact(supabase, artifact.candidate);
+    const persisted = await persistGeneratedArtifact(supabase, artifact.candidate, generatedSource);
 
     candidatesToInsert.push({
       sessionId,
@@ -283,37 +292,24 @@ function buildFallbackCurriculumMatch(
 }
 
 export function planSessionArtifacts(input: {
-  reusableByBand: Partial<Record<DifficultyBand, RankedActivityRepositoryRow>>;
+  reusableSet: RankedActivityRepositoryRow[];
   openAiCandidates: ActivityArtifactCandidate[];
   staticCandidates: ActivityArtifactCandidate[];
 }): PlannedSessionArtifact[] {
-  const planned: PlannedSessionArtifact[] = [];
-
-  for (const band of activityBands) {
-    const reusable = input.reusableByBand[band];
-    if (reusable) {
-      planned.push({ band, reusable });
-      continue;
-    }
-
-    const openAiCandidate = input.openAiCandidates.find(
-      (artifact) => artifact.manifest.difficulty_band === band,
-    );
-    if (openAiCandidate) {
-      planned.push({ band, candidate: openAiCandidate, origin: "openai" });
-      continue;
-    }
-
-    const candidate = input.staticCandidates.find(
-      (artifact) => artifact.manifest.difficulty_band === band,
-    );
-
-    if (candidate) {
-      planned.push({ band, candidate, origin: "static" });
-    }
+  const reusable = completeRepositorySet(input.reusableSet);
+  if (reusable) {
+    return activityBands.map((band) => ({ band, reusable: reusable.get(band) }));
   }
 
-  return planned;
+  const openAi = completeCandidateSet(input.openAiCandidates);
+  if (openAi) {
+    return activityBands.map((band) => ({ band, candidate: openAi.get(band), origin: "openai" }));
+  }
+
+  const fallback = completeCandidateSet(input.staticCandidates);
+  return fallback
+    ? activityBands.map((band) => ({ band, candidate: fallback.get(band), origin: "static" }))
+    : [];
 }
 
 async function loadLessonStates(
@@ -447,10 +443,11 @@ function parentIdsByBand(
   rankedRows: RankedActivityRepositoryRow[],
 ): Partial<Record<DifficultyBand, string | null>> {
   const parents: Partial<Record<DifficultyBand, string | null>> = {};
+  const fallbackParent = rankedRows[0]?.id ?? null;
 
   for (const band of activityBands) {
     const nearestParent = rankedRows.find((row) => row.manifest.difficulty_band === band);
-    parents[band] = nearestParent && nearestParent.rank_score >= 0.45 ? nearestParent.id : null;
+    parents[band] = nearestParent?.id ?? fallbackParent;
   }
 
   return parents;
@@ -484,10 +481,11 @@ async function markSessionCandidatesSuperseded(supabase: SupabaseClient, session
 async function persistGeneratedArtifact(
   supabase: SupabaseClient,
   candidate: ActivityArtifactCandidate,
+  source: "adapted" | "new",
 ): Promise<{
   id: string;
   artifact: ActivityArtifact;
-  source: "new";
+  source: "adapted" | "new";
 }> {
   const result = verifyActivityArtifact(candidate);
   if (!result.ok) {
@@ -520,7 +518,7 @@ async function persistGeneratedArtifact(
         parent_id: result.artifact.parent_id,
         activity_set_id: result.artifact.activity_set_id,
         status: result.artifact.status,
-        source: "new",
+        source,
         verifier_scores: result.artifact.verifier_scores,
         curriculum_tags: result.artifact.evidence.map((evidence) => evidence.objective_code),
       },
@@ -536,8 +534,36 @@ async function persistGeneratedArtifact(
   return {
     id: String(data.id),
     artifact: result.artifact,
-    source: "new",
+    source,
   };
+}
+
+function completeRepositorySet(
+  rows: RankedActivityRepositoryRow[],
+): Map<DifficultyBand, RankedActivityRepositoryRow> | null {
+  if (rows.length === 0) return null;
+  const activitySetIds = rows.map((row) => row.activity_set_id);
+  if (activitySetIds.some((activitySetId) => !activitySetId)) return null;
+  const setIds = new Set(activitySetIds);
+  if (setIds.size !== 1) return null;
+
+  const byBand = new Map(rows.map((row) => [row.manifest.difficulty_band, row] as const));
+  return activityBands.every((band) => byBand.has(band)) ? byBand : null;
+}
+
+function completeCandidateSet(
+  candidates: ActivityArtifactCandidate[],
+): Map<DifficultyBand, ActivityArtifactCandidate> | null {
+  if (candidates.length === 0) return null;
+  const activitySetIds = candidates.map((candidate) => candidate.activity_set_id);
+  if (activitySetIds.some((activitySetId) => !activitySetId)) return null;
+  const setIds = new Set(activitySetIds);
+  if (setIds.size !== 1) return null;
+
+  const byBand = new Map(
+    candidates.map((candidate) => [candidate.manifest.difficulty_band, candidate] as const),
+  );
+  return activityBands.every((band) => byBand.has(band)) ? byBand : null;
 }
 
 async function insertSessionCandidate(

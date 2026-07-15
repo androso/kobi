@@ -4,13 +4,13 @@ import {
   authorizeActivityTelemetryMessage,
   type ActivityEvidence,
   type ActivityManifest,
+  type ActivitySource,
   type ActivityVerifierScores,
   type DifficultyBand,
   resolveApprovedActivityForBand,
 } from "@kobi/activities/contracts";
 
 type CandidateStatus = "ready" | "approved" | "rejected" | "superseded";
-type ActivitySource = "seeded" | "reused" | "new";
 const orderedBands: DifficultyBand[] = ["support", "core", "challenge"];
 
 export interface DeliveryCandidate {
@@ -187,12 +187,22 @@ export async function handleStudentActivityMessage(input: {
   if (authorized.event.type === "complete") {
     await input.store.markAssignmentComplete({
       assignmentId: authorized.event.assignment_id,
-      score: Number(authorized.event.payload.score ?? 0),
+      score: normalizeCompletionScore(
+        authorized.event.payload.score,
+        authorized.event.payload.total,
+      ),
       completedAt: String(authorized.event.payload.completed_at ?? new Date().toISOString()),
     });
   }
 
   return authorized;
+}
+
+export function normalizeCompletionScore(score: unknown, total: unknown): number {
+  const rawScore = typeof score === "number" && Number.isFinite(score) ? score : 0;
+  const rawTotal = typeof total === "number" && Number.isFinite(total) ? total : null;
+  const normalized = rawTotal !== null && rawTotal > 0 ? rawScore / rawTotal : rawScore;
+  return Math.max(0, Math.min(1, normalized));
 }
 
 export class SupabaseActivityDeliveryStore implements ActivityDeliveryStore {

@@ -51,6 +51,7 @@ describe("activity artifact contracts", () => {
       lessonState,
       sessionContext: context,
       curriculumMatches,
+      activitySetId: "set-test",
     });
 
     expect(candidates).toHaveLength(3);
@@ -84,7 +85,12 @@ describe("activity artifact contracts", () => {
 
   it("keeps legacy manifests readable while rejecting invalid family/mechanic combinations", () => {
     const context = buildActivitySessionContext([lessonState]);
-    const [candidate] = createActivityArtifactCandidates({ lessonState, sessionContext: context, curriculumMatches });
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+      activitySetId: "set-test",
+    });
     const legacy = { ...candidate.manifest, mechanic: undefined, learning_design: undefined, visual_theme: undefined };
 
     expect(activityManifestSchema.safeParse(legacy).success).toBe(true);
@@ -237,6 +243,7 @@ describe("activity artifact contracts", () => {
       lessonState,
       sessionContext: context,
       curriculumMatches,
+      activitySetId: "set-test",
     });
     candidate.manifest.content.items[0].hints = ["La respuesta es titular"];
 

@@ -79,7 +79,7 @@ Teachers create, reset, deactivate, and reactivate durable student accounts from
 
 - A teacher creates a class and runs a session on real audio with no developer help
 - Support/core/challenge curriculum-grounded artifacts appear ≤ 60s after "Hora de actividad"
-- Each artifact shows evidence: objective + textbook section + seeded/reused/adapted/new status
+- Each artifact shows concise evidence: objective + textbook section
 - 3+ student devices receive approved banded artifacts and complete them
 - The session report reflects real telemetry, not seeds
 - Kill the wifi mid-session → manual fallback still completes the loop

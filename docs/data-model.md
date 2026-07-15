@@ -55,7 +55,7 @@ activities (the repository — Area C, revised per D2)
   manifest (jsonb)                -- curriculum tags, answer key, hints, est_minutes, variants
   evidence (jsonb)                -- generation-time visible curriculum evidence
   status (candidate|verified|rejected|superseded)
-  embedding (vector(768), nullable) -- for repository semantic reuse search
+  embedding (vector(768), nullable) -- reserved for future semantic reuse; v0 ranking does not require it
   curriculum_tags (text[])
   source (seeded|reused|new)
   verifier_scores (jsonb)

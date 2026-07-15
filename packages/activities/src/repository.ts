@@ -73,17 +73,41 @@ export function pickCoherentActivitySet(
   }
 
   return [...sets.values()]
-    .filter((set) => new Set(set.map((row) => row.manifest.difficulty_band)).size === 3)
+    .map(bestRowPerBand)
+    .filter((set) => set.length === 3)
     .sort((left, right) => averageRank(right) - averageRank(left))[0] ?? [];
 }
 
-export function shouldAdaptRepositoryMatch(rows: RankedActivityRepositoryRow[]): boolean {
-  const best = rows[0];
-  return Boolean(best && best.rank_score >= ADAPTATION_THRESHOLD && best.rank_score < STRONG_REUSE_THRESHOLD);
+export function pickAdaptationSource(
+  rows: RankedActivityRepositoryRow[],
+): RankedActivityRepositoryRow[] {
+  const best = rows.find(
+    (row) =>
+      row.manifest.mechanic &&
+      row.rank_score >= ADAPTATION_THRESHOLD &&
+      row.rank_score < STRONG_REUSE_THRESHOLD,
+  );
+  if (!best) return [];
+
+  if (!best.activity_set_id) return [best];
+  return rows.filter((row) => row.activity_set_id === best.activity_set_id);
 }
 
 function averageRank(rows: RankedActivityRepositoryRow[]): number {
   return rows.reduce((sum, row) => sum + row.rank_score, 0) / Math.max(rows.length, 1);
+}
+
+function bestRowPerBand(rows: RankedActivityRepositoryRow[]): RankedActivityRepositoryRow[] {
+  const picked = new Map<DifficultyBand, RankedActivityRepositoryRow>();
+  for (const row of rows) {
+    const band = row.manifest.difficulty_band;
+    const current = picked.get(band);
+    if (!current || row.rank_score > current.rank_score) picked.set(band, row);
+  }
+  return (["support", "core", "challenge"] as DifficultyBand[]).flatMap((band) => {
+    const row = picked.get(band);
+    return row ? [row] : [];
+  });
 }
 
 function activitySearchText(row: ActivityRepositoryRow): string {

@@ -5,36 +5,12 @@ alter table activities
 
 create index if not exists activities_activity_set_idx on activities(activity_set_id);
 
-create or replace function match_activity_sets(
-  query_embedding vector(768),
-  match_count int default 10,
-  filter_grade int default null,
-  filter_subject text default null,
-  filter_unit text default null
-)
-returns table (
-  activity_set_id text,
-  best_similarity real,
-  activity_count bigint
-)
-language sql
-stable
-as $$
-  select
-    activities.activity_set_id,
-    max(1 - (activities.embedding <=> query_embedding))::real as best_similarity,
-    count(*) as activity_count
-  from activities
-  where activities.status = 'verified'
-    and activities.activity_set_id is not null
-    and activities.embedding is not null
-    and (filter_grade is null or (activities.manifest->'curriculum'->>'grade')::int = filter_grade)
-    and (filter_subject is null or activities.manifest->'curriculum'->>'subject' = filter_subject)
-    and (filter_unit is null or activities.manifest->'curriculum'->>'unit' = filter_unit)
-  group by activities.activity_set_id
-  order by best_similarity desc
-  limit match_count;
-$$;
+alter table assignments
+  drop constraint if exists assignments_score_normalized;
+
+alter table assignments
+  add constraint assignments_score_normalized
+  check (score is null or (score >= 0 and score <= 1)) not valid;
 
 create or replace function update_activity_outcome_once()
 returns trigger

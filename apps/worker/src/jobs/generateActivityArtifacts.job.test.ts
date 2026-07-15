@@ -49,24 +49,47 @@ describe("generateActivityArtifacts job planning", () => {
     expect(supabase.insertedCandidates).toHaveLength(3);
   });
 
-  it("uses reusable activities first, OpenAI candidates for missing bands, then static fallback", () => {
+  it("uses one complete source set instead of mixing repository, OpenAI, and static bands", () => {
     const reusableSupport = repositoryRow("support", 0.92);
     const openAiCore = candidate("core", "openai-core");
     const staticCore = candidate("core", "static-core");
+    const staticSupport = candidate("support", "static-support");
     const staticChallenge = candidate("challenge", "static-challenge");
 
     const planned = planSessionArtifacts({
-      reusableByBand: { support: reusableSupport },
+      reusableSet: [reusableSupport],
       openAiCandidates: [openAiCore],
-      staticCandidates: [staticCore, staticChallenge],
+      staticCandidates: [staticSupport, staticCore, staticChallenge],
     });
 
     expect(planned).toHaveLength(3);
-    expect(planned[0].reusable?.id).toBe("activity-support");
-    expect(planned[1].candidate?.bundle_ref).toBe("artifact-bundles/openai-core/index.html");
-    expect(planned[1].origin).toBe("openai");
-    expect(planned[2].candidate?.bundle_ref).toBe("artifact-bundles/static-challenge/index.html");
-    expect(planned[2].origin).toBe("static");
+    expect(planned.every((artifact) => artifact.origin === "static")).toBe(true);
+    expect(planned.map((artifact) => artifact.candidate?.activity_set_id)).toEqual([
+      "set-test",
+      "set-test",
+      "set-test",
+    ]);
+  });
+
+  it("persists medium-match generations as adapted with parent lineage", async () => {
+    const parent = repositoryRow("core", 0.6);
+    const supabase = fakeSupabase({ repositoryRows: [parent] });
+
+    const result = await runGenerateActivityArtifactsJob(
+      supabase.client,
+      {
+        sessionId: "session-1",
+        lessonState,
+        curriculumMatches,
+      },
+      { openAiGenerator: null },
+    );
+
+    expect(result).toMatchObject({ inserted: 3, reused: 3, generated: 0 });
+    expect(supabase.activityUpserts).toHaveLength(3);
+    expect(supabase.activityUpserts.every((row) => row.source === "adapted")).toBe(true);
+    expect(supabase.activityUpserts.every((row) => row.parent_id === parent.id)).toBe(true);
+    expect(new Set(supabase.activityUpserts.map((row) => row.activity_set_id)).size).toBe(1);
   });
 
   it("falls back to static candidates when OpenAI generation throws", async () => {
@@ -206,6 +229,7 @@ function repositoryRow(
     bundle_ref: `artifact-bundles/reusable-${band}/index.html`,
     evidence: [{ objective_code: "L7.4.2", section: "U4 / L7.4.2", text: "La noticia" }],
     parent_id: null,
+    activity_set_id: "set-reusable",
     status: "verified",
     source: "seeded",
     verifier_scores: {
@@ -249,6 +273,7 @@ function candidate(
     },
     evidence: [{ objective_code: "L7.4.2", section: "U4 / L7.4.2", text: "La noticia" }],
     parent_id: null,
+    activity_set_id: "set-test",
     status: "candidate",
   };
 }
@@ -256,6 +281,7 @@ function candidate(
 function manifest(band: "support" | "core" | "challenge", title: string): ActivityManifest {
   return {
     family: "guided_practice" as const,
+    mechanic: "source_check_desk" as const,
     title,
     difficulty_band: band,
     curriculum: {
@@ -277,16 +303,27 @@ function manifest(band: "support" | "core" | "challenge", title: string): Activi
     entry: "index.html" as const,
     sdk_version: ACTIVITY_SDK_VERSION,
     allowed_capabilities: ["dom", "css"],
+    learning_design: {
+      learning_goal: "Reconocer las partes de una noticia.",
+      interaction_summary: "Revisar fuentes y evidencias.",
+      success_criteria: ["Identifica la evidencia correcta."],
+    },
+    visual_theme: { scene: "mesa de fuentes", accent: "azul" },
   };
 }
 
-function fakeSupabase(options: { openAiGenerationCount?: number; segments?: LessonState[] } = {}) {
+function fakeSupabase(options: {
+  openAiGenerationCount?: number;
+  segments?: LessonState[];
+  repositoryRows?: RankedActivityRepositoryRow[];
+} = {}) {
   const insertedCandidates: Array<{
     context_snapshot: { latest_topic: string; vocabulary: string[]; segment_count: number };
     evidence: unknown;
   }> = [];
   const bundleRefs: string[] = [];
   const likeFilters: string[] = [];
+  const activityUpserts: Array<Record<string, unknown>> = [];
   let nextActivityId = 0;
   const state: FakeQueryState = {
     insertedCandidates,
@@ -298,6 +335,8 @@ function fakeSupabase(options: { openAiGenerationCount?: number; segments?: Less
     },
     openAiGenerationCount: options.openAiGenerationCount ?? 0,
     segments: options.segments ?? [],
+    repositoryRows: options.repositoryRows ?? [],
+    activityUpserts,
   };
 
   const client = {
@@ -306,7 +345,7 @@ function fakeSupabase(options: { openAiGenerationCount?: number; segments?: Less
     },
   } as unknown as SupabaseClient;
 
-  return { client, insertedCandidates, bundleRefs, likeFilters };
+  return { client, insertedCandidates, bundleRefs, likeFilters, activityUpserts };
 }
 
 interface FakeQueryState {
@@ -316,6 +355,8 @@ interface FakeQueryState {
   nextActivityId: () => string;
   openAiGenerationCount: number;
   segments: LessonState[];
+  repositoryRows: RankedActivityRepositoryRow[];
+  activityUpserts: Array<Record<string, unknown>>;
 }
 
 class FakeQuery {
@@ -352,6 +393,7 @@ class FakeQuery {
     if (this.table === "activity_bundles" && typeof value.ref === "string") {
       this.state.bundleRefs.push(value.ref);
     }
+    if (this.table === "activities") this.state.activityUpserts.push(value);
     return this;
   }
 
@@ -400,7 +442,7 @@ class FakeQuery {
     }
 
     if (this.table === "activities" && this.operation === "select") {
-      return { data: [], error: null };
+      return { data: this.state.repositoryRows, error: null };
     }
 
     if (this.table === "session_activity_candidates" && this.operation === "select") {
