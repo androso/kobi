@@ -10,6 +10,7 @@ interface NormalizedRetrieveInput {
   grade: number;
   subject: string;
   unit: string | null;
+  classId: string | null;
   matchCount: number;
 }
 
@@ -32,19 +33,39 @@ export async function retrieveCurriculumMatches(
     match_subject: normalizedInput.subject,
     match_unit: normalizedInput.unit,
     match_count: normalizedInput.matchCount,
+    match_class_id: normalizedInput.classId,
   });
 
   if (error) {
     throw new Error(`retrieveCurriculumMatches: RPC failed: ${error.message}`);
   }
 
-  return validateMatches(data ?? []);
+  const classMatches = validateMatches(data ?? []);
+  if (classMatches.length > 0 || !normalizedInput.classId) {
+    return classMatches;
+  }
+
+  const { data: globalData, error: globalError } = await supabase.rpc("match_curriculum_chunks", {
+    query_embedding: queryEmbedding,
+    match_grade: normalizedInput.grade,
+    match_subject: normalizedInput.subject,
+    match_unit: normalizedInput.unit,
+    match_count: normalizedInput.matchCount,
+    match_class_id: null,
+  });
+
+  if (globalError) {
+    throw new Error(`retrieveCurriculumMatches: global RPC failed: ${globalError.message}`);
+  }
+
+  return validateMatches(globalData ?? []);
 }
 
 function normalizeRetrieveInput(input: RetrieveCurriculumMatchesInput): NormalizedRetrieveInput {
   const queryText = input.queryText.trim();
   const subject = input.subject.trim().toLocaleLowerCase("es-SV");
   const unit = input.unit?.trim() || null;
+  const classId = input.classId?.trim() || null;
   const matchCount = input.matchCount ?? DEFAULT_MATCH_COUNT;
 
   if (!queryText) {
@@ -68,6 +89,7 @@ function normalizeRetrieveInput(input: RetrieveCurriculumMatchesInput): Normaliz
     grade: input.grade,
     subject,
     unit,
+    classId,
     matchCount,
   };
 }
@@ -122,9 +144,13 @@ function readNumber(row: Record<string, unknown>, key: keyof CurriculumMatch, in
   return value;
 }
 
-function readOptionalString(row: Record<string, unknown>, key: keyof CurriculumMatch, index: number): string | null {
+function readOptionalString(
+  row: Record<string, unknown>,
+  key: keyof CurriculumMatch,
+  index: number,
+): string | null {
   const value = row[key];
-  if (value === null || value === undefined) return null;
+  if (value == null) return null;
   if (typeof value !== "string") {
     throw new Error(`retrieveCurriculumMatches: RPC row ${index} invalid ${key}`);
   }
@@ -133,9 +159,13 @@ function readOptionalString(row: Record<string, unknown>, key: keyof CurriculumM
   return trimmed || null;
 }
 
-function readOptionalNumber(row: Record<string, unknown>, key: keyof CurriculumMatch, index: number): number | null {
+function readOptionalNumber(
+  row: Record<string, unknown>,
+  key: keyof CurriculumMatch,
+  index: number,
+): number | null {
   const value = row[key];
-  if (value === null || value === undefined) return null;
+  if (value == null) return null;
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new Error(`retrieveCurriculumMatches: RPC row ${index} invalid ${key}`);
   }
