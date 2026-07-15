@@ -1,6 +1,7 @@
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateText } from "ai";
 import { URL } from "node:url";
+import { classifySafeError, safeLog } from "./safeLogging.js";
 
 const DEFAULT_GEMINI_TRANSCRIPTION_MODEL = "gemini-2.0-flash";
 const DEFAULT_OPENAI_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
@@ -35,25 +36,31 @@ export async function transcribeAudioChunk(
   const provider = input.provider ?? getTranscriptionProvider();
   const model = input.model ?? getDefaultModelFor(provider);
 
-  console.log(`[transcribeAudioChunk] provider=${provider} model=${model} audioUrl=${audioUrl.toString()}`);
+  const startedAt = Date.now();
+  safeLog("info", "transcription.started", { provider, model, mimeType });
 
-  const rawTranscript = await transcriptionAdapters[provider]({
-    audioUrl,
-    mimeType,
-    model: input.model,
-  });
+  let rawTranscript: string;
+  try {
+    rawTranscript = await transcriptionAdapters[provider]({ audioUrl, mimeType, model: input.model });
+  } catch (error) {
+    safeLog("error", "transcription.failed", {
+      provider,
+      latencyMs: Date.now() - startedAt,
+      outcome: classifySafeError(error),
+    });
+    throw error;
+  }
 
   const transcriptText = normalizeTranscriptText(rawTranscript);
 
   if (!transcriptText) {
-    console.warn(
-      `[transcribeAudioChunk] ${provider} returned an empty transcript for ${audioUrl.toString()}. ` +
-        `The audio chunk may contain silence, be too short, or the format may be unsupported.`,
-    );
+    safeLog("warn", "transcription.empty", { provider, latencyMs: Date.now() - startedAt });
   } else {
-    console.log(
-      `[transcribeAudioChunk] transcript received (${transcriptText.length} chars): ${transcriptText.slice(0, 200)}${transcriptText.length > 200 ? "..." : ""}`,
-    );
+    safeLog("info", "transcription.completed", {
+      provider,
+      latencyMs: Date.now() - startedAt,
+      transcriptBytes: Buffer.byteLength(transcriptText, "utf8"),
+    });
   }
 
   return { transcriptText };
@@ -229,8 +236,11 @@ async function readJsonResponse(response: Response, label: string): Promise<unkn
     return response.json();
   }
 
-  const errorText = await response.text();
-  throw new Error(`${label} failed (${response.status} ${response.statusText}): ${errorText}`);
+  // Provider bodies can echo prompts, transcript fragments, or credentials.
+  // Keep the thrown error useful for classification without carrying that body
+  // into job failures or logs.
+  await response.body?.cancel();
+  throw new Error(`${label} failed (${response.status} ${response.statusText})`);
 }
 
 function audioFilename(mimeType: string): string {

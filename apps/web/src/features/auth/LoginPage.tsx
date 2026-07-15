@@ -49,16 +49,17 @@ export function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [isTeacherLoginPending, setIsTeacherLoginPending] = useState(false);
   const [isStudentLoginPending, setIsStudentLoginPending] = useState(false);
-  const [classCode, setClassCode] = useState("");
-  const [studentName, setStudentName] = useState("");
+  const [studentUsername, setStudentUsername] = useState("");
+  const [studentPassword, setStudentPassword] = useState("");
+  const [showStudentPassword, setShowStudentPassword] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [fieldErrors, setFieldErrors] = useState<{
     email?: string;
     password?: string;
     confirmPassword?: string;
-    code?: string;
-    name?: string;
+    username?: string;
+    studentPassword?: string;
   }>({});
 
   useEffect(() => {
@@ -134,13 +135,10 @@ export function LoginPage() {
   }
 
   async function handleStudentLogin() {
-    const nextFieldErrors: { code?: string; name?: string } = {};
-    const normalizedCode = classCode.trim().toUpperCase();
-    const normalizedName = studentName.trim();
-
-    if (!normalizedCode) nextFieldErrors.code = "Ingresa el código de clase.";
-    else if (normalizedCode.length < 4) nextFieldErrors.code = "El código parece incompleto.";
-    if (!normalizedName) nextFieldErrors.name = "Escribe tu nombre.";
+    const nextFieldErrors: { username?: string; studentPassword?: string } = {};
+    const normalizedUsername = studentUsername.trim().toLowerCase();
+    if (!normalizedUsername) nextFieldErrors.username = "Escribe tu usuario.";
+    if (!studentPassword) nextFieldErrors.studentPassword = "Escribe tu contraseña.";
 
     if (Object.keys(nextFieldErrors).length > 0) {
       setFieldErrors(nextFieldErrors);
@@ -150,7 +148,7 @@ export function LoginPage() {
     }
 
     setIsStudentLoginPending(true);
-    const result = await loginStudent(normalizedCode, normalizedName);
+    const result = await loginStudent(normalizedUsername, studentPassword);
     setIsStudentLoginPending(false);
 
     if (!result.error) {
@@ -235,14 +233,13 @@ export function LoginPage() {
               <p className="text-sm font-medium text-primary">Bienvenido a Kobi</p>
               <h2 className="mt-2 text-4xl font-medium tracking-normal text-[#1077e5]">
                 {role === "student"
-                  ? "Entrar a la clase"
+                  ? "Hola, estudiante"
                   : teacherAuthMode === "login"
                     ? "Iniciar sesión"
                     : "Crear cuenta"}
               </h2>
               <p className="mt-4 text-sm leading-6 text-muted-foreground">
-                Entra con calma. Kobi se encarga de convertir los últimos minutos de clase en una actividad clara,
-                rápida y lista para tus estudiantes.
+                {role === "student" ? "Escribe el usuario y la contraseña que te dio tu docente." : "Entra con calma. Kobi prepara actividades claras y listas para tus estudiantes."}
               </p>
             </div>
 
@@ -425,40 +422,46 @@ export function LoginPage() {
                 }}
               >
                 <label className="group block">
-                  <span className="sr-only">Código de clase</span>
-                  <div className={inputShellClassName(Boolean(fieldErrors.code))}>
+                  <span className="sr-only">Usuario</span>
+                  <div className={`${inputShellClassName(Boolean(fieldErrors.username))} min-h-14`}>
                     <BookOpen className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                     <input
-                      className="w-full bg-transparent text-base uppercase text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:normal-case placeholder:text-slate-300"
-                      aria-describedby={fieldErrors.code ? "student-code-error" : undefined}
-                      aria-invalid={Boolean(fieldErrors.code)}
-                      onChange={(event) => setClassCode(event.target.value)}
-                      placeholder="Código de clase"
+                      className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
+                      aria-describedby={fieldErrors.username ? "student-username-error" : undefined}
+                      aria-invalid={Boolean(fieldErrors.username)}
+                      autoCapitalize="none"
+                      autoComplete="username"
+                      onChange={(event) => setStudentUsername(event.target.value)}
+                      placeholder="Tu usuario"
                       type="text"
-                      value={classCode}
+                      value={studentUsername}
                     />
                   </div>
-                  {fieldErrors.code ? <p className={fieldErrorClassName} id="student-code-error">{fieldErrors.code}</p> : null}
+                  {fieldErrors.username ? <p className={fieldErrorClassName} id="student-username-error">{fieldErrors.username}</p> : null}
                 </label>
                 <label className="group block">
-                  <span className="sr-only">Nombre</span>
-                  <div className={inputShellClassName(Boolean(fieldErrors.name))}>
-                    <User className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
+                  <span className="sr-only">Contraseña</span>
+                  <div className={`${inputShellClassName(Boolean(fieldErrors.studentPassword))} min-h-14`}>
+                    <Lock className="h-5 w-5 text-slate-300 transition group-hover:text-sky-400 group-focus-within:text-[#1077e5]" />
                     <input
                       className="w-full bg-transparent text-base text-[#0f4f9e] caret-[#1077e5] outline-none placeholder:text-slate-300"
-                      aria-describedby={fieldErrors.name ? "student-name-error" : undefined}
-                      aria-invalid={Boolean(fieldErrors.name)}
-                      onChange={(event) => setStudentName(event.target.value)}
-                      placeholder="Nombre"
-                      type="text"
-                      value={studentName}
+                      aria-describedby={fieldErrors.studentPassword ? "student-password-error" : undefined}
+                      aria-invalid={Boolean(fieldErrors.studentPassword)}
+                      autoComplete="current-password"
+                      onChange={(event) => setStudentPassword(event.target.value)}
+                      placeholder="Tu contraseña"
+                      type={showStudentPassword ? "text" : "password"}
+                      value={studentPassword}
                     />
+                    <button aria-label={showStudentPassword ? "Ocultar contraseña" : "Mostrar contraseña"} type="button" onClick={() => setShowStudentPassword((value) => !value)}>
+                      {showStudentPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                    </button>
                   </div>
-                  {fieldErrors.name ? <p className={fieldErrorClassName} id="student-name-error">{fieldErrors.name}</p> : null}
+                  {fieldErrors.studentPassword ? <p className={fieldErrorClassName} id="student-password-error">{fieldErrors.studentPassword}</p> : null}
                 </label>
 
                 <Button disabled={isStudentLoginPending} type="submit">
-                  {isStudentLoginPending ? "Entrando..." : "Entrar a clase"}
+                  {isStudentLoginPending ? "Entrando..." : "Entrar"}
                 </Button>
               </form>
             )}

@@ -48,7 +48,7 @@ describe("worker demo transcript API", () => {
   it("returns 400 for invalid chunk indexes", async () => {
     const response = await callDemoRoute(fakeSupabase(), fakeBoss(), { chunk_index: -1 });
 
-    expect(response.statusCode).toBe(400);
+    expect(response.statusCode).toBe(422);
   });
 
   it("returns 400 for malformed JSON request bodies", async () => {
@@ -58,7 +58,7 @@ describe("worker demo transcript API", () => {
     await routeRequest(req, res, fakeSupabase().client, fakeBoss().instance);
 
     expect(res.statusCode).toBe(400);
-    expect(res.body).toEqual({ error: "Request body must be valid JSON" });
+    expect(res.body).toEqual({ error: { code: "invalid_json" } });
   });
 
   it("inserts transcribed chunks idempotently and enqueues build-lesson-state once", async () => {
@@ -82,19 +82,19 @@ describe("worker demo transcript API", () => {
     });
     expect(supabase.audioChunks).toEqual([
       expect.objectContaining({
-        session_id: "session-1",
+        session_id: SESSION_ID,
         chunk_index: 0,
         status: "transcribed",
-        storage_path: "demo-transcript/session-1/0.txt",
+        storage_path: `demo-transcript/${SESSION_ID}/0.txt`,
         transcript_text: expect.stringContaining("Profesor:"),
       }),
     ]);
-    expect(boss.sent).toEqual([{ name: JOB_BUILD_LESSON_STATE, data: { sessionId: "session-1" } }]);
+    expect(boss.sent).toEqual([{ name: JOB_BUILD_LESSON_STATE, data: { sessionId: SESSION_ID } }]);
   });
 
   it("returns 409 when activity candidates are requested before lesson_state exists", async () => {
     const response = await callRoute(
-      "/api/sessions/session-1/activity-candidates",
+      `/api/sessions/${SESSION_ID}/activity-candidates`,
       fakeSupabase(),
       fakeBoss(),
       {},
@@ -107,14 +107,14 @@ describe("worker demo transcript API", () => {
   it("generates activity candidates on the worker from the latest lesson_state", async () => {
     const supabase = fakeSupabase();
     supabase.segments.push({
-      session_id: "session-1",
+      session_id: SESSION_ID,
       lesson_state: lessonState,
       created_at: "2026-07-07T10:00:00.000Z",
     });
     vi.mocked(retrieveCurriculumMatches).mockResolvedValueOnce([curriculumMatch]);
 
     const response = await callRoute(
-      "/api/sessions/session-1/activity-candidates",
+      `/api/sessions/${SESSION_ID}/activity-candidates`,
       supabase,
       fakeBoss(),
       {},
@@ -126,10 +126,47 @@ describe("worker demo transcript API", () => {
       expect.objectContaining({ grade: 7, subject: "lenguaje", unit: "U4" }),
     );
     expect(runGenerateActivityArtifactsJob).toHaveBeenCalledWith(supabase.client, {
-      sessionId: "session-1",
+      sessionId: SESSION_ID,
       lessonState,
       curriculumMatches: [curriculumMatch],
     });
+  });
+
+  it("returns 401 for anonymous and expired tokens", async () => {
+    const anonymous = await callRoute(`/api/sessions/${SESSION_ID}/manual-lesson-state`, fakeSupabase(), fakeBoss(), {}, {});
+    const expired = await callRoute(`/api/sessions/${SESSION_ID}/manual-lesson-state`, fakeSupabase(), fakeBoss(), {}, { authorization: "Bearer expired" });
+
+    expect(anonymous.body).toEqual({ error: { code: "authentication_required" } });
+    expect(expired.body).toEqual({ error: { code: "invalid_token" } });
+    expect(anonymous.statusCode).toBe(401);
+    expect(expired.statusCode).toBe(401);
+  });
+
+  it.each([
+    ["session creation", "/api/sessions", { classId: CLASS_ID }],
+    ["audio upload", `/api/sessions/${SESSION_ID}/audio-chunks`, {}],
+    ["manual lesson state", `/api/sessions/${SESSION_ID}/manual-lesson-state`, {}],
+    ["demo transcript", `/api/sessions/${SESSION_ID}/demo-transcript-chunks`, {}],
+    ["activity generation", `/api/sessions/${SESSION_ID}/activity-candidates`, {}],
+  ])("returns 403 before privileged work for cross-teacher %s", async (_name, url, body) => {
+    const supabase = fakeSupabase();
+    supabase.classes[0]!.teacher_id = "44444444-4444-4444-8444-444444444444";
+    (supabase.sessions[0]!.classes as Record<string, unknown>).teacher_id = "44444444-4444-4444-8444-444444444444";
+
+    const response = await callRoute(url, supabase, fakeBoss(), body);
+
+    expect(response.statusCode).toBe(403);
+    expect(response.body).toEqual({ error: { code: "forbidden" } });
+  });
+
+  it("returns stable validation and missing-resource errors", async () => {
+    const malformed = await callRoute("/api/sessions/not-a-uuid/activity-candidates", fakeSupabase(), fakeBoss(), {});
+    const missing = await callRoute(`/api/sessions/${"55555555-5555-4555-8555-555555555555"}/activity-candidates`, fakeSupabase(), fakeBoss(), {});
+
+    expect(malformed.body).toEqual({ error: { code: "invalid_request" } });
+    expect(malformed.statusCode).toBe(422);
+    expect(missing.body).toEqual({ error: { code: "session_not_found" } });
+    expect(missing.statusCode).toBe(404);
   });
 });
 
@@ -138,7 +175,7 @@ async function callDemoRoute(
   boss: ReturnType<typeof fakeBoss>,
   body: Record<string, unknown>,
 ) {
-  return callRoute("/api/sessions/session-1/demo-transcript-chunks", supabase, boss, body);
+  return callRoute(`/api/sessions/${SESSION_ID}/demo-transcript-chunks`, supabase, boss, body);
 }
 
 async function callRoute(
@@ -146,25 +183,26 @@ async function callRoute(
   supabase: ReturnType<typeof fakeSupabase>,
   boss: ReturnType<typeof fakeBoss>,
   body: Record<string, unknown>,
+  headers?: Record<string, string>,
 ) {
-  const req = fakeRequest(body);
+  const req = fakeRequest(body, headers);
   req.url = url;
   const res = fakeResponse();
   await routeRequest(req, res, supabase.client, boss.instance);
   return res;
 }
 
-function fakeRequest(body: Record<string, unknown>) {
+function fakeRequest(body: Record<string, unknown>, headers?: Record<string, string>) {
   const payload = Buffer.from(JSON.stringify(body));
-  return fakeRawRequest(payload);
+  return fakeRawRequest(payload, headers);
 }
 
-function fakeRawRequest(payload: string | Buffer) {
+function fakeRawRequest(payload: string | Buffer, headers?: Record<string, string>) {
   const body = Buffer.isBuffer(payload) ? payload : Buffer.from(payload);
   return {
     method: "POST",
-    url: "/api/sessions/session-1/demo-transcript-chunks",
-    headers: { host: "localhost", "content-type": "application/json" },
+    url: `/api/sessions/${SESSION_ID}/demo-transcript-chunks`,
+    headers: headers ?? { host: "localhost", "content-type": "application/json", authorization: "Bearer valid-token" },
     async *[Symbol.asyncIterator]() {
       yield body;
     },
@@ -206,19 +244,29 @@ function fakeSupabase() {
   const segments: Array<Record<string, unknown>> = [];
   const sessions: Array<Record<string, unknown>> = [
     {
-      id: "session-1",
-      classes: { grade: 7, subject: "lenguaje", unit: "U4" },
+      id: SESSION_ID,
+      classes: { teacher_id: TEACHER_ID, grade: 7, subject: "lenguaje", unit: "U4" },
     },
   ];
+  const classes: Array<Record<string, unknown>> = [{ id: CLASS_ID, teacher_id: TEACHER_ID }];
 
   const client = {
+    auth: {
+      getUser: vi.fn(async (token: string) => token === "valid-token"
+        ? { data: { user: { id: TEACHER_ID } }, error: null }
+        : { data: { user: null }, error: { message: "expired" } }),
+    },
     from(table: string) {
-      return new FakeQuery(table, { curriculumChunks, audioChunks, segments, sessions });
+      return new FakeQuery(table, { curriculumChunks, audioChunks, segments, sessions, classes });
     },
   } as unknown as SupabaseClient;
 
-  return { client, curriculumChunks, audioChunks, segments, sessions };
+  return { client, curriculumChunks, audioChunks, segments, sessions, classes };
 }
+
+const TEACHER_ID = "11111111-1111-4111-8111-111111111111";
+const CLASS_ID = "22222222-2222-4222-8222-222222222222";
+const SESSION_ID = "33333333-3333-4333-8333-333333333333";
 
 const lessonState = {
   topic: "La noticia",
@@ -252,6 +300,7 @@ class FakeQuery {
       audioChunks: Array<Record<string, unknown>>;
       segments: Array<Record<string, unknown>>;
       sessions: Array<Record<string, unknown>>;
+      classes: Array<Record<string, unknown>>;
     },
   ) {}
 
@@ -282,6 +331,10 @@ class FakeQuery {
   }
 
   maybeSingle() {
+    if (this.table === "classes") {
+      const match = this.state.classes.find((row) => row.id === this.filters.get("id"));
+      return Promise.resolve({ data: match ?? null, error: null });
+    }
     if (this.table === "audio_chunks") {
       const match = this.state.audioChunks.find((chunk) =>
         chunk.session_id === this.filters.get("session_id") &&

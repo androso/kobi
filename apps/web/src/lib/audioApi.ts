@@ -1,3 +1,5 @@
+import { supabase } from "./supabase";
+
 const rawApiUrl = import.meta.env.VITE_KOBI_API_URL?.replace(/\/$/, "") ?? "";
 const API_URL = rawApiUrl || (import.meta.env.DEV ? "http://localhost:8787" : "");
 const DEMO_CLASS_ID = import.meta.env.VITE_KOBI_DEMO_CLASS_ID ?? "";
@@ -44,11 +46,20 @@ export interface RequestActivityCandidatesInput {
 }
 
 async function parseApiResponse<T>(response: Response): Promise<T> {
-  const body = (await response.json().catch(() => ({}))) as { error?: string };
+  const body = (await response.json().catch(() => ({}))) as { error?: string | { code?: string } };
   if (!response.ok) {
-    throw new Error(body.error ?? `Kobi API request failed with ${response.status}`);
+    const code = typeof body.error === "string" ? body.error : body.error?.code;
+    throw new Error(code ?? `Kobi API request failed with ${response.status}`);
   }
   return body as T;
+}
+
+async function authenticatedHeaders(headers: Record<string, string> = {}) {
+  if (!supabase) throw new Error("Supabase is not configured");
+  const { data, error } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (error || !token) throw new Error("Teacher authentication is required");
+  return { ...headers, authorization: `Bearer ${token}` };
 }
 
 export function isAudioApiConfigured() {
@@ -81,7 +92,7 @@ export async function createBackendSession({ classId }: CreateSessionInput) {
 
   const response = await fetch(`${API_URL}/api/sessions`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: await authenticatedHeaders({ "content-type": "application/json" }),
     body: JSON.stringify({ classId }),
   });
 
@@ -119,6 +130,7 @@ export async function uploadAudioChunk({
 
   const response = await fetch(`${API_URL}/api/sessions/${sessionId}/audio-chunks`, {
     method: "POST",
+    headers: await authenticatedHeaders(),
     body: form,
   });
 
@@ -147,7 +159,7 @@ export async function submitDemoTranscriptChunk({
 
   const response = await fetch(`${API_URL}/api/sessions/${sessionId}/demo-transcript-chunks`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: await authenticatedHeaders({ "content-type": "application/json" }),
     body: JSON.stringify({ chunk_index: chunkIndex }),
   });
 
@@ -194,7 +206,7 @@ export async function submitManualLessonState({
 
   const response = await fetch(`${API_URL}/api/sessions/${sessionId}/manual-lesson-state`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: await authenticatedHeaders({ "content-type": "application/json" }),
     body: JSON.stringify({ topic, objective }),
   });
 
@@ -218,7 +230,7 @@ export async function requestActivityCandidates({ sessionId }: RequestActivityCa
 
   const response = await fetch(`${API_URL}/api/sessions/${sessionId}/activity-candidates`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: await authenticatedHeaders({ "content-type": "application/json" }),
   });
 
   const payload = await parseApiResponse<{
