@@ -10,6 +10,7 @@ import {
   ACTIVITY_ARTIFACT_CONTRACT_VERSION,
   ACTIVITY_SDK_VERSION,
   activityManifestSchema,
+  createGamePlan,
   evidenceFromCurriculumMatches,
   verifyActivityArtifact,
   type ActivityArtifactCandidate,
@@ -33,9 +34,19 @@ const activityTelemetryEventTypeSchema = z.enum(["attempt", "hint", "complete"])
 const rawManifestDraftSchema = z
   .object({
     family: activityFamilySchema,
+    mechanic: z.string().optional(),
     title: z.string().min(3).max(90),
     est_minutes: z.number().int().min(3).max(12),
     allowed_capabilities: z.array(activityCapabilitySchema).min(1).max(4),
+    learning_design: z.object({
+      learning_goal: z.string().min(1).max(240),
+      interaction_summary: z.string().min(1).max(320),
+      success_criteria: z.array(z.string().min(1).max(180)).min(1).max(5),
+    }).optional(),
+    visual_theme: z.object({
+      scene: z.string().min(1).max(120),
+      accent: z.string().min(1).max(80),
+    }).optional(),
     content: z
       .object({
         items: z
@@ -373,6 +384,8 @@ export function normalizeOpenAiActivityDrafts(
   const requestedBands = new Set(input.bands);
   const evidence = evidenceFromCurriculumMatches(input.curriculumMatches);
   const primaryMatch = input.curriculumMatches[0];
+  const gamePlan = createGamePlan(input.sessionContext, input.curriculumMatches);
+  const activitySetId = `set-${primaryMatch.objective_code}-${gamePlan.mechanic}`.replace(/[^a-z0-9-]/gi, "-").toLocaleLowerCase("es-SV");
   const errors: string[] = [];
   const candidates: ActivityArtifactCandidate[] = [];
   const seenRequestedBands = new Set<DifficultyBand>();
@@ -385,7 +398,8 @@ export function normalizeOpenAiActivityDrafts(
     seenRequestedBands.add(artifact.difficulty_band);
 
     const manifest: ActivityManifest = {
-      family: artifact.manifest_draft.family as ActivityFamily,
+      family: gamePlan.family as ActivityFamily,
+      mechanic: gamePlan.mechanic,
       title: artifact.manifest_draft.title,
       difficulty_band: artifact.difficulty_band,
       curriculum: {
@@ -399,6 +413,15 @@ export function normalizeOpenAiActivityDrafts(
       entry: "index.html",
       sdk_version: ACTIVITY_SDK_VERSION,
       allowed_capabilities: artifact.manifest_draft.allowed_capabilities,
+      learning_design: artifact.manifest_draft.learning_design ?? {
+        learning_goal: gamePlan.learning_goal,
+        interaction_summary: `${gamePlan.interaction_metaphor}: ${gamePlan.band_requirements[artifact.difficulty_band]}`,
+        success_criteria: ["Completa la interaccion", "Conecta la respuesta con el objetivo"],
+      },
+      visual_theme: artifact.manifest_draft.visual_theme ?? {
+        scene: gamePlan.interaction_metaphor,
+        accent: "azul Kobi",
+      },
     };
 
     const manifestResult = activityManifestSchema.safeParse(manifest);
@@ -415,10 +438,11 @@ export function normalizeOpenAiActivityDrafts(
       contract_version: ACTIVITY_ARTIFACT_CONTRACT_VERSION,
       manifest: manifestResult.data,
       bundle_ref: bundleRefFactory(),
-      bundle_html: artifact.index_html,
+      bundle_html: ensureSecurityAndDesignBrief(artifact.index_html),
       verifier_scores: defaultInitialVerifierScores,
       evidence,
       parent_id: input.parentIdByBand?.[artifact.difficulty_band] ?? null,
+      activity_set_id: activitySetId,
       status: "candidate",
     });
   }
@@ -430,6 +454,13 @@ export function normalizeOpenAiActivityDrafts(
   }
 
   return { candidates, errors };
+}
+
+function ensureSecurityAndDesignBrief(html: string): string {
+  const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">`;
+  const design = `<style>:focus-visible{outline:3px solid #f59e0b;outline-offset:3px}button{border-radius:14px;padding:12px 16px;background:#2563eb;color:white}body{font-family:system-ui,sans-serif;background:#eff6ff;color:#0f172a}@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}</style>`;
+  if (/<meta[^>]+http-equiv=["']Content-Security-Policy["']/i.test(html)) return html;
+  return html.replace(/<head>/i, `<head>${csp}${design}`);
 }
 
 function recordMissingDraftBands(
@@ -458,6 +489,8 @@ export function buildActivityGenerationPrompt(input: BuildPromptInput): string {
       requested_bands: input.bands,
       artifact_contract: {
         allowed_families: ["match_classify", "sequence_order", "guided_practice"],
+        required_shared_game_plan: createGamePlan(input.sessionContext, input.curriculumMatches),
+        required_new_manifest_fields: ["mechanic", "learning_design.learning_goal", "learning_design.interaction_summary", "learning_design.success_criteria", "visual_theme.scene", "visual_theme.accent"],
         content_modes: [
           "exercise items with prompts, answer keys, hints, and telemetry_events as an array or null",
         ],
@@ -481,6 +514,7 @@ export function buildActivityGenerationPrompt(input: BuildPromptInput): string {
           core: "let students apply the concept with meaningful feedback",
           challenge: "ask students to explain, justify, compare, or synthesize",
         },
+        visual_contract: "Use Kobi blue foundation, rounded surfaces, clear typography, generous spacing, responsive phone/laptop layout, visible focus, readable contrast, touch-friendly controls, reduced-motion support, immediate feedback, no external assets.",
         avoid: [
           "generic multiple-choice unless it is clearly the strongest fit",
           "decorative effects that do not support the learning task",

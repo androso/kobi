@@ -6,7 +6,9 @@ import {
   buildActivitySessionContext,
   createActivityArtifactCandidates,
   hasMaterialContextChange,
+  pickCoherentActivitySet,
   pickReusableActivitiesByBand,
+  shouldAdaptRepositoryMatch,
   rankActivityRepositoryRows,
   verifyActivityArtifact,
   type ActivityArtifact,
@@ -151,7 +153,11 @@ export async function runGenerateActivityArtifactsJob(
 
   const repositoryRows = await loadRepositoryRows(supabase, curriculumMatches);
   const rankedRows = rankActivityRepositoryRows(repositoryRows, curriculumMatches, sessionContext);
-  const reusableByBand = pickReusableActivitiesByBand(rankedRows);
+  const coherentSet = pickCoherentActivitySet(rankedRows);
+  const reusableByBand = coherentSet.length > 0
+    ? Object.fromEntries(coherentSet.map((row) => [row.manifest.difficulty_band, row])) as Partial<Record<DifficultyBand, RankedActivityRepositoryRow>>
+    : pickReusableActivitiesByBand(rankedRows);
+  const adapting = coherentSet.length === 0 && shouldAdaptRepositoryMatch(rankedRows);
   const parentIdByBand = parentIdsByBand(rankedRows);
   const missingBands = activityBands.filter((band) => !reusableByBand[band]);
   const staticCandidates = createActivityArtifactCandidates({
@@ -347,7 +353,7 @@ async function loadRepositoryRows(
   const { data, error } = await supabase
     .from("activities")
     .select(
-      "id, contract_version, manifest, bundle_ref, evidence, parent_id, status, source, verifier_scores, times_used, avg_score",
+      "id, contract_version, manifest, bundle_ref, evidence, parent_id, activity_set_id, status, source, verifier_scores, times_used, avg_score",
     )
     .eq("status", "verified")
     .overlaps("curriculum_tags", objectiveCodes)
@@ -458,6 +464,7 @@ function withServerDerivedCandidateFields(
     ...candidate,
     bundle_ref: createUnguessableBundleRef("static"),
     parent_id: parentIdByBand[candidate.manifest.difficulty_band] ?? null,
+    activity_set_id: candidate.activity_set_id ?? `set-${createUnguessableBundleRef("static").split("/")[1]}`,
     status: "candidate",
   };
 }
@@ -511,6 +518,7 @@ async function persistGeneratedArtifact(
         bundle_ref: result.artifact.bundle_ref,
         evidence: result.artifact.evidence,
         parent_id: result.artifact.parent_id,
+        activity_set_id: result.artifact.activity_set_id,
         status: result.artifact.status,
         source: "new",
         verifier_scores: result.artifact.verifier_scores,
@@ -562,7 +570,7 @@ function parseRepositoryRow(row: Record<string, unknown>): ActivityRepositoryRow
   if (row.status !== "verified") return null;
 
   const source =
-    row.source === "seeded" || row.source === "reused" || row.source === "new"
+    row.source === "seeded" || row.source === "reused" || row.source === "adapted" || row.source === "new"
       ? row.source
       : "new";
 
@@ -573,6 +581,7 @@ function parseRepositoryRow(row: Record<string, unknown>): ActivityRepositoryRow
     bundle_ref: String(row.bundle_ref),
     evidence: evidence.data,
     parent_id: typeof row.parent_id === "string" ? row.parent_id : null,
+    activity_set_id: typeof row.activity_set_id === "string" ? row.activity_set_id : null,
     status: "verified",
     source,
     verifier_scores: verifierScores.data,

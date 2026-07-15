@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { LessonState } from "@kobi/ai-core";
 import type { CurriculumMatch } from "@kobi/curriculum";
 import {
+  activityManifestSchema,
   activitySdkMessageSchema,
+  createGamePlan,
   authorizeActivityTelemetryMessage,
   buildActivitySessionContext,
   createActivityArtifactCandidates,
@@ -58,6 +60,9 @@ describe("activity artifact contracts", () => {
       "challenge",
     ]);
 
+    expect(new Set(candidates.map((candidate) => candidate.activity_set_id)).size).toBe(1);
+    expect(new Set(candidates.map((candidate) => candidate.manifest.mechanic)).size).toBe(1);
+
     for (const candidate of candidates) {
       const result = verifyActivityArtifact(candidate);
       expect(result.ok).toBe(true);
@@ -66,6 +71,24 @@ describe("activity artifact contracts", () => {
       expect(candidate.bundle_html).not.toContain("preview-assignment");
       expect(candidate.bundle_html).not.toContain("assignment_id:");
     }
+  });
+
+  it("plans one coherent game concept with differentiated band requirements", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const plan = createGamePlan(context, curriculumMatches);
+
+    expect(plan.mechanic).toBe("source_check_desk");
+    expect(plan.band_requirements.support).toContain("Menos opciones");
+    expect(plan.band_requirements.challenge).toContain("Justificacion");
+  });
+
+  it("keeps legacy manifests readable while rejecting invalid family/mechanic combinations", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({ lessonState, sessionContext: context, curriculumMatches });
+    const legacy = { ...candidate.manifest, mechanic: undefined, learning_design: undefined, visual_theme: undefined };
+
+    expect(activityManifestSchema.safeParse(legacy).success).toBe(true);
+    expect(activityManifestSchema.safeParse({ ...candidate.manifest, family: "sequence_order", mechanic: "source_check_desk" }).success).toBe(false);
   });
 
   it("validates SDK telemetry messages", () => {

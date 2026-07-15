@@ -4,12 +4,12 @@ import {
   ACTIVITY_ARTIFACT_CONTRACT_VERSION,
   ACTIVITY_SDK_VERSION,
   type ActivityArtifactCandidate,
-  type ActivityFamily,
   type ActivityManifest,
   type DifficultyBand,
   type SessionContext,
 } from "./types.js";
 import { evidenceFromCurriculumMatches } from "./sessionContext.js";
+import { createGamePlan } from "./gamePlan.js";
 
 export interface CreateActivityCandidatesInput {
   lessonState: LessonState;
@@ -19,20 +19,17 @@ export interface CreateActivityCandidatesInput {
 
 const bandSpecs: Record<
   DifficultyBand,
-  { family: ActivityFamily; estMinutes: number; titlePrefix: string }
+  { estMinutes: number; titlePrefix: string }
 > = {
   support: {
-    family: "match_classify",
     estMinutes: 5,
     titlePrefix: "Apoyo",
   },
   core: {
-    family: "guided_practice",
     estMinutes: 6,
     titlePrefix: "Practica",
   },
   challenge: {
-    family: "sequence_order",
     estMinutes: 7,
     titlePrefix: "Reto",
   },
@@ -45,11 +42,14 @@ export function createActivityArtifactCandidates(
 
   const primaryMatch = input.curriculumMatches[0];
   const evidence = evidenceFromCurriculumMatches(input.curriculumMatches);
+  const gamePlan = createGamePlan(input.sessionContext, input.curriculumMatches);
+  const activitySetId = `set-${stableHash(`${primaryMatch.objective_code}:${input.sessionContext.latest_topic}:${gamePlan.mechanic}`)}`;
 
   return (["support", "core", "challenge"] as DifficultyBand[]).map((band) => {
     const spec = bandSpecs[band];
     const manifest: ActivityManifest = {
-      family: spec.family,
+      family: gamePlan.family,
+      mechanic: gamePlan.mechanic,
       title: `${spec.titlePrefix}: ${shortTitle(input.lessonState.topic)}`,
       difficulty_band: band,
       curriculum: {
@@ -66,6 +66,15 @@ export function createActivityArtifactCandidates(
       entry: "index.html",
       sdk_version: ACTIVITY_SDK_VERSION,
       allowed_capabilities: band === "challenge" ? ["dom", "css", "svg"] : ["dom", "css"],
+      learning_design: {
+        learning_goal: gamePlan.learning_goal,
+        interaction_summary: `${gamePlan.interaction_metaphor}: ${gamePlan.band_requirements[band]}`,
+        success_criteria: buildSuccessCriteria(band),
+      },
+      visual_theme: {
+        scene: gamePlan.interaction_metaphor,
+        accent: band === "support" ? "cielo" : band === "challenge" ? "indigo" : "azul",
+      },
     };
 
     const bundleHtml = renderActivityHtml(manifest);
@@ -92,6 +101,7 @@ export function createActivityArtifactCandidates(
       },
       evidence,
       parent_id: null,
+      activity_set_id: activitySetId,
       status: "candidate",
     };
   });
@@ -163,19 +173,25 @@ function renderActivityHtml(manifest: ActivityManifest): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
   <title>${escapeHtml(manifest.title)}</title>
   <style>
     :root { color-scheme: light; font-family: system-ui, sans-serif; }
-    body { margin: 0; background: #fff7ed; color: #1f2937; }
-    main { max-width: 720px; margin: 0 auto; padding: 24px; }
-    .card { background: white; border: 2px solid #fed7aa; border-radius: 18px; padding: 24px; box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08); }
-    h1 { color: #9a3412; font-size: 1.7rem; margin: 0 0 8px; }
+    body { margin: 0; background: linear-gradient(135deg, #eff6ff, #dbeafe); color: #0f172a; }
+    main { max-width: 760px; margin: 0 auto; padding: clamp(16px, 4vw, 28px); }
+    .card { background: rgba(255,255,255,.96); border: 2px solid #bfdbfe; border-radius: 24px; padding: clamp(18px, 4vw, 28px); box-shadow: 0 18px 40px rgba(30, 64, 175, 0.14); }
+    h1 { color: #1d4ed8; font-size: clamp(1.45rem, 5vw, 1.9rem); margin: 0 0 8px; }
     .prompt { font-size: 1.15rem; line-height: 1.5; }
-    .option { display: block; width: 100%; margin: 10px 0; padding: 12px 14px; border-radius: 12px; border: 1px solid #fdba74; background: #ffedd5; text-align: left; font: inherit; cursor: pointer; }
+    .option { display: block; width: 100%; margin: 10px 0; padding: 12px 14px; border-radius: 12px; border: 1px solid #93c5fd; background: #eff6ff; text-align: left; font: inherit; cursor: pointer; }
     .option[aria-pressed="true"] { background: #bbf7d0; border-color: #22c55e; }
     .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
-    .actions button { border: 0; border-radius: 999px; padding: 10px 16px; background: #ea580c; color: white; font-weight: 700; cursor: pointer; }
+    .actions button { border: 0; border-radius: 999px; padding: 10px 16px; background: #2563eb; color: white; font-weight: 700; cursor: pointer; }
     #feedback { min-height: 1.5rem; margin-top: 12px; font-weight: 700; }
+    .progress { height: 10px; border-radius: 999px; background: #dbeafe; overflow: hidden; margin: 16px 0; }
+    .progress span { display:block; width: 35%; height:100%; background:#2563eb; }
+    :focus-visible { outline: 3px solid #f59e0b; outline-offset: 3px; }
+    @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+    @media (max-width: 520px) { .actions { flex-direction: column; } .actions button { width: 100%; } }
   </style>
 </head>
 <body>
@@ -183,6 +199,7 @@ function renderActivityHtml(manifest: ActivityManifest): string {
     <section class="card" aria-labelledby="activity-title">
       <p>Actividad ${escapeHtml(manifest.difficulty_band)} - ${escapeHtml(manifest.curriculum.objective)}</p>
       <h1 id="activity-title">${escapeHtml(manifest.title)}</h1>
+      <div class="progress" aria-label="Progreso"><span></span></div>
       <p class="prompt">${escapeHtml(item.prompt)}</p>
       <div id="options">${buttons}</div>
       <div class="actions">
@@ -245,6 +262,11 @@ function renderActivityHtml(manifest: ActivityManifest): string {
   </script>
 </body>
 </html>`;
+}
+
+function buildSuccessCriteria(band: DifficultyBand): string[] {
+  const base = ["Completa la interaccion principal", "Usa vocabulario o evidencia del objetivo"];
+  return band === "challenge" ? [...base, "Explica o justifica tu decision"] : base;
 }
 
 function extractTerms(text: string): string[] {

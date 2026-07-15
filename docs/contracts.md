@@ -86,6 +86,7 @@ Assignment rows are only valid for approved candidates from the same session: `a
     }
   ],
   "parent_id": null,
+  "activity_set_id": "set-...",
   "status": "verified"
 }
 ```
@@ -94,7 +95,7 @@ Assignment rows are only valid for approved candidates from the same session: `a
 
 - Bundle format is one self-contained `index.html` with inline CSS/JS.
 - No external imports, assets, network calls, credentialed requests, storage APIs, top navigation, popups, or same-origin assumptions.
-- Allowed families are `match_classify`, `sequence_order`, and `guided_practice`.
+- Allowed families are `match_classify`, `sequence_order`, and `guided_practice`; newly generated/adapted manifests also include a valid `mechanic`, `learning_design`, and `visual_theme`.
 - `content.items[]` is required and must include prompts plus answer keys; hints default to an empty list when omitted.
 - `bundle_ref` must be unguessable and authorized by assignment/class before iframe delivery.
 - Students authenticate with teacher-managed username/password accounts. Delivery derives the student mapping from `auth.uid()`; assignment reads, dismissals, telemetry, and completion are restricted to that mapping by RLS. `join_class_by_code` and browser-held student bearer tokens are not part of the active contract.
