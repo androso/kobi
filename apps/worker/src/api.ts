@@ -8,6 +8,10 @@ import { z } from "zod";
 import { demoTranscriptChunks, DEMO_TRANSCRIPT_TICK_MS } from "./demoTranscript.js";
 import { JOB_BUILD_LESSON_STATE, JOB_TRANSCRIBE_CHUNK } from "./queue.js";
 import { runGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
+import {
+  createOpenAiActivityGeneratorFromEnv,
+  validateOpenAiActivityConfig,
+} from "./activity-generation/openaiArtifactGenerator.js";
 
 interface ApiServerOptions {
   supabase: SupabaseClient;
@@ -413,22 +417,25 @@ async function ensureDemoCurriculumSeed(supabase: SupabaseClient) {
     return;
   }
 
-  if ((existing ?? []).length > 0) return;
-
   try {
     const embedding = await embedText(DEMO_CURRICULUM.text, "RETRIEVAL_DOCUMENT");
-    const { error: insertError } = await supabase.from("curriculum_chunks").insert({
-      ...DEMO_CURRICULUM,
-      embedding,
-    });
+    const existingId = existing?.[0]?.id;
+    const query = existingId
+      ? supabase
+          .from("curriculum_chunks")
+          .update({ ...DEMO_CURRICULUM, embedding })
+          .eq("id", existingId)
+      : supabase.from("curriculum_chunks").insert({ ...DEMO_CURRICULUM, embedding });
+    const { error: insertError } = await query;
 
     if (insertError) {
       logApi("demo curriculum seed insert failed", { error: insertError.message });
     } else {
-      logApi("demo curriculum seed inserted", {
+      logApi(existingId ? "demo curriculum seed embedding refreshed" : "demo curriculum seed inserted", {
         grade: DEMO_CURRICULUM.grade,
         subject: DEMO_CURRICULUM.subject,
         unit: DEMO_CURRICULUM.unit,
+        embeddingModel: process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small",
       });
     }
   } catch (error) {
@@ -636,21 +643,61 @@ async function createActivityCandidates(
     return;
   }
 
-  const classContext = await loadSessionClassContext(supabase, sessionId);
-  const curriculumMatches = await retrieveCurriculumMatches(supabase, {
-    queryText: buildCurriculumQueryText(lessonState),
-    grade: classContext.grade,
-    subject: classContext.subject,
-    unit: classContext.unit,
-  });
-
-  const result = await runGenerateActivityArtifactsJob(supabase, {
+  const startedAt = Date.now();
+  let stage = "loading class context";
+  logApi("activity generation starting", {
     sessionId,
-    lessonState,
-    curriculumMatches,
+    topic: lessonState.topic,
+    confidence: lessonState.confidence,
   });
 
-  writeJson(res, result.skippedReason ? 200 : 201, result);
+  try {
+    const classContext = await loadSessionClassContext(supabase, sessionId);
+    stage = "retrieving curriculum matches";
+    logApi("activity generation retrieving curriculum", { sessionId, ...classContext });
+    const curriculumMatches = await retrieveCurriculumMatches(supabase, {
+      queryText: buildCurriculumQueryText(lessonState),
+      grade: classContext.grade,
+      subject: classContext.subject,
+      unit: classContext.unit,
+    });
+
+    stage = "generating artifacts";
+    logApi("activity generation curriculum ready", {
+      sessionId,
+      curriculumMatchCount: curriculumMatches.length,
+    });
+    const activityConfig = validateOpenAiActivityConfig(process.env);
+    const openAiGenerator = createOpenAiActivityGeneratorFromEnv(process.env);
+    logApi("activity generator configured", {
+      sessionId,
+      provider: openAiGenerator ? "openai" : "static fallback",
+      model: openAiGenerator ? activityConfig.model : null,
+    });
+    const result = await runGenerateActivityArtifactsJob(supabase, {
+      sessionId,
+      lessonState,
+      curriculumMatches,
+      curriculumFallback: classContext,
+    }, {
+      openAiGenerator,
+    });
+
+    logApi("activity generation finished", {
+      sessionId,
+      durationMs: Date.now() - startedAt,
+      ...result,
+    });
+    writeJson(res, result.skippedReason ? 200 : 201, result);
+  } catch (error) {
+    safeLog("error", "activity_generation.failed", {
+      sessionId,
+      stage,
+      latencyMs: Date.now() - startedAt,
+      outcome: classifySafeError(error),
+    });
+    throw error;
+  }
 }
 
 async function loadLatestLessonState(
@@ -775,7 +822,8 @@ export async function routeRequest(
     if (req.method === "POST" && activityCandidatesMatch?.[1]) {
       const sessionId = parseBody(uuidSchema, activityCandidatesMatch[1]);
       await authorizeSession(supabase, sessionId, actor);
-      enforceRateLimit(`generation:${actor.id}:${sessionId}`, 5);
+      // The web client polls this endpoint every 10 seconds while lesson_state is pending.
+      enforceRateLimit(`generation:${actor.id}:${sessionId}`, 10);
       await createActivityCandidates(res, sessionId, supabase);
       return;
     }
