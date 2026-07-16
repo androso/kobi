@@ -9,8 +9,16 @@ export interface IngestCurriculumSourceJobData {
   classId: string;
 }
 
+interface CleanupSource {
+  id: string;
+  origin_class_id: string | null;
+  storage_path: string;
+  chunks_built: number | null;
+}
+
 const DEFAULT_CURRICULUM_BUCKET = "curriculum-sources";
-const MAX_PDF_BYTES = 25 * 1024 * 1024;
+const MAX_PDF_BYTES = 50 * 1024 * 1024;
+const MAX_PDF_PAGES = 400;
 
 export function registerIngestCurriculumSourceJob(boss: PgBoss, supabase: SupabaseClient) {
   return boss.work<IngestCurriculumSourceJobData>(
@@ -34,10 +42,10 @@ export async function runIngestCurriculumSourceJob(
   const { data: source, error: sourceError } = await supabase
     .from("curriculum_sources")
     .select(
-      "id,class_id,source_document,storage_path,status,size_bytes,classes(grade,subject,unit)",
+      "id,origin_class_id,source_document,storage_path,status,size_bytes,grade,subject,unit,chunks_built",
     )
     .eq("id", sourceId)
-    .eq("class_id", classId)
+    .eq("origin_class_id", classId)
     .maybeSingle();
 
   if (sourceError) {
@@ -47,10 +55,18 @@ export async function runIngestCurriculumSourceJob(
     throw new Error(`ingestCurriculumSource: source ${sourceId} not found for class ${classId}`);
   }
 
-  const classContext = normalizeClassContext(source.classes);
-  if (!classContext) {
-    await markFailed(supabase, sourceId, "Class grade/subject/unit is incomplete.");
-    throw new Error("ingestCurriculumSource: class context is incomplete");
+  if (source.status === "cleanup_pending") {
+    await finalizeCurriculumSourceCleanup(supabase, source as CleanupSource);
+    const chunksBuilt = typeof source.chunks_built === "number" ? source.chunks_built : 0;
+    return { inserted: chunksBuilt, chunksBuilt };
+  }
+
+  const grade = Number(source.grade);
+  const subject = typeof source.subject === "string" ? source.subject.trim() : "";
+  const unit = typeof source.unit === "string" ? source.unit.trim() : "";
+  if (!Number.isInteger(grade) || grade <= 0 || !subject || !unit) {
+    await markFailed(supabase, sourceId, "Source grade/subject/unit is incomplete.");
+    throw new Error("ingestCurriculumSource: source context is incomplete");
   }
 
   const { error: processingError } = await supabase
@@ -61,13 +77,11 @@ export async function runIngestCurriculumSourceJob(
       updated_at: new Date().toISOString(),
     })
     .eq("id", sourceId);
-
   if (processingError) {
-    throw new Error(
-      `ingestCurriculumSource: failed to mark processing: ${processingError.message}`,
-    );
+    throw new Error(`ingestCurriculumSource: failed to mark processing: ${processingError.message}`);
   }
 
+  let cleanupPending = false;
   try {
     if (typeof source.size_bytes === "number" && source.size_bytes > MAX_PDF_BYTES) {
       throw new Error(`PDF exceeds max size ${MAX_PDF_BYTES} bytes`);
@@ -77,48 +91,49 @@ export async function runIngestCurriculumSourceJob(
     const { data: blob, error: downloadError } = await supabase.storage
       .from(bucket)
       .download(source.storage_path);
-
     if (downloadError || !blob) {
-      throw new Error(
-        `Failed to download curriculum PDF: ${downloadError?.message ?? "missing blob"}`,
-      );
+      throw new Error(`Failed to download curriculum PDF: ${downloadError?.message ?? "missing blob"}`);
     }
 
     const pdfBytes = new Uint8Array(await blob.arrayBuffer());
-    if (pdfBytes.byteLength === 0) {
-      throw new Error("Downloaded curriculum PDF is empty");
-    }
+    if (pdfBytes.byteLength === 0) throw new Error("Downloaded curriculum PDF is empty");
     if (pdfBytes.byteLength > MAX_PDF_BYTES) {
       throw new Error(`PDF exceeds max size ${MAX_PDF_BYTES} bytes`);
     }
 
     const result = await digestTextbookPdf(supabase, {
       pdfBytes,
-      grade: classContext.grade,
-      subject: classContext.subject,
-      unit: classContext.unit,
+      grade,
+      subject,
+      unit,
       sourceDocument: source.source_document,
-      classId,
+      sourceId,
       replaceSource: true,
       maxBytes: MAX_PDF_BYTES,
+      maxPages: MAX_PDF_PAGES,
     });
 
-    const { error: readyError } = await supabase
+    const { error: pendingError } = await supabase
       .from("curriculum_sources")
       .update({
-        status: "ready",
+        status: "cleanup_pending",
         error_message: null,
         page_count: result.pageCount,
         chunks_built: result.chunksBuilt,
         updated_at: new Date().toISOString(),
       })
       .eq("id", sourceId);
-
-    if (readyError) {
-      throw new Error(`ingestCurriculumSource: failed to mark ready: ${readyError.message}`);
+    if (pendingError) {
+      throw new Error(`ingestCurriculumSource: failed to mark cleanup pending: ${pendingError.message}`);
     }
+    cleanupPending = true;
 
-    await markOtherClassSourcesSuperseded(supabase, classId, sourceId);
+    await finalizeCurriculumSourceCleanup(supabase, {
+      id: sourceId,
+      origin_class_id: classId,
+      storage_path: source.storage_path,
+      chunks_built: result.chunksBuilt,
+    });
 
     safeLog("info", "curriculum.ingest_ready", {
       sourceId,
@@ -127,17 +142,68 @@ export async function runIngestCurriculumSourceJob(
       inserted: result.inserted,
       pageCount: result.pageCount,
     });
-
     return { inserted: result.inserted, chunksBuilt: result.chunksBuilt };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Curriculum ingest failed";
-    safeLog("error", "curriculum.ingest_failed", {
+    safeLog("error", cleanupPending ? "curriculum.cleanup_failed" : "curriculum.ingest_failed", {
       sourceId,
       classId,
       outcome: classifySafeError(error),
     });
-    await markFailed(supabase, sourceId, message.slice(0, 500));
+    if (!cleanupPending) {
+      const message = error instanceof Error ? error.message : "Curriculum ingest failed";
+      await markFailed(supabase, sourceId, message.slice(0, 500));
+    }
     throw error;
+  }
+}
+
+export async function reconcileCurriculumSourceCleanup(supabase: SupabaseClient): Promise<void> {
+  const { data, error } = await supabase
+    .from("curriculum_sources")
+    .select("id,origin_class_id,storage_path,chunks_built")
+    .eq("status", "cleanup_pending")
+    .limit(100);
+  if (error) {
+    safeLog("error", "curriculum.cleanup_reconcile_load_failed", {
+      outcome: classifySafeError(error),
+    });
+    return;
+  }
+
+  for (const source of data ?? []) {
+    try {
+      await finalizeCurriculumSourceCleanup(supabase, source as CleanupSource);
+    } catch (cleanupError) {
+      safeLog("error", "curriculum.cleanup_reconcile_failed", {
+        sourceId: source.id,
+        outcome: classifySafeError(cleanupError),
+      });
+    }
+  }
+}
+
+async function finalizeCurriculumSourceCleanup(
+  supabase: SupabaseClient,
+  source: CleanupSource,
+): Promise<void> {
+  const bucket = process.env.CURRICULUM_BUCKET ?? DEFAULT_CURRICULUM_BUCKET;
+  const { error: removeError } = await supabase.storage.from(bucket).remove([source.storage_path]);
+  if (removeError) {
+    throw new Error(`ingestCurriculumSource: failed to delete source PDF: ${removeError.message}`);
+  }
+
+  const { error: readyError } = await supabase
+    .from("curriculum_sources")
+    .update({
+      status: "ready",
+      error_message: null,
+      storage_deleted_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", source.id)
+    .eq("status", "cleanup_pending");
+  if (readyError) {
+    throw new Error(`ingestCurriculumSource: failed to mark ready: ${readyError.message}`);
   }
 }
 
@@ -151,50 +217,8 @@ async function markFailed(supabase: SupabaseClient, sourceId: string, message: s
     })
     .eq("id", sourceId);
   if (error) {
-    throw new Error(
-      `ingestCurriculumSource: failed to mark failed status: ${error.message}`,
-      { cause: new Error(message) },
-    );
-  }
-}
-
-async function markOtherClassSourcesSuperseded(
-  supabase: SupabaseClient,
-  classId: string,
-  sourceId: string,
-) {
-  const { error } = await supabase
-    .from("curriculum_sources")
-    .update({
-      status: "superseded",
-      error_message: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("class_id", classId)
-    .neq("id", sourceId)
-    .neq("status", "failed")
-    .neq("status", "superseded");
-
-  if (error) {
-    safeLog("error", "curriculum.supersede_old_sources_failed", {
-      classId,
-      sourceId,
-      outcome: classifySafeError(error),
+    throw new Error(`ingestCurriculumSource: failed to mark failed status: ${error.message}`, {
+      cause: new Error(message),
     });
   }
-}
-
-function normalizeClassContext(
-  value: unknown,
-): { grade: number; subject: string; unit: string } | null {
-  const raw = Array.isArray(value) ? value[0] : value;
-  if (!raw || typeof raw !== "object") return null;
-
-  const row = raw as Record<string, unknown>;
-  const grade = Number(row.grade);
-  const subject = typeof row.subject === "string" ? row.subject.trim() : "";
-  const unit = typeof row.unit === "string" ? row.unit.trim() : "";
-
-  if (!Number.isInteger(grade) || grade <= 0 || !subject || !unit) return null;
-  return { grade, subject, unit };
 }

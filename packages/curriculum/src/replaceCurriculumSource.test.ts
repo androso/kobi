@@ -49,8 +49,8 @@ describe("replaceCurriculumSource", () => {
 
     const rows = [makeRow(), makeRow({ content_hash: "b".repeat(64), chunk_index: 1 })];
     const inserted = await replaceCurriculumSource({ rpc } as never, {
+      sourceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       sourceDocument: "source-1",
-      classId: "class-1",
       rows,
     });
 
@@ -58,11 +58,12 @@ describe("replaceCurriculumSource", () => {
     expect(rpc).toHaveBeenCalledWith(
       "replace_curriculum_source",
       expect.objectContaining({
-        p_class_id: "class-1",
+        p_source_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        p_class_id: null,
         p_source_document: "source-1",
         p_rows: expect.arrayContaining([
-          expect.objectContaining({ content_hash: "a".repeat(64), class_id: "class-1" }),
-          expect.objectContaining({ content_hash: "b".repeat(64), class_id: "class-1" }),
+          expect.objectContaining({ content_hash: "a".repeat(64), source_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }),
+          expect.objectContaining({ content_hash: "b".repeat(64), source_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }),
         ]),
       }),
     );

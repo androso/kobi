@@ -10,7 +10,7 @@ interface NormalizedRetrieveInput {
   grade: number;
   subject: string;
   unit: string | null;
-  classId: string | null;
+  sourceIds: string[];
   matchCount: number;
 }
 
@@ -33,39 +33,21 @@ export async function retrieveCurriculumMatches(
     match_subject: normalizedInput.subject,
     match_unit: normalizedInput.unit,
     match_count: normalizedInput.matchCount,
-    match_class_id: normalizedInput.classId,
+    match_source_ids: normalizedInput.sourceIds.length > 0 ? normalizedInput.sourceIds : null,
   });
 
   if (error) {
     throw new Error(`retrieveCurriculumMatches: RPC failed: ${error.message}`);
   }
 
-  const classMatches = validateMatches(data ?? []);
-  if (classMatches.length > 0 || !normalizedInput.classId) {
-    return classMatches;
-  }
-
-  const { data: globalData, error: globalError } = await supabase.rpc("match_curriculum_chunks", {
-    query_embedding: queryEmbedding,
-    match_grade: normalizedInput.grade,
-    match_subject: normalizedInput.subject,
-    match_unit: normalizedInput.unit,
-    match_count: normalizedInput.matchCount,
-    match_class_id: null,
-  });
-
-  if (globalError) {
-    throw new Error(`retrieveCurriculumMatches: global RPC failed: ${globalError.message}`);
-  }
-
-  return validateMatches(globalData ?? []);
+  return validateMatches(data ?? []);
 }
 
 function normalizeRetrieveInput(input: RetrieveCurriculumMatchesInput): NormalizedRetrieveInput {
   const queryText = input.queryText.trim();
   const subject = input.subject.trim().toLocaleLowerCase("es-SV");
   const unit = input.unit?.trim() || null;
-  const classId = input.classId?.trim() || null;
+  const sourceIds = [...new Set((input.sourceIds ?? []).map((id) => id.trim()).filter(Boolean))];
   const matchCount = input.matchCount ?? DEFAULT_MATCH_COUNT;
 
   if (!queryText) {
@@ -89,7 +71,7 @@ function normalizeRetrieveInput(input: RetrieveCurriculumMatchesInput): Normaliz
     grade: input.grade,
     subject,
     unit,
-    classId,
+    sourceIds,
     matchCount,
   };
 }
@@ -101,6 +83,7 @@ function validateMatches(rows: unknown[]): CurriculumMatch[] {
     }
 
     const match: CurriculumMatch = {
+      source_id: readOptionalString(row, "source_id", index),
       objective_code: readString(row, "objective_code", index),
       unit: readString(row, "unit", index),
       grade: readNumber(row, "grade", index),

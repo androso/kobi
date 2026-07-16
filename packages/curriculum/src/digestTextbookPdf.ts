@@ -15,6 +15,7 @@ export interface DigestTextbookPdfInput {
   grade: number;
   subject: string;
   sourceDocument?: string;
+  sourceId?: string;
   classId?: string;
   unit?: string;
   pageStart?: number;
@@ -51,6 +52,7 @@ export interface TextChunkBuildOptions {
   grade: number;
   subject: string;
   sourceDocument: string;
+  sourceId?: string;
   classId?: string;
   forcedUnit?: string;
   chunkSize?: number;
@@ -75,6 +77,7 @@ interface NormalizedDigestInput {
   grade: number;
   subject: string;
   sourceDocument: string;
+  sourceId?: string;
   classId?: string;
   unit?: string;
   pageStart?: number;
@@ -95,7 +98,7 @@ const TEXT_SPLIT_SEPARATORS = ["\n\n", "\n", " ", ""];
 const DEFAULT_MIN_TEXT_PAGE_COVERAGE = 0.8;
 const DEFAULT_EMBED_CONCURRENCY = 2;
 const DEFAULT_INSERT_BATCH_SIZE = 50;
-const DEFAULT_MAX_PAGES = 100;
+const DEFAULT_MAX_PAGES = 400;
 const DEFAULT_MAX_BYTES = 100 * 1024 * 1024;
 const DEFAULT_MAX_CHUNKS = 1_000;
 const EMBEDDING_DIMENSIONS = 768;
@@ -154,6 +157,7 @@ export async function digestTextbookPdf(
       grade: normalized.grade,
       subject: normalized.subject,
       sourceDocument: normalized.sourceDocument,
+      sourceId: normalized.sourceId,
       classId: normalized.classId,
       forcedUnit: normalized.unit,
     });
@@ -174,6 +178,7 @@ export async function digestTextbookPdf(
     });
 
     const inserted = await replaceCurriculumSource(supabase, {
+      sourceId: normalized.sourceId,
       sourceDocument: normalized.sourceDocument,
       classId: normalized.classId,
       rows,
@@ -192,6 +197,7 @@ export async function buildCurriculumChunksFromPages(
   const grade = options.grade;
   const subject = normalizeSubject(options.subject);
   const sourceDocument = options.sourceDocument.trim();
+  const sourceId = options.sourceId?.trim() || null;
   const classId = options.classId?.trim() || null;
   const chunkSize = options.chunkSize ?? DEFAULT_CHUNK_SIZE;
   const chunkOverlap = options.chunkOverlap ?? DEFAULT_CHUNK_OVERLAP;
@@ -239,6 +245,7 @@ export async function buildCurriculumChunksFromPages(
 
       const chunkIndex = chunkIndexesByUnit.get(unit) ?? 0;
       chunks.push({
+        source_id: sourceId,
         grade,
         subject,
         unit,
@@ -252,6 +259,7 @@ export async function buildCurriculumChunksFromPages(
         chunk_index: chunkIndex,
         content_hash: hashChunk({
           sourceDocument,
+          sourceId,
           classId,
           grade,
           subject,
@@ -363,6 +371,7 @@ function buildObjectiveCode(input: {
 
 function hashChunk(input: {
   sourceDocument: string;
+  sourceId: string | null;
   classId: string | null;
   grade: number;
   subject: string;
@@ -469,6 +478,7 @@ async function normalizeDigestInput(input: DigestTextbookPdfInput): Promise<Norm
     grade: input.grade,
     subject,
     sourceDocument,
+    sourceId: input.sourceId?.trim() || undefined,
     classId: input.classId?.trim() || undefined,
     unit: input.unit?.trim() || undefined,
     pageStart: input.pageStart ?? 1,
