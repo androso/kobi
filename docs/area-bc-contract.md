@@ -8,6 +8,7 @@ For Androso (Area C — Activity Generation & Quality), from Isaac (Area A — L
 
 ```ts
 interface CurriculumMatch {
+  source_id?: string | null;
   objective_code: string;
   unit: string;
   grade: number;
@@ -42,6 +43,8 @@ That decision is the **checkpoint gate**: `apps/worker/src/jobs/checkpointSchedu
 
 If you need retrieval on-demand (e.g. re-running for a specific unit at "Hora de actividad" time), call `retrieveCurriculumMatches(supabase, { queryText, grade, subject, unit })` directly — it's a plain async function, not queue-only.
 
+The worker loads the class's persisted source selections before retrieval. With selections it passes `sourceIds` and ranks only those ready sources. With no selections it omits `sourceIds` and searches source-less curated defaults matching grade, subject, and unit.
+
 ## This contract doesn't change based on the artifact family
 
 Gate 0 now ratifies verified HTML `ActivityArtifact`s as v0, but the curriculum evidence Area C consumes is still the same `CurriculumMatch[]` shape. Area B doesn't need to know which artifact family is rendered — match/classify, sequence/order, or guided practice/checkpoint — and Area C should build its planner against this contract.
@@ -55,5 +58,6 @@ Area A's output — see `docs/contracts.md` for the full shape (`topic`, `object
 - **Embeddings**: OpenAI `text-embedding-3-small`, requested with 768 dimensions for both curriculum ingestion and live lesson queries. `OPENAI_EMBEDDING_MODEL` can override the model, but ingestion and retrieval must use the same model and dimensions.
 - **Vector store**: Supabase pgvector, cosine distance, `ivfflat` index — fine at this corpus size (one textbook unit).
 - **Chunking**: teacher-uploaded PDFs are split per page with LangChain's TypeScript `RecursiveCharacterTextSplitter` using 1,000-character chunks and 200-character overlap, preserving exact page citations and unit boundaries. The structured seed path remains hand-authored at one chunk per objective code.
+- **Raw-file lifecycle**: uploaded PDFs remain private while processing and are deleted from Supabase Storage after chunk persistence. A source is published as `ready` only after that cleanup succeeds.
 
 None of this should matter to how you build Area C — it's here so you know why the contract looks the way it does.
