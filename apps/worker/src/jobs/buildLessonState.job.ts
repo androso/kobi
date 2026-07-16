@@ -35,36 +35,6 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
       console.info("[buildLessonState] job started", { sessionId, jobId: job.id });
 
       try {
-        const { data: chunks, error: chunksError } = await supabase
-          .from("audio_chunks")
-          .select("chunk_index, transcript_text")
-          .eq("session_id", sessionId)
-          .eq("status", "transcribed")
-          .order("chunk_index", { ascending: false })
-          .limit(2);
-
-        if (chunksError) {
-          throw new Error(`buildLessonState job: failed to load chunks: ${chunksError.message}`);
-        }
-
-        const transcriptText = (chunks ?? [])
-          .map((chunk) => chunk.transcript_text)
-          .filter(Boolean)
-          .reverse()
-          .join("\n");
-        const sourceThroughChunkIndex = Math.max(
-          ...(chunks ?? []).map((chunk) => chunk.chunk_index),
-        );
-
-        if (!transcriptText) {
-          console.warn("[buildLessonState] skipped because recent chunks have no transcript", {
-            sessionId,
-            jobId: job.id,
-            chunkCount: chunks?.length ?? 0,
-          });
-          return;
-        }
-
         stage = "loading previous lesson_state";
         const { data: previousSegment, error: previousSegmentError } = await supabase
           .from("segments")
@@ -79,6 +49,72 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
             `buildLessonState job: failed to load previous segment: ${previousSegmentError.message}`,
           );
         }
+
+        stage = "loading lesson-state progress";
+        const { data: progressSegment, error: progressSegmentError } = await supabase
+          .from("segments")
+          .select("source_through_chunk_index")
+          .eq("session_id", sessionId)
+          .not("source_through_chunk_index", "is", null)
+          .order("source_through_chunk_index", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (progressSegmentError) {
+          throw new Error(
+            `buildLessonState job: failed to load progress segment: ${progressSegmentError.message}`,
+          );
+        }
+
+        const previousProgress =
+          typeof progressSegment?.source_through_chunk_index === "number"
+            ? progressSegment.source_through_chunk_index
+            : -1;
+        const nextChunkIndex = previousProgress + 1;
+
+        stage = "loading transcribed chunks";
+        const { data: chunks, error: chunksError } = await supabase
+          .from("audio_chunks")
+          .select("chunk_index, transcript_text")
+          .eq("session_id", sessionId)
+          .eq("status", "transcribed")
+          .gte("chunk_index", nextChunkIndex)
+          .order("chunk_index", { ascending: true })
+          .limit(2);
+
+        if (chunksError) {
+          throw new Error(`buildLessonState job: failed to load chunks: ${chunksError.message}`);
+        }
+
+        const contiguousChunks: Array<{ chunk_index: number; transcript_text: string }> = [];
+        let expectedChunkIndex = nextChunkIndex;
+        for (const chunk of chunks ?? []) {
+          if (
+            chunk.chunk_index !== expectedChunkIndex ||
+            typeof chunk.transcript_text !== "string" ||
+            !chunk.transcript_text.trim()
+          ) {
+            break;
+          }
+          contiguousChunks.push({
+            chunk_index: chunk.chunk_index,
+            transcript_text: chunk.transcript_text,
+          });
+          expectedChunkIndex += 1;
+        }
+
+        if (contiguousChunks.length === 0) {
+          console.warn("[buildLessonState] skipped because the next contiguous transcript is not ready", {
+            sessionId,
+            jobId: job.id,
+            chunkCount: chunks?.length ?? 0,
+            nextChunkIndex,
+          });
+          return;
+        }
+
+        const transcriptText = contiguousChunks.map((chunk) => chunk.transcript_text).join("\n");
+        const sourceThroughChunkIndex = contiguousChunks.at(-1)!.chunk_index;
 
         stage = "calling lesson-state model";
         console.info("[buildLessonState] requesting structured lesson_state", {
