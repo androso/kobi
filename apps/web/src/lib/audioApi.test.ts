@@ -67,14 +67,19 @@ describe("getTranscriptionStatus", () => {
       headers: { "content-type": "application/json" },
     }));
     vi.stubGlobal("fetch", fetchMock);
+    const abortController = new AbortController();
 
     await expect(getTranscriptionStatus({
       sessionId: "session-1",
       expectedChunks: 2,
+      signal: abortController.signal,
     })).resolves.toEqual(payload);
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/api/sessions/session-1/transcription-status?expected_chunks=2"),
-      { headers: { authorization: "Bearer test-access-token" } },
+      {
+        headers: { authorization: "Bearer test-access-token" },
+        signal: abortController.signal,
+      },
     );
   });
 });

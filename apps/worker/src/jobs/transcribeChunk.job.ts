@@ -64,6 +64,10 @@ export function registerTranscribeChunkJob(boss: PgBoss, supabase: SupabaseClien
           );
         }
 
+        if (isTerminalAttempt) {
+          await boss.send(JOB_BUILD_LESSON_STATE, { sessionId });
+        }
+
         throw error;
       }
 

@@ -303,9 +303,11 @@ function InsightsPanel({ lessonState }: { lessonState: LessonStateSnapshot | nul
 }
 
 function SuggestedActivityFAB({
+  disabled,
   loading,
   onGenerate,
 }: {
+  disabled: boolean;
   loading: boolean;
   onGenerate: () => void;
 }) {
@@ -313,7 +315,7 @@ function SuggestedActivityFAB({
     <div className="fixed bottom-6 right-6 z-50">
       <button
         className="bg-violet-600 text-white px-5 py-3 rounded-full shadow-2xl flex items-center gap-2 hover:scale-105 transition-all active:scale-95 font-bold text-sm disabled:cursor-not-allowed disabled:opacity-70"
-        disabled={loading}
+        disabled={disabled || loading}
         onClick={onGenerate}
         type="button"
       >
@@ -711,10 +713,6 @@ function normalizeLessonState(value: unknown): LessonStateSnapshot | null {
   };
 }
 
-function delay(milliseconds: number) {
-  return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
-}
-
 function abortableDelay(milliseconds: number, signal: AbortSignal) {
   return new Promise<void>((resolve) => {
     if (signal.aborted) {
@@ -743,6 +741,7 @@ export function LiveClassMonitor() {
   const [overridesByBand, setOverridesByBand] = useState<Partial<Record<DifficultyBand, string[]>>>({});
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityError, setActivityError] = useState<string | null>(null);
+  const [activityBlockedReason, setActivityBlockedReason] = useState<string | null>(null);
   const [publishStatus, setPublishStatus] = useState<string | null>(null);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
@@ -780,6 +779,7 @@ export function LiveClassMonitor() {
   const isStoppingRef = useRef(false);
   const pendingAudioUploadsRef = useRef<Set<Promise<void>>>(new Set());
   const prerecordedAbortRef = useRef<AbortController | null>(null);
+  const prerecordedTranscriptionWaitRef = useRef<Promise<void> | null>(null);
   const prerecordedStartingRef = useRef(false);
   const prerecordedAcceptedChunksRef = useRef(0);
   const prerecordedDurationSecondsRef = useRef(0);
@@ -894,6 +894,7 @@ export function LiveClassMonitor() {
     setOverridesByBand({});
     setActivityLoading(false);
     setActivityError(null);
+    setActivityBlockedReason(null);
     setPublishStatus(null);
     setLatestLessonState(null);
     latestLessonStateRef.current = null;
@@ -949,7 +950,7 @@ export function LiveClassMonitor() {
       }
 
       setUploadStatus("Audio enviado · esperando transcripcion");
-      await waitForTranscriptionCompletion(sessionId, chunks.length);
+      await startTranscriptionWait(sessionId, chunks.length, abortController.signal);
       if (!abortController.signal.aborted) {
         await refreshLatestLessonState(sessionId);
         await finalizeSession(prerecordedDurationSecondsRef.current, true);
@@ -957,15 +958,46 @@ export function LiveClassMonitor() {
     } catch (error) {
       if (abortController.signal.aborted) return;
       setIsRecording(false);
-      setRecordingError(error instanceof Error ? error.message : "No se pudo procesar el audio pregrabado.");
+      const message = error instanceof Error ? error.message : "No se pudo procesar el audio pregrabado.";
+      invalidatePrerecordedSession(message);
+      setRecordingError(message);
       setUploadStatus(null);
     }
   }
 
-  async function waitForTranscriptionCompletion(sessionId: string, expectedChunks: number) {
+  function invalidatePrerecordedSession(reason: string) {
+    apiSessionIdRef.current = null;
+    setApiSessionId(null);
+    setActivitySessionId(null);
+    setActivityBlockedReason(reason);
+  }
+
+  async function startTranscriptionWait(
+    sessionId: string,
+    expectedChunks: number,
+    signal: AbortSignal,
+  ) {
+    const wait = waitForTranscriptionCompletion(sessionId, expectedChunks, signal);
+    prerecordedTranscriptionWaitRef.current = wait;
+    try {
+      await wait;
+    } finally {
+      if (prerecordedTranscriptionWaitRef.current === wait) {
+        prerecordedTranscriptionWaitRef.current = null;
+      }
+    }
+  }
+
+  async function waitForTranscriptionCompletion(
+    sessionId: string,
+    expectedChunks: number,
+    signal: AbortSignal,
+  ) {
     const deadline = Date.now() + TRANSCRIPTION_STATUS_TIMEOUT_MS;
     while (Date.now() < deadline) {
-      const status = await getTranscriptionStatus({ sessionId, expectedChunks });
+      signal.throwIfAborted();
+      const status = await getTranscriptionStatus({ sessionId, expectedChunks, signal });
+      signal.throwIfAborted();
       if (status.terminalFailed > 0) {
         throw new Error(`${status.terminalFailed} fragmento(s) no se pudieron transcribir.`);
       }
@@ -978,7 +1010,7 @@ export function LiveClassMonitor() {
         }
         return;
       }
-      await delay(TRANSCRIPTION_STATUS_POLL_MS);
+      await abortableDelay(TRANSCRIPTION_STATUS_POLL_MS, signal);
     }
     throw new Error("La transcripcion no termino dentro del tiempo esperado.");
   }
@@ -1149,17 +1181,32 @@ export function LiveClassMonitor() {
 
   async function stopRecording() {
     if (recordingSource === "prerecorded") {
-      prerecordedAbortRef.current?.abort();
+      const activeTranscriptionWait = prerecordedTranscriptionWaitRef.current;
+      if (!activeTranscriptionWait) {
+        prerecordedAbortRef.current?.abort();
+      }
       setUploadStatus("Finalizando fragmentos enviados");
       await Promise.all(Array.from(pendingAudioUploadsRef.current));
       const expectedChunks = prerecordedAcceptedChunksRef.current;
       if (expectedChunks > 0 && apiSessionIdRef.current) {
         try {
-          await waitForTranscriptionCompletion(apiSessionIdRef.current, expectedChunks);
+          if (activeTranscriptionWait) {
+            await activeTranscriptionWait;
+          } else {
+            const abortController = new AbortController();
+            prerecordedAbortRef.current = abortController;
+            await startTranscriptionWait(
+              apiSessionIdRef.current,
+              expectedChunks,
+              abortController.signal,
+            );
+          }
           await refreshLatestLessonState(apiSessionIdRef.current);
         } catch (error) {
           setIsRecording(false);
-          setRecordingError(error instanceof Error ? error.message : "No se pudo finalizar la transcripcion.");
+          const message = error instanceof Error ? error.message : "No se pudo finalizar la transcripcion.";
+          invalidatePrerecordedSession(message);
+          setRecordingError(message);
           setUploadStatus(null);
           return;
         }
@@ -1184,6 +1231,7 @@ export function LiveClassMonitor() {
     try {
       const sessionId = await ensureBackendSession();
       await submitManualLessonState({ sessionId, ...input });
+      setActivityBlockedReason(null);
       setUploadStatus("Tema manual guardado como lesson_state");
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo guardar el tema manual.";
@@ -1222,6 +1270,11 @@ export function LiveClassMonitor() {
   }
 
   async function handleGenerateActivity() {
+    if (activityBlockedReason) {
+      setActivityError(activityBlockedReason);
+      return;
+    }
+
     if (!activeClass || !deliveryStore) {
       setActivityError("Selecciona una clase y configura Supabase para generar la actividad.");
       return;
@@ -1373,6 +1426,7 @@ export function LiveClassMonitor() {
         </div>
       </div>
       <SuggestedActivityFAB
+        disabled={Boolean(activityBlockedReason)}
         loading={activityLoading}
         onGenerate={handleGenerateActivity}
       />

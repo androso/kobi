@@ -60,7 +60,11 @@ const mocks = vi.hoisted(() => {
     createBackendSession: vi.fn(async () => ({ sessionId: "session-1" })),
     recordingSource: "microphone" as "microphone" | "prerecorded",
     uploadAudioChunk: vi.fn(async () => ({ audioChunkId: "uploaded-chunk" })),
-    getTranscriptionStatus: vi.fn(async () => ({
+    getTranscriptionStatus: vi.fn(async (_input: {
+      sessionId: string;
+      expectedChunks: number;
+      signal?: AbortSignal;
+    }) => ({
       expectedChunks: 2,
       uploaded: 2,
       pending: 0,
@@ -204,10 +208,10 @@ describe("LiveClassMonitor activity delivery", () => {
       startMs: 15_000,
       endMs: 22_000,
     }));
-    expect(mocks.getTranscriptionStatus).toHaveBeenCalledWith({
+    expect(mocks.getTranscriptionStatus).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: "session-1",
       expectedChunks: 2,
-    });
+    }));
   });
 
   it("creates a fresh backend session when prerecorded playback starts again", async () => {
@@ -354,6 +358,8 @@ describe("LiveClassMonitor activity delivery", () => {
     });
 
     expect(await screen.findByText(/no se pudieron transcribir/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /hora de actividad/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /hora de actividad/i }));
     expect(mocks.requestActivityCandidates).not.toHaveBeenCalled();
   });
 
@@ -386,7 +392,81 @@ describe("LiveClassMonitor activity delivery", () => {
     fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
 
     expect(await screen.findByText(/no se detecto voz/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /hora de actividad/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /hora de actividad/i }));
     expect(mocks.requestActivityCandidates).not.toHaveBeenCalled();
+  });
+
+  it("reuses the active transcription poll when stopping after all chunks upload", async () => {
+    mocks.recordingSource = "prerecorded";
+    let resolveStatus!: (value: Awaited<ReturnType<typeof mocks.getTranscriptionStatus>>) => void;
+    mocks.decodePrerecordedAudio.mockResolvedValueOnce([
+      { audio: new Blob(["one"], { type: "audio/wav" }), chunkIndex: 0, startMs: 0, endMs: 10_000 },
+    ]);
+    mocks.getTranscriptionStatus.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveStatus = resolve;
+    }));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([1]))));
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+    await waitFor(() => expect(mocks.getTranscriptionStatus).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: /detener/i }));
+    expect(mocks.getTranscriptionStatus).toHaveBeenCalledTimes(1);
+
+    resolveStatus({
+      expectedChunks: 1,
+      uploaded: 1,
+      pending: 0,
+      transcribing: 0,
+      transcribed: 1,
+      spokenChunks: 1,
+      terminalFailed: 0,
+      lessonStateThroughChunkIndex: 0,
+      complete: true,
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /iniciar grabación/i })).toBeInTheDocument();
+    });
+    expect(mocks.getTranscriptionStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts active transcription polling when the monitor unmounts", async () => {
+    mocks.recordingSource = "prerecorded";
+    let pollingSignal: AbortSignal | undefined;
+    mocks.decodePrerecordedAudio.mockResolvedValueOnce([
+      { audio: new Blob(["one"], { type: "audio/wav" }), chunkIndex: 0, startMs: 0, endMs: 10_000 },
+    ]);
+    mocks.getTranscriptionStatus.mockImplementationOnce(({ signal }) => {
+      pollingSignal = signal;
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+      });
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([1]))));
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    const { unmount } = render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+    await waitFor(() => expect(mocks.getTranscriptionStatus).toHaveBeenCalledTimes(1));
+
+    unmount();
+
+    expect(pollingSignal?.aborted).toBe(true);
   });
 
   it("stops queuing prerecorded chunks and finalizes the accepted prefix", async () => {
@@ -416,10 +496,10 @@ describe("LiveClassMonitor activity delivery", () => {
     });
 
     expect(mocks.uploadAudioChunk).toHaveBeenCalledTimes(1);
-    expect(mocks.getTranscriptionStatus).toHaveBeenCalledWith({
+    expect(mocks.getTranscriptionStatus).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: "session-1",
       expectedChunks: 1,
-    });
+    }));
   });
 
 });

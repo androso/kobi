@@ -165,13 +165,16 @@ export async function uploadAudioChunk({
 export async function getTranscriptionStatus({
   sessionId,
   expectedChunks,
+  signal,
 }: {
   sessionId: string;
   expectedChunks: number;
+  signal?: AbortSignal;
 }) {
+  const headers = await authenticatedHeaders();
   const response = await fetch(
     `${API_URL}/api/sessions/${sessionId}/transcription-status?expected_chunks=${expectedChunks}`,
-    { headers: await authenticatedHeaders() },
+    signal ? { headers, signal } : { headers },
   );
   return parseApiResponse<TranscriptionStatus>(response);
 }

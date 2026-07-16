@@ -18,7 +18,7 @@ describe("transcribeChunk job", () => {
   it("returns retryable failures to pending instead of exposing them as terminal", async () => {
     vi.mocked(transcribeAudioChunk).mockRejectedValueOnce(new Error("temporary provider failure"));
     const updates: Array<Record<string, unknown>> = [];
-    const handler = await registerHandler(updates);
+    const { handler, send } = await registerHandler(updates);
 
     await expect(handler([jobWithRetryMetadata({ retryCount: 0, retryLimit: 2 })]))
       .rejects.toThrow("temporary provider failure");
@@ -27,12 +27,13 @@ describe("transcribeChunk job", () => {
       { status: "transcribing" },
       { status: "pending" },
     ]);
+    expect(send).not.toHaveBeenCalled();
   });
 
-  it("marks a chunk failed only when the final retry attempt fails", async () => {
+  it("marks a chunk failed and schedules lesson-state progress on the final retry", async () => {
     vi.mocked(transcribeAudioChunk).mockRejectedValueOnce(new Error("terminal provider failure"));
     const updates: Array<Record<string, unknown>> = [];
-    const handler = await registerHandler(updates);
+    const { handler, send } = await registerHandler(updates);
 
     await expect(handler([jobWithRetryMetadata({ retryCount: 2, retryLimit: 2 })]))
       .rejects.toThrow("terminal provider failure");
@@ -41,6 +42,7 @@ describe("transcribeChunk job", () => {
       { status: "transcribing" },
       { status: "failed" },
     ]);
+    expect(send).toHaveBeenCalledWith("build-lesson-state", { sessionId: "session-1" });
   });
 });
 
@@ -54,6 +56,7 @@ async function registerHandler(updates: Array<Record<string, unknown>>) {
       registeredHandler = handler;
       return "worker-1";
     }),
+    send: vi.fn(async () => "build-job-1"),
   } as unknown as PgBoss;
   const supabase = {
     from: vi.fn(() => ({
@@ -68,7 +71,10 @@ async function registerHandler(updates: Array<Record<string, unknown>>) {
 
   await registerTranscribeChunkJob(boss, supabase);
   if (!registeredHandler) throw new Error("transcribeChunk handler was not registered");
-  return registeredHandler;
+  return {
+    handler: registeredHandler,
+    send: boss.send as ReturnType<typeof vi.fn>,
+  };
 }
 
 function jobWithRetryMetadata({
