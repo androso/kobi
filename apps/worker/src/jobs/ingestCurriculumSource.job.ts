@@ -18,6 +18,7 @@ interface CleanupSource {
 
 const DEFAULT_CURRICULUM_BUCKET = "curriculum-sources";
 const MAX_PDF_BYTES = 50 * 1024 * 1024;
+const MAX_PDF_PAGES = 400;
 
 export function registerIngestCurriculumSourceJob(boss: PgBoss, supabase: SupabaseClient) {
   return boss.work<IngestCurriculumSourceJobData>(
@@ -109,6 +110,7 @@ export async function runIngestCurriculumSourceJob(
       sourceId,
       replaceSource: true,
       maxBytes: MAX_PDF_BYTES,
+      maxPages: MAX_PDF_PAGES,
     });
 
     const { error: pendingError } = await supabase

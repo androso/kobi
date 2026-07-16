@@ -97,6 +97,7 @@ describe("ingestCurriculumSource job", () => {
         unit: "U4",
         sourceDocument: "source-1",
         replaceSource: true,
+        maxPages: 400,
       }),
     );
     expect(remove).toHaveBeenCalledWith(["class-1/source-1/file.pdf"]);
