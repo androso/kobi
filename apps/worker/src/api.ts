@@ -23,6 +23,7 @@ interface ApiServerOptions {
 const DEFAULT_AUDIO_BUCKET = "audio-chunks";
 const DEFAULT_CURRICULUM_BUCKET = "curriculum-sources";
 const MAX_CURRICULUM_PDF_BYTES = 50 * 1024 * 1024;
+const MAX_CURRICULUM_PDF_PAGES = 400;
 const SIGNED_UPLOAD_TTL_SECONDS = 60 * 30;
 const DEMO_MODE = "demo";
 const DEMO_CURRICULUM = {
@@ -56,6 +57,7 @@ const createCurriculumUploadSchema = z.object({
   filename: z.string().trim().min(1).max(255),
   contentType: z.string().trim().min(1).max(120),
   sizeBytes: z.number().int().positive().max(MAX_CURRICULUM_PDF_BYTES),
+  pageCount: z.number().int().positive().max(MAX_CURRICULUM_PDF_PAGES),
 }).strict();
 const completeCurriculumUploadSchema = z.object({
   sourceId: uuidSchema,

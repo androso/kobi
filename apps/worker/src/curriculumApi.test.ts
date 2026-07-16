@@ -35,6 +35,7 @@ describe("curriculum upload and retrieve API", () => {
         filename: "Unidad 4.pdf",
         contentType: "application/pdf",
         sizeBytes: 12_345,
+        pageCount: 12,
       },
     );
 
@@ -75,6 +76,7 @@ describe("curriculum upload and retrieve API", () => {
           filename,
           contentType: "application/pdf",
           sizeBytes: 12_345,
+          pageCount: 12,
         },
       );
       expect(response.statusCode).toBe(201);
@@ -98,11 +100,30 @@ describe("curriculum upload and retrieve API", () => {
         filename: "notes.txt",
         contentType: "text/plain",
         sizeBytes: 100,
+        pageCount: 1,
       },
     );
 
     expect(response.statusCode).toBe(422);
     expect(response.body).toEqual({ error: { code: "invalid_content_type" } });
+    expect(supabase.curriculumSources).toHaveLength(0);
+  });
+
+  it("rejects PDFs over 400 pages before creating a source row", async () => {
+    const supabase = fakeSupabase();
+    const response = await callRoute(
+      "/api/classes/" + CLASS_ID + "/curriculum/uploads",
+      supabase,
+      fakeBoss(),
+      {
+        filename: "long.pdf",
+        contentType: "application/pdf",
+        sizeBytes: 12_345,
+        pageCount: 401,
+      },
+    );
+
+    expect(response.statusCode).toBe(422);
     expect(supabase.curriculumSources).toHaveLength(0);
   });
 
@@ -184,6 +205,7 @@ describe("curriculum upload and retrieve API", () => {
         filename: "unidad.pdf",
         contentType: "application/pdf",
         sizeBytes: 100,
+        pageCount: 1,
       },
     );
 
