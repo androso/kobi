@@ -8,6 +8,7 @@ export * from "./audioChunks.js";
 export * from "./segments.js";
 export * from "./checkpoints.js";
 export * from "./curriculumChunks.js";
+export * from "./curriculumSources.js";
 export * from "./activityBundles.js";
 export * from "./activities.js";
 export * from "./activityGenerationAttempts.js";

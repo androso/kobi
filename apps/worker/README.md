@@ -13,7 +13,7 @@ Required API env: `PORT`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE
 
 ## Stages
 
-1. **Transcription** — audio chunks (45-60s) → text (Gemini Flash, rolling async)
+1. **Transcription** — audio chunks (45-60s) → text (OpenAI `gpt-4o-mini-transcribe`, rolling async)
 2. **Lesson-state builder** — transcript → `lesson_state` JSON (topic, objective, confidence), every ~2 min
 3. **Pre-generation** — curriculum chunks + activity repository → support/core/challenge candidate `ActivityArtifact`s
 4. **Verifier** — manifest/schema checks, sandbox boot, SDK telemetry assertions, and rubric checks → auto-reject below threshold
@@ -24,4 +24,4 @@ Required API env: `PORT`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE
 - Writes: `segments.lesson_state`, verified `activities`, `session_activity_candidates`, and later `assignments` variants after teacher approval
 - Uses: `packages/ai-core` for model routing, `packages/curriculum` for retrieval, `packages/activities` for manifest schema, verifier, and SDK contracts
 
-Status: **partial/environment-dependent**. Transcription, lesson-state building, checkpoint evaluation, curriculum retrieval, and activity generation (repository reuse + static fallback + OpenAI generation with verifier) are wired. End-to-end operation requires a running Supabase DB (`DATABASE_URL`) and model credentials (`OPENAI_API_KEY`, `GEMINI_API_KEY`). Assignment delivery to students after teacher approval is implemented in `apps/web` via Supabase Realtime; the worker enqueues generated candidates for that flow.
+Status: **partial/environment-dependent**. Transcription, lesson-state building, checkpoint evaluation, curriculum retrieval, and activity generation (repository reuse + static fallback + OpenAI generation with verifier) are wired. End-to-end operation requires a running Supabase DB (`DATABASE_URL`) and model credentials (`OPENAI_API_KEY`). Assignment delivery to students after teacher approval is implemented in `apps/web` via Supabase Realtime; the worker enqueues generated candidates for that flow.
