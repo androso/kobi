@@ -33,8 +33,10 @@ describe("ingestCurriculumSource job", () => {
       data: new Blob([new Uint8Array([0x25, 0x50, 0x44, 0x46])]),
       error: null,
     }));
+    const rpc = vi.fn(async () => ({ data: 1, error: null }));
 
     const supabase = {
+      rpc,
       from(table: string) {
         if (table !== "curriculum_sources") throw new Error(`unexpected table ${table}`);
         return {
@@ -93,15 +95,16 @@ describe("ingestCurriculumSource job", () => {
         unit: "U4",
         sourceDocument: "source-1",
         replaceSource: true,
+        maxPages: 400,
       }),
     );
-    expect(updates).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ status: "processing" }),
-        expect.objectContaining({ status: "ready", chunks_built: 3, page_count: 4 }),
-        expect.objectContaining({ status: "superseded" }),
-      ]),
-    );
+    expect(updates).toEqual([expect.objectContaining({ status: "processing" })]);
+    expect(rpc).toHaveBeenCalledWith("finalize_curriculum_source_ingest", {
+      p_source_id: "source-1",
+      p_class_id: "class-1",
+      p_page_count: 4,
+      p_chunks_built: 3,
+    });
   });
 
   it("marks the source failed when digest throws", async () => {

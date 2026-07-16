@@ -11,6 +11,7 @@ export interface IngestCurriculumSourceJobData {
 
 const DEFAULT_CURRICULUM_BUCKET = "curriculum-sources";
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
+const MAX_PDF_PAGES = 400;
 
 export function registerIngestCurriculumSourceJob(boss: PgBoss, supabase: SupabaseClient) {
   return boss.work<IngestCurriculumSourceJobData>(
@@ -101,24 +102,21 @@ export async function runIngestCurriculumSourceJob(
       classId,
       replaceSource: true,
       maxBytes: MAX_PDF_BYTES,
+      maxPages: MAX_PDF_PAGES,
     });
 
-    const { error: readyError } = await supabase
-      .from("curriculum_sources")
-      .update({
-        status: "ready",
-        error_message: null,
-        page_count: result.pageCount,
-        chunks_built: result.chunksBuilt,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", sourceId);
+    const { error: finalizeError } = await supabase.rpc("finalize_curriculum_source_ingest", {
+      p_source_id: sourceId,
+      p_class_id: classId,
+      p_page_count: result.pageCount,
+      p_chunks_built: result.chunksBuilt,
+    });
 
-    if (readyError) {
-      throw new Error(`ingestCurriculumSource: failed to mark ready: ${readyError.message}`);
+    if (finalizeError) {
+      throw new Error(
+        `ingestCurriculumSource: failed to finalize source ingest: ${finalizeError.message}`,
+      );
     }
-
-    await markOtherClassSourcesSuperseded(supabase, classId, sourceId);
 
     safeLog("info", "curriculum.ingest_ready", {
       sourceId,
@@ -155,32 +153,6 @@ async function markFailed(supabase: SupabaseClient, sourceId: string, message: s
       `ingestCurriculumSource: failed to mark failed status: ${error.message}`,
       { cause: new Error(message) },
     );
-  }
-}
-
-async function markOtherClassSourcesSuperseded(
-  supabase: SupabaseClient,
-  classId: string,
-  sourceId: string,
-) {
-  const { error } = await supabase
-    .from("curriculum_sources")
-    .update({
-      status: "superseded",
-      error_message: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("class_id", classId)
-    .neq("id", sourceId)
-    .neq("status", "failed")
-    .neq("status", "superseded");
-
-  if (error) {
-    safeLog("error", "curriculum.supersede_old_sources_failed", {
-      classId,
-      sourceId,
-      outcome: classifySafeError(error),
-    });
   }
 }
 
