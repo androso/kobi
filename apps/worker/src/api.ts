@@ -5,7 +5,6 @@ import { buildCurriculumQueryText, embedText, retrieveCurriculumMatches } from "
 import { classifySafeError, lessonStateFromManualEntry, lessonStateSchema, safeLog, type LessonState } from "@kobi/ai-core";
 import type PgBoss from "pg-boss";
 import { z } from "zod";
-import { demoTranscriptChunks, DEMO_TRANSCRIPT_TICK_MS } from "./demoTranscript.js";
 import { JOB_BUILD_LESSON_STATE, JOB_INGEST_CURRICULUM_SOURCE, JOB_TRANSCRIBE_CHUNK } from "./queue.js";
 import { loadSelectedCurriculumSourceIds } from "./curriculumSelections.js";
 import { runGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
@@ -25,16 +24,6 @@ const DEFAULT_CURRICULUM_BUCKET = "curriculum-sources";
 const MAX_CURRICULUM_PDF_BYTES = 50 * 1024 * 1024;
 const MAX_CURRICULUM_PDF_PAGES = 400;
 const SIGNED_UPLOAD_TTL_SECONDS = 60 * 30;
-const DEMO_MODE = "demo";
-const DEMO_CURRICULUM = {
-  grade: 7,
-  subject: "matematicas",
-  unit: "geometria-triangulos-cuadrilateros",
-  objective_code: "M7.GEO.1",
-  text:
-    "Conozcamos los triangulos y cuadrilateros: identifica segmentos, lados, vertices y angulos en figuras planas. Clasifica figuras con tres lados como triangulos y figuras con cuatro lados como cuadrilateros, usando el conteo de lados, vertices y angulos.",
-};
-
 class ApiRequestError extends Error {
   constructor(
     readonly code: string,
@@ -52,7 +41,6 @@ const manualLessonStateSchema = z.object({
   topic: z.string().trim().min(1).max(2_000),
   objective: z.string().trim().max(2_000).optional(),
 }).strict();
-const demoChunkSchema = z.object({ chunk_index: z.number().int().nonnegative() }).strict();
 const createCurriculumUploadSchema = z.object({
   filename: z.string().trim().min(1).max(255),
   contentType: z.string().trim().min(1).max(120),
@@ -340,10 +328,6 @@ function sanitizeMs(value: unknown, field: string) {
   return parsed;
 }
 
-function isDemoMode() {
-  return process.env.KOBI_PROJECT_MODE === DEMO_MODE;
-}
-
 function extensionForMimeType(mimeType: string) {
   if (mimeType.includes("webm")) return "webm";
   if (mimeType.includes("mp4")) return "mp4";
@@ -358,10 +342,6 @@ async function createSession(req: IncomingMessage, res: ServerResponse, supabase
   await authorizeClass(supabase, classId, actor);
 
   logApi("creating session", { classId });
-  if (isDemoMode()) {
-    await configureDemoClass(supabase, classId);
-  }
-
   const { data, error } = await supabase
     .from("sessions")
     .insert({ class_id: classId, status: "active" })
@@ -375,21 +355,6 @@ async function createSession(req: IncomingMessage, res: ServerResponse, supabase
   console.log(`[api] session created: sessionId=${data.id} classId=${classId}`);
   logApi("session created", { sessionId: data.id, classId });
   writeJson(res, 201, { sessionId: data.id });
-}
-
-async function configureDemoClass(supabase: SupabaseClient, classId: string) {
-  const { error } = await supabase
-    .from("classes")
-    .update({
-      grade: DEMO_CURRICULUM.grade,
-      subject: DEMO_CURRICULUM.subject,
-      unit: DEMO_CURRICULUM.unit,
-    })
-    .eq("id", classId);
-
-  if (error) {
-    logApi("demo class metadata update failed", { classId, error: error.message });
-  }
 }
 
 async function createManualLessonState(
@@ -428,118 +393,6 @@ async function createManualLessonState(
 
   logApi("manual lesson_state created", { sessionId, segmentId: data.id });
   writeJson(res, 201, { segmentId: data.id, lessonState });
-}
-
-async function ensureDemoCurriculumSeed(supabase: SupabaseClient) {
-  const { data: existing, error: selectError } = await supabase
-    .from("curriculum_chunks")
-    .select("id")
-    .eq("grade", DEMO_CURRICULUM.grade)
-    .eq("subject", DEMO_CURRICULUM.subject)
-    .eq("unit", DEMO_CURRICULUM.unit)
-    .limit(1);
-
-  if (selectError) {
-    logApi("demo curriculum seed check failed", { error: selectError.message });
-    return;
-  }
-
-  try {
-    const embedding = await embedText(DEMO_CURRICULUM.text, "RETRIEVAL_DOCUMENT");
-    const existingId = existing?.[0]?.id;
-    const query = existingId
-      ? supabase
-          .from("curriculum_chunks")
-          .update({ ...DEMO_CURRICULUM, embedding })
-          .eq("id", existingId)
-      : supabase.from("curriculum_chunks").insert({ ...DEMO_CURRICULUM, embedding });
-    const { error: insertError } = await query;
-
-    if (insertError) {
-      logApi("demo curriculum seed insert failed", { error: insertError.message });
-    } else {
-      logApi(existingId ? "demo curriculum seed embedding refreshed" : "demo curriculum seed inserted", {
-        grade: DEMO_CURRICULUM.grade,
-        subject: DEMO_CURRICULUM.subject,
-        unit: DEMO_CURRICULUM.unit,
-        embeddingModel: process.env.OPENAI_EMBEDDING_MODEL ?? "text-embedding-3-small",
-      });
-    }
-  } catch (error) {
-    logApi("demo curriculum seed skipped", {
-      error: error instanceof Error ? error.message : "Embedding failed",
-    });
-  }
-}
-
-async function createDemoTranscriptChunk(
-  req: IncomingMessage,
-  res: ServerResponse,
-  sessionId: string,
-  supabase: SupabaseClient,
-  boss: PgBoss,
-) {
-  if (!isDemoMode()) {
-    writeJson(res, 403, { error: "Demo transcript chunks are only available when KOBI_PROJECT_MODE=demo." });
-    return;
-  }
-
-  const { chunk_index: chunkIndex } = parseBody(demoChunkSchema, await readJsonBody(req));
-
-  const transcriptText = demoTranscriptChunks[chunkIndex];
-  if (!transcriptText) {
-    throw new ApiRequestError("invalid_chunk_index", 422);
-  }
-
-  await ensureDemoCurriculumSeed(supabase);
-
-  const { data: existing, error: existingError } = await supabase
-    .from("audio_chunks")
-    .select("id")
-    .eq("session_id", sessionId)
-    .eq("chunk_index", chunkIndex)
-    .maybeSingle();
-
-  if (existingError) {
-    throw new ApiRequestError("datastore_error", 500);
-  }
-
-  if (existing?.id) {
-    writeJson(res, 200, {
-      audioChunkId: existing.id,
-      chunkIndex,
-      totalChunks: demoTranscriptChunks.length,
-      done: chunkIndex === demoTranscriptChunks.length - 1,
-    });
-    return;
-  }
-
-  const { data: chunk, error: insertError } = await supabase
-    .from("audio_chunks")
-    .insert({
-      session_id: sessionId,
-      chunk_index: chunkIndex,
-      storage_path: `demo-transcript/${sessionId}/${chunkIndex}.txt`,
-      start_ms: chunkIndex * DEMO_TRANSCRIPT_TICK_MS,
-      end_ms: (chunkIndex + 1) * DEMO_TRANSCRIPT_TICK_MS,
-      status: "transcribed",
-      transcript_text: transcriptText,
-    })
-    .select("id")
-    .single();
-
-  if (insertError) {
-    throw new ApiRequestError("audio_chunk_create_failed", 500);
-  }
-
-  await boss.send(JOB_BUILD_LESSON_STATE, { sessionId });
-
-  writeJson(res, 201, {
-    audioChunkId: chunk.id,
-    chunkIndex,
-    totalChunks: demoTranscriptChunks.length,
-    done: chunkIndex === demoTranscriptChunks.length - 1,
-  });
 }
 
 async function uploadAudioChunk(
@@ -1231,15 +1084,6 @@ export async function routeRequest(
       enforceRateLimit(`audio:${actor.id}:${sessionId}`, 30);
       if (!boss) throw new ApiRequestError("background_queue_starting", 503);
       await uploadAudioChunk(req, res, url, sessionId, supabase, boss);
-      return;
-    }
-
-    const demoTranscriptChunkMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/demo-transcript-chunks$/);
-    if (req.method === "POST" && demoTranscriptChunkMatch?.[1]) {
-      const sessionId = parseBody(uuidSchema, demoTranscriptChunkMatch[1]);
-      await authorizeSession(supabase, sessionId, actor);
-      if (!boss) throw new ApiRequestError("background_queue_starting", 503);
-      await createDemoTranscriptChunk(req, res, sessionId, supabase, boss);
       return;
     }
 
