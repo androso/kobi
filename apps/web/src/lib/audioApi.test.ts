@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { requestActivityCandidates } from "./audioApi";
+import { getTranscriptionStatus, requestActivityCandidates } from "./audioApi";
 
 vi.mock("./supabase", () => ({
   supabase: {
@@ -46,5 +46,34 @@ describe("requestActivityCandidates", () => {
       skippedReason: null,
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("getTranscriptionStatus", () => {
+  it("requests authenticated completion state with the expected chunk count", async () => {
+    const payload = {
+      expectedChunks: 2,
+      uploaded: 2,
+      pending: 0,
+      transcribing: 0,
+      transcribed: 2,
+      failed: 0,
+      lessonStateThroughChunkIndex: 1,
+      complete: true,
+    };
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getTranscriptionStatus({
+      sessionId: "session-1",
+      expectedChunks: 2,
+    })).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/sessions/session-1/transcription-status?expected_chunks=2"),
+      { headers: { authorization: "Bearer test-access-token" } },
+    );
   });
 });

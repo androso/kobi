@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -58,6 +58,22 @@ const mocks = vi.hoisted(() => {
       },
     ]),
     createBackendSession: vi.fn(async () => ({ sessionId: "session-1" })),
+    recordingSource: "microphone" as "microphone" | "prerecorded",
+    uploadAudioChunk: vi.fn(async () => ({ audioChunkId: "uploaded-chunk" })),
+    getTranscriptionStatus: vi.fn(async () => ({
+      expectedChunks: 2,
+      uploaded: 2,
+      pending: 0,
+      transcribing: 0,
+      transcribed: 2,
+      failed: 0,
+      lessonStateThroughChunkIndex: 1 as number | null,
+      complete: true,
+    })),
+    decodePrerecordedAudio: vi.fn(async () => [
+      { audio: new Blob(["one"], { type: "audio/wav" }), chunkIndex: 0, startMs: 0, endMs: 15_000 },
+      { audio: new Blob(["two"], { type: "audio/wav" }), chunkIndex: 1, startMs: 15_000, endMs: 22_000 },
+    ]),
     supabaseFrom: vi.fn(() => ({
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
@@ -72,11 +88,18 @@ vi.mock("../../lib/supabase", () => ({ supabase: { from: mocks.supabaseFrom } })
 
 vi.mock("../../lib/audioApi", () => ({
   createBackendSession: mocks.createBackendSession,
+  getPrerecordedAudioPath: () => "/local-audio/classroom.mp3",
+  getRecordingSource: () => mocks.recordingSource,
+  getTranscriptionStatus: mocks.getTranscriptionStatus,
   isAudioApiConfigured: () => true,
   requestActivityCandidates: mocks.requestActivityCandidates,
   resolveBackendClassId: (classId: string) => classId,
   submitManualLessonState: vi.fn(),
-  uploadAudioChunk: vi.fn(),
+  uploadAudioChunk: mocks.uploadAudioChunk,
+}));
+
+vi.mock("../../lib/prerecordedAudio", () => ({
+  decodePrerecordedAudio: mocks.decodePrerecordedAudio,
 }));
 
 vi.mock("../activityDelivery/artifactDelivery", () => ({
@@ -90,6 +113,8 @@ vi.mock("../activityDelivery/artifactDelivery", () => ({
 afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
+  mocks.recordingSource = "microphone";
   Object.defineProperty(navigator, "mediaDevices", {
     configurable: true,
     value: undefined,
@@ -141,4 +166,116 @@ describe("LiveClassMonitor activity delivery", () => {
     );
     expect(await screen.findByText(/Publicado para 1 estudiantes/i)).toBeInTheDocument();
   });
+  it("uploads prerecorded WAV chunks without requesting microphone access", async () => {
+    vi.useFakeTimers();
+    mocks.recordingSource = "prerecorded";
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([1, 2, 3]))));
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: vi.fn() },
+    });
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(2_100);
+      await Promise.resolve();
+    });
+
+    expect(navigator.mediaDevices?.getUserMedia).not.toHaveBeenCalled();
+    expect(mocks.decodePrerecordedAudio).toHaveBeenCalled();
+    expect(mocks.uploadAudioChunk).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      chunkIndex: 0,
+      startMs: 0,
+      endMs: 15_000,
+    }));
+    expect(mocks.uploadAudioChunk).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      chunkIndex: 1,
+      startMs: 15_000,
+      endMs: 22_000,
+    }));
+    expect(mocks.getTranscriptionStatus).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      expectedChunks: 2,
+    });
+  });
+
+  it("does not generate an activity when prerecorded transcription fails", async () => {
+    mocks.recordingSource = "prerecorded";
+    mocks.decodePrerecordedAudio.mockResolvedValueOnce([
+      { audio: new Blob(["one"], { type: "audio/wav" }), chunkIndex: 0, startMs: 0, endMs: 10_000 },
+    ]);
+    mocks.getTranscriptionStatus.mockResolvedValueOnce({
+      expectedChunks: 1,
+      uploaded: 1,
+      pending: 0,
+      transcribing: 0,
+      transcribed: 0,
+      failed: 1,
+      lessonStateThroughChunkIndex: null,
+      complete: false,
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([1]))));
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText(/no se pudieron transcribir/i)).toBeInTheDocument();
+    expect(mocks.requestActivityCandidates).not.toHaveBeenCalled();
+  });
+
+  it("stops queuing prerecorded chunks and finalizes the accepted prefix", async () => {
+    mocks.recordingSource = "prerecorded";
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([1]))));
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(mocks.uploadAudioChunk).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /detener/i }));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.uploadAudioChunk).toHaveBeenCalledTimes(1);
+    expect(mocks.getTranscriptionStatus).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      expectedChunks: 1,
+    });
+  });
+
 });

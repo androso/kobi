@@ -12,6 +12,9 @@ build/
 # Stitch assets directory
 apps/web/src/features/teacher/assets/
 
+# Local classroom recordings must never be committed.
+apps/web/public/local-audio/*.mp3
+
 # Raw curriculum PDFs and extraction scratch files are large local inputs.
 evals/tmp/curriculum/**
 content/tmp/curriculum/**

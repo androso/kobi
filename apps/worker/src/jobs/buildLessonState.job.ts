@@ -37,7 +37,7 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
       try {
         const { data: chunks, error: chunksError } = await supabase
           .from("audio_chunks")
-          .select("transcript_text")
+          .select("chunk_index, transcript_text")
           .eq("session_id", sessionId)
           .eq("status", "transcribed")
           .order("chunk_index", { ascending: false })
@@ -52,6 +52,9 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
           .filter(Boolean)
           .reverse()
           .join("\n");
+        const sourceThroughChunkIndex = Math.max(
+          ...(chunks ?? []).map((chunk) => chunk.chunk_index),
+        );
 
         if (!transcriptText) {
           console.warn("[buildLessonState] skipped because recent chunks have no transcript", {
@@ -99,6 +102,7 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
             lesson_state: lessonState,
             confidence: lessonState.confidence,
             transcript_summary: lessonState.transcript_summary,
+            source_through_chunk_index: sourceThroughChunkIndex,
           })
           .select("id")
           .single();

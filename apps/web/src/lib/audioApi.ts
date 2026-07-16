@@ -2,6 +2,9 @@ import { supabase } from "./supabase";
 
 const rawApiUrl = import.meta.env.VITE_KOBI_API_URL?.replace(/\/$/, "") ?? "";
 const API_URL = rawApiUrl || (import.meta.env.DEV ? "http://localhost:8787" : "");
+const CONFIGURED_RECORDING_SOURCE = import.meta.env.VITE_KOBI_RECORDING_SOURCE;
+const PRERECORDED_AUDIO_PATH =
+  import.meta.env.VITE_KOBI_PRERECORDED_AUDIO_PATH ?? "/local-audio/classroom.mp3";
 const LESSON_STATE_RETRY_MS = 10_000;
 const LESSON_STATE_TIMEOUT_MS = 20 * 60_000;
 const LESSON_STATE_PENDING_ERROR = "No lesson_state is available for this session yet.";
@@ -37,6 +40,19 @@ export interface RequestActivityCandidatesInput {
   sessionId: string;
 }
 
+export type RecordingSource = "microphone" | "prerecorded";
+
+export interface TranscriptionStatus {
+  expectedChunks: number;
+  uploaded: number;
+  pending: number;
+  transcribing: number;
+  transcribed: number;
+  failed: number;
+  lessonStateThroughChunkIndex: number | null;
+  complete: boolean;
+}
+
 async function parseApiResponse<T>(response: Response): Promise<T> {
   const body = (await response.json().catch(() => ({}))) as { error?: string | { code?: string } };
   if (!response.ok) {
@@ -56,6 +72,20 @@ async function authenticatedHeaders(headers: Record<string, string> = {}) {
 
 export function isAudioApiConfigured() {
   return API_URL.length > 0;
+}
+
+export function getRecordingSource(): RecordingSource {
+  if (
+    CONFIGURED_RECORDING_SOURCE === "microphone" ||
+    CONFIGURED_RECORDING_SOURCE === "prerecorded"
+  ) {
+    return CONFIGURED_RECORDING_SOURCE;
+  }
+  return "microphone";
+}
+
+export function getPrerecordedAudioPath() {
+  return PRERECORDED_AUDIO_PATH;
 }
 
 export function resolveBackendClassId(classId: string) {
@@ -100,7 +130,8 @@ export async function uploadAudioChunk({
   }
 
   const form = new FormData();
-  form.set("audio", audio, `chunk-${chunkIndex}.webm`);
+  const extension = audio.type.includes("wav") ? "wav" : audio.type.includes("mpeg") ? "mp3" : "webm";
+  form.set("audio", audio, `chunk-${chunkIndex}.${extension}`);
   form.set("chunk_index", String(chunkIndex));
   form.set("start_ms", String(startMs));
   form.set("end_ms", String(endMs));
@@ -128,6 +159,20 @@ export async function uploadAudioChunk({
     audioChunkId: payload.audioChunkId,
   });
   return payload;
+}
+
+export async function getTranscriptionStatus({
+  sessionId,
+  expectedChunks,
+}: {
+  sessionId: string;
+  expectedChunks: number;
+}) {
+  const response = await fetch(
+    `${API_URL}/api/sessions/${sessionId}/transcription-status?expected_chunks=${expectedChunks}`,
+    { headers: await authenticatedHeaders() },
+  );
+  return parseApiResponse<TranscriptionStatus>(response);
 }
 
 export async function submitManualLessonState({

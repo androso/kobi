@@ -18,14 +18,21 @@ import {
 } from "../activityDelivery/artifactDelivery";
 import {
   createBackendSession,
+  getPrerecordedAudioPath,
+  getRecordingSource,
+  getTranscriptionStatus,
   isAudioApiConfigured,
   requestActivityCandidates,
   resolveBackendClassId,
   submitManualLessonState,
   uploadAudioChunk,
 } from "../../lib/audioApi";
+import { decodePrerecordedAudio } from "../../lib/prerecordedAudio";
 
 const AUDIO_CHUNK_MS = 15_000;
+const PRERECORDED_UPLOAD_INTERVAL_MS = 2_100;
+const TRANSCRIPTION_STATUS_POLL_MS = 2_000;
+const TRANSCRIPTION_STATUS_TIMEOUT_MS = 20 * 60_000;
 
 interface LessonStateSnapshot {
   topic: string;
@@ -704,9 +711,28 @@ function normalizeLessonState(value: unknown): LessonStateSnapshot | null {
   };
 }
 
+function delay(milliseconds: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+function abortableDelay(milliseconds: number, signal: AbortSignal) {
+  return new Promise<void>((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const timeoutId = window.setTimeout(resolve, milliseconds);
+    signal.addEventListener("abort", () => {
+      window.clearTimeout(timeoutId);
+      resolve();
+    }, { once: true });
+  });
+}
+
 // -- Página ------------------------------------------------------------------
 
 export function LiveClassMonitor() {
+  const recordingSource = getRecordingSource();
   const [elapsed, setElapsed] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [completedSessionClassId, setCompletedSessionClassId] = useState<string | null>(null);
@@ -753,16 +779,38 @@ export function LiveClassMonitor() {
   const rotationTimerRef = useRef<number | null>(null);
   const isStoppingRef = useRef(false);
   const pendingAudioUploadsRef = useRef<Set<Promise<void>>>(new Set());
+  const prerecordedAbortRef = useRef<AbortController | null>(null);
+  const prerecordedAcceptedChunksRef = useRef(0);
+  const prerecordedDurationSecondsRef = useRef(0);
+  const finalizingSessionRef = useRef(false);
+  const latestLessonStateRef = useRef<LessonStateSnapshot | null>(null);
+
+  async function refreshLatestLessonState(sessionId: string, shouldApply = () => true) {
+    if (!supabase) return;
+    const { data, error } = await supabase
+      .from("segments")
+      .select("lesson_state")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!shouldApply() || error || !data?.lesson_state) return;
+    const normalized = normalizeLessonState(data.lesson_state);
+    latestLessonStateRef.current = normalized;
+    setLatestLessonState(normalized);
+  }
 
   // Timer runs only while recording
   useEffect(() => {
-    if (!isRecording) return;
+    if (!isRecording || recordingSource !== "microphone") return;
     const id = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(id);
   }, [isRecording]);
 
   useEffect(() => {
     return () => {
+      prerecordedAbortRef.current?.abort();
       void stopBrowserRecording();
     };
   }, []);
@@ -772,19 +820,9 @@ export function LiveClassMonitor() {
 
     let cancelled = false;
     const activeSessionId = apiSessionId;
-    const supabaseClient = supabase;
-
     async function loadLatestSegment() {
-      const { data, error } = await supabaseClient
-        .from("segments")
-        .select("lesson_state")
-        .eq("session_id", activeSessionId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (cancelled || error || !data?.lesson_state) return;
-      setLatestLessonState(normalizeLessonState(data.lesson_state));
+      if (cancelled) return;
+      await refreshLatestLessonState(activeSessionId, () => !cancelled);
     }
 
     void loadLatestSegment();
@@ -836,6 +874,95 @@ export function LiveClassMonitor() {
     apiSessionIdRef.current = sessionId;
     setApiSessionId(sessionId);
     return sessionId;
+  }
+
+  async function processPrerecordedAudio() {
+    setElapsed(0);
+    setUploadedChunkCount(0);
+    setRecordingError(null);
+    setLatestLessonState(null);
+    latestLessonStateRef.current = null;
+    prerecordedAcceptedChunksRef.current = 0;
+    prerecordedDurationSecondsRef.current = 0;
+    finalizingSessionRef.current = false;
+
+    const abortController = new AbortController();
+    prerecordedAbortRef.current = abortController;
+
+    try {
+      const sessionId = await ensureBackendSession();
+      apiSessionIdRef.current = sessionId;
+      setApiSessionId(sessionId);
+      isStoppingRef.current = false;
+      setUploadStatus("Cargando audio pregrabado");
+      setIsRecording(true);
+
+      const response = await fetch(getPrerecordedAudioPath(), { signal: abortController.signal });
+      if (!response.ok) {
+        throw new Error(`No se pudo cargar el MP3 configurado (${response.status}).`);
+      }
+
+      const chunks = await decodePrerecordedAudio(await response.arrayBuffer(), AUDIO_CHUNK_MS);
+      if (abortController.signal.aborted) return;
+
+      setUploadStatus(`Audio preparado · ${chunks.length} fragmentos`);
+      for (const chunk of chunks) {
+        if (abortController.signal.aborted) return;
+
+        setUploadStatus(`Enviando fragmento ${chunk.chunkIndex + 1} de ${chunks.length}`);
+        const upload = uploadAudioChunk({
+          sessionId,
+          audio: chunk.audio,
+          chunkIndex: chunk.chunkIndex,
+          startMs: chunk.startMs,
+          endMs: chunk.endMs,
+        }).then((result) => {
+          prerecordedAcceptedChunksRef.current += 1;
+          prerecordedDurationSecondsRef.current = Math.ceil(chunk.endMs / 1_000);
+          setUploadedChunkCount(prerecordedAcceptedChunksRef.current);
+          setElapsed(prerecordedDurationSecondsRef.current);
+          return result;
+        });
+        const trackedUpload = upload.then(() => undefined, () => undefined);
+        pendingAudioUploadsRef.current.add(trackedUpload);
+        try {
+          await upload;
+        } finally {
+          pendingAudioUploadsRef.current.delete(trackedUpload);
+        }
+        if (chunk.chunkIndex < chunks.length - 1) {
+          await abortableDelay(PRERECORDED_UPLOAD_INTERVAL_MS, abortController.signal);
+        }
+      }
+
+      setUploadStatus("Audio enviado · esperando transcripcion");
+      await waitForTranscriptionCompletion(sessionId, chunks.length);
+      if (!abortController.signal.aborted) {
+        await refreshLatestLessonState(sessionId);
+        await finalizeSession(prerecordedDurationSecondsRef.current, true);
+      }
+    } catch (error) {
+      if (abortController.signal.aborted) return;
+      setIsRecording(false);
+      setRecordingError(error instanceof Error ? error.message : "No se pudo procesar el audio pregrabado.");
+      setUploadStatus(null);
+    }
+  }
+
+  async function waitForTranscriptionCompletion(sessionId: string, expectedChunks: number) {
+    const deadline = Date.now() + TRANSCRIPTION_STATUS_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      const status = await getTranscriptionStatus({ sessionId, expectedChunks });
+      if (status.failed > 0) {
+        throw new Error(`${status.failed} fragmento(s) no se pudieron transcribir.`);
+      }
+      setUploadStatus(
+        `Transcribiendo ${status.transcribed} de ${expectedChunks} fragmentos`,
+      );
+      if (status.complete) return;
+      await delay(TRANSCRIPTION_STATUS_POLL_MS);
+    }
+    throw new Error("La transcripcion no termino dentro del tiempo esperado.");
   }
 
   async function handleAudioChunk(audio: Blob) {
@@ -919,6 +1046,12 @@ export function LiveClassMonitor() {
   }
 
   async function startRecording() {
+    finalizingSessionRef.current = false;
+    if (recordingSource === "prerecorded") {
+      await processPrerecordedAudio();
+      return;
+    }
+
     setElapsed(0);
     setUploadedChunkCount(0);
     setRecordingError(null);
@@ -975,17 +1108,43 @@ export function LiveClassMonitor() {
     }
   }
 
-  async function stopRecording() {
+  async function finalizeSession(durationSeconds: number, generateActivity: boolean) {
+    if (finalizingSessionRef.current) return;
+    finalizingSessionRef.current = true;
     setIsRecording(false);
     await stopBrowserRecording();
     setUploadStatus(apiSessionIdRef.current ? "Sesion enviada al worker" : uploadStatus);
 
     if (activeClass) {
-      const session = buildSession(activeClass, elapsed, latestLessonState);
+      const session = buildSession(activeClass, durationSeconds, latestLessonStateRef.current);
       setCompletedSessionClassId(activeClass.id);
       endSession(session); // guarda en historial + limpia el monitor activo
-      void handleGenerateActivity();
+      if (generateActivity) void handleGenerateActivity();
     }
+  }
+
+  async function stopRecording() {
+    if (recordingSource === "prerecorded") {
+      prerecordedAbortRef.current?.abort();
+      setUploadStatus("Finalizando fragmentos enviados");
+      await Promise.all(Array.from(pendingAudioUploadsRef.current));
+      const expectedChunks = prerecordedAcceptedChunksRef.current;
+      if (expectedChunks > 0 && apiSessionIdRef.current) {
+        try {
+          await waitForTranscriptionCompletion(apiSessionIdRef.current, expectedChunks);
+          await refreshLatestLessonState(apiSessionIdRef.current);
+        } catch (error) {
+          setIsRecording(false);
+          setRecordingError(error instanceof Error ? error.message : "No se pudo finalizar la transcripcion.");
+          setUploadStatus(null);
+          return;
+        }
+      }
+      await finalizeSession(prerecordedDurationSecondsRef.current, expectedChunks > 0);
+      return;
+    }
+
+    await finalizeSession(elapsed, true);
   }
 
   function toggleRecording() {

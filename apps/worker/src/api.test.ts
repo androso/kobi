@@ -70,6 +70,36 @@ describe("worker API", () => {
     expect(runGenerateActivityArtifactsJob).not.toHaveBeenCalled();
   });
 
+  it("reports transcription completion only after the final lesson-state segment", async () => {
+    const supabase = fakeSupabase();
+    supabase.audioChunks.push(
+      { session_id: SESSION_ID, chunk_index: 0, status: "transcribed" },
+      { session_id: SESSION_ID, chunk_index: 1, status: "transcribed" },
+    );
+    supabase.segments.push({
+      session_id: SESSION_ID,
+      source_through_chunk_index: 1,
+    });
+
+    const req = fakeRequest({});
+    req.method = "GET";
+    req.url = `/api/sessions/${SESSION_ID}/transcription-status?expected_chunks=2`;
+    const res = fakeResponse();
+    await routeRequest(req, res, supabase.client, fakeBoss().instance);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({
+      expectedChunks: 2,
+      uploaded: 2,
+      pending: 0,
+      transcribing: 0,
+      transcribed: 2,
+      failed: 0,
+      lessonStateThroughChunkIndex: 1,
+      complete: true,
+    });
+  });
+
   it("generates activity candidates on the worker from the latest lesson_state", async () => {
     process.env.OPENAI_API_KEY = "sk-test";
     process.env.OPENAI_ACTIVITY_MODEL = "gpt-activity-test";
@@ -317,7 +347,15 @@ class FakeQuery {
       const match = this.state.segments.find((segment) =>
         segment.session_id === this.filters.get("session_id"),
       );
-      return Promise.resolve({ data: match ? { lesson_state: match.lesson_state } : null, error: null });
+      return Promise.resolve({
+        data: match
+          ? {
+              lesson_state: match.lesson_state,
+              source_through_chunk_index: match.source_through_chunk_index,
+            }
+          : null,
+        error: null,
+      });
     }
 
     if (this.table === "sessions") {
@@ -344,6 +382,12 @@ class FakeQuery {
   ) {
     if (this.table === "curriculum_chunks") {
       return Promise.resolve({ data: this.state.curriculumChunks, error: null }).then(onfulfilled, onrejected);
+    }
+    if (this.table === "audio_chunks") {
+      const rows = this.state.audioChunks.filter((chunk) =>
+        chunk.session_id === this.filters.get("session_id"),
+      );
+      return Promise.resolve({ data: rows, error: null }).then(onfulfilled, onrejected);
     }
 
     return Promise.resolve({ data: [], error: null }).then(onfulfilled, onrejected);

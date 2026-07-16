@@ -27,4 +27,5 @@ Do not commit ad hoc terminal captures, branch lists, downloaded classroom data,
 Sample paths must be explicit:
 
 - Seeded teacher history and sample classes must stay visibly labeled and out of production data paths.
+- Local prerecorded classroom audio belongs under `apps/web/public/local-audio/` and is gitignored; never commit real classroom recordings.
 - Fixtures must use synthetic classroom content only. Do not include real student names, real classroom audio/text, access tokens, API keys, database URLs, or Supabase service-role keys.
