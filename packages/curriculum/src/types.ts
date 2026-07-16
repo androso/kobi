@@ -5,6 +5,7 @@
  * docs/area-bc-contract.md for the full write-up shared with Androso.
  */
 export interface CurriculumChunkMetadata {
+  source_id?: string | null;
   class_id?: string | null;
   source_document?: string | null;
   source_page_start?: number | null;
@@ -40,7 +41,7 @@ export interface RetrieveCurriculumMatchesInput {
   /** Optional — narrows to one unit when known (e.g. the class's selected unit). */
   unit?: string;
   /** Optional — prefer chunks uploaded for this class. */
-  classId?: string;
+  sourceIds?: string[];
   /** Defaults to 3, matching the spec's "pgvector top-3" retrieval mode. */
   matchCount?: number;
 }

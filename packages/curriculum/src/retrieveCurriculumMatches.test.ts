@@ -8,6 +8,7 @@ vi.mock("./embedCurriculumChunk.js", () => ({
 }));
 
 const matchRow = {
+  source_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   objective_code: "L7.4.P1.C1",
   unit: "U4",
   grade: 7,
@@ -22,38 +23,36 @@ const matchRow = {
 };
 
 describe("retrieveCurriculumMatches", () => {
-  it("falls back to global seeded curriculum only when class-scoped matches are empty", async () => {
-    const rpc = vi
-      .fn()
-      .mockResolvedValueOnce({ data: [], error: null })
-      .mockResolvedValueOnce({ data: [{ ...matchRow, source_document: "seeded" }], error: null });
+  it("queries exactly the selected shared sources", async () => {
+    const rpc = vi.fn().mockResolvedValueOnce({ data: [matchRow], error: null });
 
     const matches = await retrieveCurriculumMatches({ rpc } as never as SupabaseClient, {
       queryText: "partes de la noticia",
       grade: 7,
       subject: "Lenguaje",
       unit: "U4",
-      classId: "11111111-1111-4111-8111-111111111111",
+      sourceIds: [
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      ],
     });
 
     expect(matches).toHaveLength(1);
-    expect(matches[0]).toMatchObject({ source_document: "seeded", similarity: 0.91 });
-    expect(rpc).toHaveBeenNthCalledWith(
-      1,
+    expect(matches[0]).toMatchObject({ source_id: matchRow.source_id, similarity: 0.91 });
+    expect(rpc).toHaveBeenCalledWith(
       "match_curriculum_chunks",
       expect.objectContaining({
-        match_class_id: "11111111-1111-4111-8111-111111111111",
+        match_source_ids: [
+          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        ],
         match_subject: "lenguaje",
       }),
     );
-    expect(rpc).toHaveBeenNthCalledWith(
-      2,
-      "match_curriculum_chunks",
-      expect.objectContaining({ match_class_id: null }),
-    );
+    expect(rpc).toHaveBeenCalledTimes(1);
   });
 
-  it("does not call the global corpus when class-scoped rows match", async () => {
+  it("deduplicates selected source ids", async () => {
     const rpc = vi.fn().mockResolvedValueOnce({ data: [matchRow], error: null });
 
     const matches = await retrieveCurriculumMatches({ rpc } as never as SupabaseClient, {
@@ -61,15 +60,22 @@ describe("retrieveCurriculumMatches", () => {
       grade: 7,
       subject: "lenguaje",
       unit: "U4",
-      classId: "11111111-1111-4111-8111-111111111111",
+      sourceIds: [matchRow.source_id, matchRow.source_id],
     });
 
     expect(matches).toHaveLength(1);
     expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith(
+      "match_curriculum_chunks",
+      expect.objectContaining({ match_source_ids: [matchRow.source_id] }),
+    );
   });
 
-  it("omitted classId queries only the global corpus", async () => {
-    const rpc = vi.fn().mockResolvedValueOnce({ data: [matchRow], error: null });
+  it("omitted source ids queries curated defaults", async () => {
+    const rpc = vi.fn().mockResolvedValueOnce({
+      data: [{ ...matchRow, source_id: null, source_document: "seeded" }],
+      error: null,
+    });
 
     await retrieveCurriculumMatches({ rpc } as never as SupabaseClient, {
       queryText: "titular y fuente",
@@ -80,7 +86,7 @@ describe("retrieveCurriculumMatches", () => {
 
     expect(rpc).toHaveBeenCalledWith(
       "match_curriculum_chunks",
-      expect.objectContaining({ match_class_id: null }),
+      expect.objectContaining({ match_source_ids: null, match_unit: "U4" }),
     );
     expect(rpc).toHaveBeenCalledTimes(1);
     expect(embedText).toHaveBeenCalledWith("titular y fuente", "RETRIEVAL_QUERY");
