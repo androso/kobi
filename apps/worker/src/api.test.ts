@@ -73,8 +73,18 @@ describe("worker API", () => {
   it("reports transcription completion only after the final lesson-state segment", async () => {
     const supabase = fakeSupabase();
     supabase.audioChunks.push(
-      { session_id: SESSION_ID, chunk_index: 0, status: "transcribed" },
-      { session_id: SESSION_ID, chunk_index: 1, status: "transcribed" },
+      {
+        session_id: SESSION_ID,
+        chunk_index: 0,
+        status: "transcribed",
+        transcript_text: "Primer fragmento",
+      },
+      {
+        session_id: SESSION_ID,
+        chunk_index: 1,
+        status: "transcribed",
+        transcript_text: "Segundo fragmento",
+      },
     );
     supabase.segments.push({
       session_id: SESSION_ID,
@@ -98,8 +108,36 @@ describe("worker API", () => {
       pending: 0,
       transcribing: 0,
       transcribed: 2,
+      spokenChunks: 2,
       terminalFailed: 0,
       lessonStateThroughChunkIndex: 1,
+      complete: true,
+    });
+  });
+
+  it("reports completed silence without counting it as spoken audio", async () => {
+    const supabase = fakeSupabase();
+    supabase.audioChunks.push({
+      session_id: SESSION_ID,
+      chunk_index: 0,
+      status: "transcribed",
+      transcript_text: "   ",
+    });
+    supabase.segments.push({
+      session_id: SESSION_ID,
+      source_through_chunk_index: 0,
+    });
+
+    const req = fakeRequest({});
+    req.method = "GET";
+    req.url = `/api/sessions/${SESSION_ID}/transcription-status?expected_chunks=1`;
+    const res = fakeResponse();
+    await routeRequest(req, res, supabase.client, fakeBoss().instance);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      transcribed: 1,
+      spokenChunks: 0,
       complete: true,
     });
   });

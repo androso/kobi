@@ -88,12 +88,12 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
         let currentLessonState = (previousSegment?.lesson_state as LessonState) ?? null;
 
         while (true) {
-          stage = "loading transcribed chunks";
+          stage = "loading completed chunks";
           const { data: chunks, error: chunksError } = await supabase
             .from("audio_chunks")
-            .select("chunk_index, transcript_text")
+            .select("chunk_index, status, transcript_text")
             .eq("session_id", sessionId)
-            .eq("status", "transcribed")
+            .in("status", ["transcribed", "failed"])
             .gte("chunk_index", nextChunkIndex)
             .order("chunk_index", { ascending: true })
             .limit(2);
@@ -102,18 +102,24 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
             throw new Error(`buildLessonState job: failed to load chunks: ${chunksError.message}`);
           }
 
-          const contiguousChunks: Array<{ chunk_index: number; transcript_text: string }> = [];
+          const contiguousChunks: Array<{
+            chunk_index: number;
+            transcript_text: string;
+          }> = [];
           let expectedChunkIndex = nextChunkIndex;
           for (const chunk of chunks ?? []) {
             if (
               chunk.chunk_index !== expectedChunkIndex ||
-              typeof chunk.transcript_text !== "string"
+              (chunk.status !== "failed" && typeof chunk.transcript_text !== "string")
             ) {
               break;
             }
             contiguousChunks.push({
               chunk_index: chunk.chunk_index,
-              transcript_text: chunk.transcript_text,
+              transcript_text:
+                chunk.status === "transcribed" && typeof chunk.transcript_text === "string"
+                  ? chunk.transcript_text
+                  : "",
             });
             expectedChunkIndex += 1;
           }

@@ -972,7 +972,12 @@ export function LiveClassMonitor() {
       setUploadStatus(
         `Transcribiendo ${status.transcribed} de ${expectedChunks} fragmentos`,
       );
-      if (status.complete) return;
+      if (status.complete) {
+        if (status.spokenChunks === 0) {
+          throw new Error("No se detecto voz en el audio pregrabado.");
+        }
+        return;
+      }
       await delay(TRANSCRIPTION_STATUS_POLL_MS);
     }
     throw new Error("La transcripcion no termino dentro del tiempo esperado.");

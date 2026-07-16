@@ -525,7 +525,7 @@ async function getTranscriptionStatus(
 
   const { data: chunks, error: chunksError } = await supabase
     .from("audio_chunks")
-    .select("status")
+    .select("status, transcript_text")
     .eq("session_id", sessionId);
   if (chunksError) throw new ApiRequestError("datastore_error", 500);
 
@@ -540,6 +540,12 @@ async function getTranscriptionStatus(
       counts[chunk.status as keyof typeof counts] += 1;
     }
   }
+  const spokenChunks = (chunks ?? []).filter(
+    (chunk) =>
+      chunk.status === "transcribed" &&
+      typeof chunk.transcript_text === "string" &&
+      chunk.transcript_text.trim().length > 0,
+  ).length;
 
   const { data: latestSegment, error: segmentError } = await supabase
     .from("segments")
@@ -569,6 +575,7 @@ async function getTranscriptionStatus(
     pending: counts.pending,
     transcribing: counts.transcribing,
     transcribed: counts.transcribed,
+    spokenChunks,
     terminalFailed: counts.failed,
     lessonStateThroughChunkIndex,
     complete,

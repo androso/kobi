@@ -48,6 +48,7 @@ export interface TranscriptionStatus {
   pending: number;
   transcribing: number;
   transcribed: number;
+  spokenChunks: number;
   terminalFailed: number;
   lessonStateThroughChunkIndex: number | null;
   complete: boolean;

@@ -66,6 +66,7 @@ const mocks = vi.hoisted(() => {
       pending: 0,
       transcribing: 0,
       transcribed: 2,
+      spokenChunks: 2,
       terminalFailed: 0,
       lessonStateThroughChunkIndex: 1 as number | null,
       complete: true,
@@ -223,6 +224,7 @@ describe("LiveClassMonitor activity delivery", () => {
       pending: 0,
       transcribing: 0,
       transcribed: 1,
+      spokenChunks: 1,
       terminalFailed: 0,
       lessonStateThroughChunkIndex: 0,
       complete: true,
@@ -329,6 +331,7 @@ describe("LiveClassMonitor activity delivery", () => {
       pending: 0,
       transcribing: 0,
       transcribed: 0,
+      spokenChunks: 0,
       terminalFailed: 1,
       lessonStateThroughChunkIndex: null,
       complete: false,
@@ -351,6 +354,38 @@ describe("LiveClassMonitor activity delivery", () => {
     });
 
     expect(await screen.findByText(/no se pudieron transcribir/i)).toBeInTheDocument();
+    expect(mocks.requestActivityCandidates).not.toHaveBeenCalled();
+  });
+
+  it("does not generate an activity when prerecorded audio contains no speech", async () => {
+    mocks.recordingSource = "prerecorded";
+    mocks.decodePrerecordedAudio.mockResolvedValueOnce([
+      { audio: new Blob(["silence"], { type: "audio/wav" }), chunkIndex: 0, startMs: 0, endMs: 10_000 },
+    ]);
+    mocks.getTranscriptionStatus.mockResolvedValueOnce({
+      expectedChunks: 1,
+      uploaded: 1,
+      pending: 0,
+      transcribing: 0,
+      transcribed: 1,
+      spokenChunks: 0,
+      terminalFailed: 0,
+      lessonStateThroughChunkIndex: 0,
+      complete: true,
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([1]))));
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+
+    expect(await screen.findByText(/no se detecto voz/i)).toBeInTheDocument();
     expect(mocks.requestActivityCandidates).not.toHaveBeenCalled();
   });
 

@@ -27,8 +27,8 @@ describe("buildLessonState job", () => {
       previousLessonState: { topic: "Introduccion" },
       previousProgress: 0,
       chunks: [
-        { chunk_index: 1, transcript_text: "Primer fragmento nuevo" },
-        { chunk_index: 2, transcript_text: "Segundo fragmento nuevo" },
+        { chunk_index: 1, status: "transcribed", transcript_text: "Primer fragmento nuevo" },
+        { chunk_index: 2, status: "transcribed", transcript_text: "Segundo fragmento nuevo" },
       ],
       insertedSegments,
     });
@@ -52,6 +52,7 @@ describe("buildLessonState job", () => {
       previousProgress: 0,
       chunks: Array.from({ length: 9 }, (_, index) => ({
         chunk_index: index + 1,
+        status: "transcribed" as const,
         transcript_text: `Fragmento ${index + 1}`,
       })),
       insertedSegments,
@@ -82,7 +83,7 @@ describe("buildLessonState job", () => {
     const supabase = fakeSupabase({
       previousLessonState,
       previousProgress: 0,
-      chunks: [{ chunk_index: 1, transcript_text: "   " }],
+      chunks: [{ chunk_index: 1, status: "transcribed", transcript_text: "   " }],
       insertedSegments,
     });
 
@@ -95,14 +96,37 @@ describe("buildLessonState job", () => {
     });
   });
 
+  it("advances past a terminal failure and incorporates later good transcripts", async () => {
+    const insertedSegments: Array<Record<string, unknown>> = [];
+    const supabase = fakeSupabase({
+      previousLessonState: null,
+      previousProgress: null,
+      chunks: [
+        { chunk_index: 0, status: "failed", transcript_text: null },
+        { chunk_index: 1, status: "transcribed", transcript_text: "Contenido recuperado" },
+      ],
+      insertedSegments,
+    });
+
+    await registerBuildLessonStateJob(fakeBoss(), supabase);
+
+    expect(buildLessonState).toHaveBeenCalledWith({
+      transcriptText: "Contenido recuperado",
+      previousLessonState: null,
+    });
+    expect(insertedSegments[0]).toMatchObject({
+      source_through_chunk_index: 1,
+    });
+  });
+
   it("does not jump lesson-state progress across a missing chunk", async () => {
     const insertedSegments: Array<Record<string, unknown>> = [];
     const supabase = fakeSupabase({
       previousLessonState: { topic: "Introduccion" },
       previousProgress: 0,
       chunks: [
-        { chunk_index: 8, transcript_text: "Fragmento ocho" },
-        { chunk_index: 9, transcript_text: "Fragmento nueve" },
+        { chunk_index: 8, status: "transcribed", transcript_text: "Fragmento ocho" },
+        { chunk_index: 9, status: "transcribed", transcript_text: "Fragmento nueve" },
       ],
       insertedSegments,
     });
@@ -131,7 +155,11 @@ function fakeSupabase({
 }: {
   previousLessonState: unknown;
   previousProgress: number | null;
-  chunks: Array<{ chunk_index: number; transcript_text: string | null }>;
+  chunks: Array<{
+    chunk_index: number;
+    status: "transcribed" | "failed";
+    transcript_text: string | null;
+  }>;
   insertedSegments: Array<Record<string, unknown>>;
 }) {
   return {
@@ -141,6 +169,10 @@ function fakeSupabase({
         const query = {
           select: () => query,
           eq: () => query,
+          in: (_column: string, values: string[]) => {
+            expect(values).toEqual(["transcribed", "failed"]);
+            return query;
+          },
           gte: (_column: string, value: number) => {
             requestedFrom = value;
             return query;
