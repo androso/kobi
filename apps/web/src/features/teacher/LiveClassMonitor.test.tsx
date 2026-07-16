@@ -262,6 +262,62 @@ describe("LiveClassMonitor activity delivery", () => {
     );
   });
 
+  it("clears stale activity delivery state when a prerecorded session starts", async () => {
+    mocks.recordingSource = "prerecorded";
+    let resolveFreshSession!: (value: { sessionId: string }) => void;
+    mocks.createBackendSession
+      .mockResolvedValueOnce({ sessionId: "session-1" })
+      .mockImplementationOnce(() => new Promise((resolve) => {
+        resolveFreshSession = resolve;
+      }));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([1]))));
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /hora de actividad/i }));
+    expect(await screen.findByText("Practica: La noticia")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+    await waitFor(() => {
+      expect(screen.queryByText("Practica: La noticia")).not.toBeInTheDocument();
+    });
+
+    resolveFreshSession({ sessionId: "session-2" });
+    await waitFor(() => expect(mocks.uploadAudioChunk).toHaveBeenCalled());
+  });
+
+  it("ignores duplicate prerecorded starts while session creation is pending", async () => {
+    mocks.recordingSource = "prerecorded";
+    let resolveSession!: (value: { sessionId: string }) => void;
+    mocks.createBackendSession.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveSession = resolve;
+    }));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([1]))));
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    const startButton = screen.getByRole("button", { name: /iniciar grabación/i });
+    fireEvent.click(startButton);
+    fireEvent.click(startButton);
+
+    expect(mocks.createBackendSession).toHaveBeenCalledTimes(1);
+
+    resolveSession({ sessionId: "session-1" });
+    await waitFor(() => expect(mocks.uploadAudioChunk).toHaveBeenCalled());
+  });
+
   it("does not generate an activity when prerecorded transcription fails", async () => {
     mocks.recordingSource = "prerecorded";
     mocks.decodePrerecordedAudio.mockResolvedValueOnce([

@@ -10,13 +10,27 @@ export interface BuildLessonStateJobData {
   unit?: string;
 }
 
+const silentLessonState: LessonState = {
+  topic: "Sin contenido hablado",
+  objective_guess: null,
+  key_terms: [],
+  transcript_summary: "El audio procesado no contiene habla transcribible.",
+  confidence: 0,
+  evidence: {
+    quoted_phrases: [],
+    reason: "Los fragmentos procesados solo contienen silencio.",
+  },
+};
+
 /**
- * On 1-2 newly transcribed chunks: build the rolling lesson_state and persist
- * it as a segments row. This job no longer decides when to move to the
- * Propose stage — that decision now lives in the checkpoint gate
- * (checkpointScheduler.job.ts + evaluateCheckpoint.job.ts), which runs on its
- * own timer independent of this per-chunk cadence and reads accumulated
- * segments directly.
+ * Build the rolling lesson_state from bounded batches of 1-2 chunks. A single
+ * job drains every currently contiguous batch so chunks whose earlier gap has
+ * just closed cannot be left without another job to advance them.
+ *
+ * This job no longer decides when to move to the Propose stage — that decision
+ * lives in the checkpoint gate (checkpointScheduler.job.ts +
+ * evaluateCheckpoint.job.ts), which runs on its own timer independent of this
+ * per-chunk cadence and reads accumulated segments directly.
  *
  * TODO(Area D/Realtime): push the new lesson_state to the teacher UI via
  * Supabase Realtime once apps/web subscribes to it.
@@ -70,90 +84,109 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
           typeof progressSegment?.source_through_chunk_index === "number"
             ? progressSegment.source_through_chunk_index
             : -1;
-        const nextChunkIndex = previousProgress + 1;
+        let nextChunkIndex = previousProgress + 1;
+        let currentLessonState = (previousSegment?.lesson_state as LessonState) ?? null;
 
-        stage = "loading transcribed chunks";
-        const { data: chunks, error: chunksError } = await supabase
-          .from("audio_chunks")
-          .select("chunk_index, transcript_text")
-          .eq("session_id", sessionId)
-          .eq("status", "transcribed")
-          .gte("chunk_index", nextChunkIndex)
-          .order("chunk_index", { ascending: true })
-          .limit(2);
+        while (true) {
+          stage = "loading transcribed chunks";
+          const { data: chunks, error: chunksError } = await supabase
+            .from("audio_chunks")
+            .select("chunk_index, transcript_text")
+            .eq("session_id", sessionId)
+            .eq("status", "transcribed")
+            .gte("chunk_index", nextChunkIndex)
+            .order("chunk_index", { ascending: true })
+            .limit(2);
 
-        if (chunksError) {
-          throw new Error(`buildLessonState job: failed to load chunks: ${chunksError.message}`);
-        }
-
-        const contiguousChunks: Array<{ chunk_index: number; transcript_text: string }> = [];
-        let expectedChunkIndex = nextChunkIndex;
-        for (const chunk of chunks ?? []) {
-          if (
-            chunk.chunk_index !== expectedChunkIndex ||
-            typeof chunk.transcript_text !== "string" ||
-            !chunk.transcript_text.trim()
-          ) {
-            break;
+          if (chunksError) {
+            throw new Error(`buildLessonState job: failed to load chunks: ${chunksError.message}`);
           }
-          contiguousChunks.push({
-            chunk_index: chunk.chunk_index,
-            transcript_text: chunk.transcript_text,
-          });
-          expectedChunkIndex += 1;
-        }
 
-        if (contiguousChunks.length === 0) {
-          console.warn("[buildLessonState] skipped because the next contiguous transcript is not ready", {
+          const contiguousChunks: Array<{ chunk_index: number; transcript_text: string }> = [];
+          let expectedChunkIndex = nextChunkIndex;
+          for (const chunk of chunks ?? []) {
+            if (
+              chunk.chunk_index !== expectedChunkIndex ||
+              typeof chunk.transcript_text !== "string"
+            ) {
+              break;
+            }
+            contiguousChunks.push({
+              chunk_index: chunk.chunk_index,
+              transcript_text: chunk.transcript_text,
+            });
+            expectedChunkIndex += 1;
+          }
+
+          if (contiguousChunks.length === 0) {
+            console.warn("[buildLessonState] stopped because the next contiguous transcript is not ready", {
+              sessionId,
+              jobId: job.id,
+              chunkCount: chunks?.length ?? 0,
+              nextChunkIndex,
+            });
+            return;
+          }
+
+          const transcriptText = contiguousChunks
+            .map((chunk) => chunk.transcript_text.trim())
+            .filter(Boolean)
+            .join("\n");
+          const sourceThroughChunkIndex = contiguousChunks.at(-1)!.chunk_index;
+          let lessonState = currentLessonState;
+
+          if (transcriptText) {
+            stage = "calling lesson-state model";
+            console.info("[buildLessonState] requesting structured lesson_state", {
+              sessionId,
+              jobId: job.id,
+              transcriptChars: transcriptText.length,
+              hasPreviousLessonState: Boolean(currentLessonState),
+              provider: "openai",
+              model: process.env.LESSON_STATE_MODEL ?? "gpt-4o-mini",
+            });
+            lessonState = await buildLessonState({
+              transcriptText,
+              previousLessonState: currentLessonState,
+            });
+          } else {
+            lessonState ??= silentLessonState;
+            console.info("[buildLessonState] advancing progress across silent chunks", {
+              sessionId,
+              jobId: job.id,
+              sourceThroughChunkIndex,
+            });
+          }
+
+          stage = "inserting lesson_state segment";
+          const { data: segment, error: segmentError } = await supabase
+            .from("segments")
+            .insert({
+              session_id: sessionId,
+              lesson_state: lessonState,
+              confidence: lessonState.confidence,
+              transcript_summary: lessonState.transcript_summary,
+              source_through_chunk_index: sourceThroughChunkIndex,
+            })
+            .select("id")
+            .single();
+
+          if (segmentError) {
+            throw new Error(`buildLessonState job: failed to insert segment: ${segmentError.message}`);
+          }
+          console.info("[buildLessonState] lesson_state persisted", {
             sessionId,
             jobId: job.id,
-            chunkCount: chunks?.length ?? 0,
-            nextChunkIndex,
-          });
-          return;
-        }
-
-        const transcriptText = contiguousChunks.map((chunk) => chunk.transcript_text).join("\n");
-        const sourceThroughChunkIndex = contiguousChunks.at(-1)!.chunk_index;
-
-        stage = "calling lesson-state model";
-        console.info("[buildLessonState] requesting structured lesson_state", {
-          sessionId,
-          jobId: job.id,
-          transcriptChars: transcriptText.length,
-          hasPreviousLessonState: Boolean(previousSegment?.lesson_state),
-          provider: "openai",
-          model: process.env.LESSON_STATE_MODEL ?? "gpt-4o-mini",
-        });
-        const lessonState: LessonState = await buildLessonState({
-          transcriptText,
-          previousLessonState: (previousSegment?.lesson_state as LessonState) ?? null,
-        });
-
-        stage = "inserting lesson_state segment";
-        const { data: segment, error: segmentError } = await supabase
-          .from("segments")
-          .insert({
-            session_id: sessionId,
-            lesson_state: lessonState,
+            segmentId: segment.id,
+            topic: lessonState.topic,
             confidence: lessonState.confidence,
-            transcript_summary: lessonState.transcript_summary,
-            source_through_chunk_index: sourceThroughChunkIndex,
-          })
-          .select("id")
-          .single();
+            sourceThroughChunkIndex,
+            durationMs: Date.now() - startedAt,
+          });
 
-        if (segmentError) {
-          throw new Error(`buildLessonState job: failed to insert segment: ${segmentError.message}`);
+          currentLessonState = lessonState;
+          nextChunkIndex = sourceThroughChunkIndex + 1;
         }
-        console.info("[buildLessonState] lesson_state persisted", {
-          sessionId,
-          jobId: job.id,
-          segmentId: segment.id,
-          topic: lessonState.topic,
-          confidence: lessonState.confidence,
-          durationMs: Date.now() - startedAt,
-        });
       } catch (error) {
         console.error("[buildLessonState] job failed", {
           sessionId,

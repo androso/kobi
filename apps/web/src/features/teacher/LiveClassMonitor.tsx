@@ -780,6 +780,7 @@ export function LiveClassMonitor() {
   const isStoppingRef = useRef(false);
   const pendingAudioUploadsRef = useRef<Set<Promise<void>>>(new Set());
   const prerecordedAbortRef = useRef<AbortController | null>(null);
+  const prerecordedStartingRef = useRef(false);
   const prerecordedAcceptedChunksRef = useRef(0);
   const prerecordedDurationSecondsRef = useRef(0);
   const finalizingSessionRef = useRef(false);
@@ -886,6 +887,14 @@ export function LiveClassMonitor() {
     setElapsed(0);
     setUploadedChunkCount(0);
     setRecordingError(null);
+    setActivitySessionId(null);
+    setCandidates([]);
+    setSelectedCandidateId(null);
+    setStudents([]);
+    setOverridesByBand({});
+    setActivityLoading(false);
+    setActivityError(null);
+    setPublishStatus(null);
     setLatestLessonState(null);
     latestLessonStateRef.current = null;
     prerecordedAcceptedChunksRef.current = 0;
@@ -1052,7 +1061,13 @@ export function LiveClassMonitor() {
   async function startRecording() {
     finalizingSessionRef.current = false;
     if (recordingSource === "prerecorded") {
-      await processPrerecordedAudio();
+      if (prerecordedStartingRef.current || isRecording) return;
+      prerecordedStartingRef.current = true;
+      try {
+        await processPrerecordedAudio();
+      } finally {
+        prerecordedStartingRef.current = false;
+      }
       return;
     }
 

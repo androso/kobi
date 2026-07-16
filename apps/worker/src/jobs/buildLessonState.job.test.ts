@@ -21,7 +21,7 @@ describe("buildLessonState job", () => {
     });
   });
 
-  it("advances through the next two contiguous transcripts", async () => {
+  it("advances through the next contiguous transcripts", async () => {
     const insertedSegments: Array<Record<string, unknown>> = [];
     const supabase = fakeSupabase({
       previousLessonState: { topic: "Introduccion" },
@@ -42,6 +42,56 @@ describe("buildLessonState job", () => {
     expect(buildLessonState).toHaveBeenCalledWith({
       transcriptText: "Primer fragmento nuevo\nSegundo fragmento nuevo",
       previousLessonState: { topic: "Introduccion" },
+    });
+  });
+
+  it("drains every contiguous transcript after an earlier gap closes", async () => {
+    const insertedSegments: Array<Record<string, unknown>> = [];
+    const supabase = fakeSupabase({
+      previousLessonState: { topic: "Introduccion" },
+      previousProgress: 0,
+      chunks: Array.from({ length: 9 }, (_, index) => ({
+        chunk_index: index + 1,
+        transcript_text: `Fragmento ${index + 1}`,
+      })),
+      insertedSegments,
+    });
+
+    await registerBuildLessonStateJob(fakeBoss(), supabase);
+
+    expect(insertedSegments.map((segment) => segment.source_through_chunk_index)).toEqual([
+      2,
+      4,
+      6,
+      8,
+      9,
+    ]);
+    expect(buildLessonState).toHaveBeenCalledTimes(5);
+  });
+
+  it("advances progress across silence without sending blank text to the model", async () => {
+    const previousLessonState = {
+      topic: "Introduccion",
+      objective_guess: null,
+      key_terms: [],
+      transcript_summary: "Introduccion de la clase.",
+      confidence: 0.7,
+      evidence: { quoted_phrases: [], reason: "Estado previo." },
+    };
+    const insertedSegments: Array<Record<string, unknown>> = [];
+    const supabase = fakeSupabase({
+      previousLessonState,
+      previousProgress: 0,
+      chunks: [{ chunk_index: 1, transcript_text: "   " }],
+      insertedSegments,
+    });
+
+    await registerBuildLessonStateJob(fakeBoss(), supabase);
+
+    expect(buildLessonState).not.toHaveBeenCalled();
+    expect(insertedSegments[0]).toMatchObject({
+      lesson_state: previousLessonState,
+      source_through_chunk_index: 1,
     });
   });
 
@@ -87,18 +137,24 @@ function fakeSupabase({
   return {
     from(table: string) {
       if (table === "audio_chunks") {
+        let requestedFrom = 0;
         const query = {
           select: () => query,
           eq: () => query,
           gte: (_column: string, value: number) => {
-            expect(value).toBe((previousProgress ?? -1) + 1);
+            requestedFrom = value;
             return query;
           },
           order: (_column: string, options: { ascending: boolean }) => {
             expect(options).toEqual({ ascending: true });
             return query;
           },
-          limit: async () => ({ data: chunks, error: null }),
+          limit: async (count: number) => ({
+            data: chunks
+              .filter((chunk) => chunk.chunk_index >= requestedFrom)
+              .slice(0, count),
+            error: null,
+          }),
         };
         return query;
       }
