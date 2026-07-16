@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -207,6 +207,59 @@ describe("LiveClassMonitor activity delivery", () => {
       sessionId: "session-1",
       expectedChunks: 2,
     });
+  });
+
+  it("creates a fresh backend session when prerecorded playback starts again", async () => {
+    mocks.recordingSource = "prerecorded";
+    mocks.createBackendSession
+      .mockResolvedValueOnce({ sessionId: "session-1" })
+      .mockResolvedValueOnce({ sessionId: "session-2" });
+    const chunks = [
+      { audio: new Blob(["one"], { type: "audio/wav" }), chunkIndex: 0, startMs: 0, endMs: 10_000 },
+    ];
+    const completeStatus = {
+      expectedChunks: 1,
+      uploaded: 1,
+      pending: 0,
+      transcribing: 0,
+      transcribed: 1,
+      failed: 0,
+      lessonStateThroughChunkIndex: 0,
+      complete: true,
+    };
+    mocks.decodePrerecordedAudio
+      .mockResolvedValueOnce(chunks)
+      .mockResolvedValueOnce(chunks);
+    mocks.getTranscriptionStatus
+      .mockResolvedValueOnce(completeStatus)
+      .mockResolvedValueOnce(completeStatus);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([1]))));
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+    await waitFor(() => expect(mocks.uploadAudioChunk).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /iniciar grabación/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+
+    await waitFor(() => expect(mocks.createBackendSession).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mocks.uploadAudioChunk).toHaveBeenCalledTimes(2));
+    expect(mocks.uploadAudioChunk).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ sessionId: "session-1", chunkIndex: 0 }),
+    );
+    expect(mocks.uploadAudioChunk).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ sessionId: "session-2", chunkIndex: 0 }),
+    );
   });
 
   it("does not generate an activity when prerecorded transcription fails", async () => {

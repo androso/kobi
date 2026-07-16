@@ -78,6 +78,10 @@ describe("worker API", () => {
     );
     supabase.segments.push({
       session_id: SESSION_ID,
+      source_through_chunk_index: null,
+    });
+    supabase.segments.push({
+      session_id: SESSION_ID,
       source_through_chunk_index: 1,
     });
 
@@ -291,6 +295,7 @@ const curriculumMatch = {
 
 class FakeQuery {
   private filters = new Map<string, unknown>();
+  private notNullFilters = new Set<string>();
   private pendingInsert: Record<string, unknown> | null = null;
 
   constructor(
@@ -310,6 +315,13 @@ class FakeQuery {
 
   eq(column: string, value: unknown) {
     this.filters.set(column, value);
+    return this;
+  }
+
+  not(column: string, operator: string, value: unknown) {
+    if (operator === "is" && value === null) {
+      this.notNullFilters.add(column);
+    }
     return this;
   }
 
@@ -345,7 +357,8 @@ class FakeQuery {
 
     if (this.table === "segments") {
       const match = this.state.segments.find((segment) =>
-        segment.session_id === this.filters.get("session_id"),
+        segment.session_id === this.filters.get("session_id") &&
+        Array.from(this.notNullFilters).every((column) => segment[column] !== null),
       );
       return Promise.resolve({
         data: match

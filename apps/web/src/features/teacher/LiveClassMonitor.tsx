@@ -862,6 +862,10 @@ export function LiveClassMonitor() {
   async function ensureBackendSession() {
     if (apiSessionIdRef.current) return apiSessionIdRef.current;
 
+    return createFreshBackendSession();
+  }
+
+  async function createFreshBackendSession() {
     if (!isAudioApiConfigured()) {
       throw new Error("Configura VITE_KOBI_API_URL para enviar audio al worker.");
     }
@@ -870,6 +874,8 @@ export function LiveClassMonitor() {
       throw new Error("Selecciona una clase antes de iniciar la sesion.");
     }
 
+    apiSessionIdRef.current = null;
+    setApiSessionId(null);
     const { sessionId } = await createBackendSession({ classId: resolveBackendClassId(activeClass.id) });
     apiSessionIdRef.current = sessionId;
     setApiSessionId(sessionId);
@@ -890,9 +896,7 @@ export function LiveClassMonitor() {
     prerecordedAbortRef.current = abortController;
 
     try {
-      const sessionId = await ensureBackendSession();
-      apiSessionIdRef.current = sessionId;
-      setApiSessionId(sessionId);
+      const sessionId = await createFreshBackendSession();
       isStoppingRef.current = false;
       setUploadStatus("Cargando audio pregrabado");
       setIsRecording(true);

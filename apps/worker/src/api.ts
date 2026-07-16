@@ -545,6 +545,7 @@ async function getTranscriptionStatus(
     .from("segments")
     .select("source_through_chunk_index")
     .eq("session_id", sessionId)
+    .not("source_through_chunk_index", "is", null)
     .order("source_through_chunk_index", { ascending: false })
     .limit(1)
     .maybeSingle();
