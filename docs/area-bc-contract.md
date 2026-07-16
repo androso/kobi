@@ -59,5 +59,6 @@ Area A's output — see `docs/contracts.md` for the full shape (`topic`, `object
 - **Vector store**: Supabase pgvector, cosine distance, `ivfflat` index — fine at this corpus size (one textbook unit).
 - **Chunking**: teacher-uploaded PDFs are split per page with LangChain's TypeScript `RecursiveCharacterTextSplitter` using 1,000-character chunks and 200-character overlap, preserving exact page citations and unit boundaries. The structured seed path remains hand-authored at one chunk per objective code.
 - **Raw-file lifecycle**: uploaded PDFs remain private while processing and are deleted from Supabase Storage after chunk persistence. A source is published as `ready` only after that cleanup succeeds.
+- **Upload limits**: teacher PDFs are limited to 50 MB and 400 pages. The browser counts pages before requesting upload, the API validates that count, and the worker verifies the actual PDF before ingestion.
 
 None of this should matter to how you build Area C — it's here so you know why the contract looks the way it does.
