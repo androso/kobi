@@ -469,6 +469,31 @@ describe("LiveClassMonitor activity delivery", () => {
     expect(pollingSignal?.aborted).toBe(true);
   });
 
+  it("blocks activity generation when prerecorded playback stops before any upload", async () => {
+    mocks.recordingSource = "prerecorded";
+    vi.stubGlobal("fetch", vi.fn((_input, init?: RequestInit) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+    })));
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+    await screen.findByRole("button", { name: /detener/i });
+    fireEvent.click(screen.getByRole("button", { name: /detener/i }));
+
+    expect(await screen.findByText(/no se envio ningun fragmento/i)).toBeInTheDocument();
+    expect(mocks.uploadAudioChunk).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /hora de actividad/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: /hora de actividad/i }));
+    expect(mocks.requestActivityCandidates).not.toHaveBeenCalled();
+  });
+
   it("stops queuing prerecorded chunks and finalizes the accepted prefix", async () => {
     mocks.recordingSource = "prerecorded";
     vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([1]))));

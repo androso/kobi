@@ -1188,6 +1188,14 @@ export function LiveClassMonitor() {
       setUploadStatus("Finalizando fragmentos enviados");
       await Promise.all(Array.from(pendingAudioUploadsRef.current));
       const expectedChunks = prerecordedAcceptedChunksRef.current;
+      if (expectedChunks === 0) {
+        const message = "No se envio ningun fragmento del audio pregrabado.";
+        setIsRecording(false);
+        invalidatePrerecordedSession(message);
+        setRecordingError(message);
+        setUploadStatus(null);
+        return;
+      }
       if (expectedChunks > 0 && apiSessionIdRef.current) {
         try {
           if (activeTranscriptionWait) {
@@ -1211,7 +1219,7 @@ export function LiveClassMonitor() {
           return;
         }
       }
-      await finalizeSession(prerecordedDurationSecondsRef.current, expectedChunks > 0);
+      await finalizeSession(prerecordedDurationSecondsRef.current, true);
       return;
     }
 
