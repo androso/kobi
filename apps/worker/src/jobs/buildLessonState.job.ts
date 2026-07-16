@@ -83,8 +83,8 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
           jobId: job.id,
           transcriptChars: transcriptText.length,
           hasPreviousLessonState: Boolean(previousSegment?.lesson_state),
-          provider: process.env.LESSON_STATE_PROVIDER ?? "openai",
-          model: process.env.LESSON_STATE_MODEL ?? "provider default",
+          provider: "openai",
+          model: process.env.LESSON_STATE_MODEL ?? "gpt-4o-mini",
         });
         const lessonState: LessonState = await buildLessonState({
           transcriptText,
