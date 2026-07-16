@@ -6,6 +6,38 @@ import { MemoryRouter } from "react-router-dom";
 import { vi } from "vitest";
 
 vi.mock("./lib/supabase", () => ({ supabase: null }));
+vi.mock("./lib/curriculumApi", () => ({
+  curriculumApi: {
+    library: vi.fn(async (classId: string) => ({
+      classContext: { id: classId, grade: 7, subject: "lenguaje", unit: "U4" },
+      selectedSourceIds: ["source-1"],
+      sources: [
+        {
+          id: "source-1",
+          originalFilename: "Comprension-lectora.pdf",
+          sizeBytes: 2048,
+          status: "ready",
+          errorMessage: null,
+          grade: 7,
+          subject: "lenguaje",
+          unit: "U4",
+          pageCount: 8,
+          chunksBuilt: 12,
+          storageDeletedAt: "2026-07-15T10:00:00.000Z",
+          createdAt: "2026-07-15T10:00:00.000Z",
+          updatedAt: "2026-07-15T10:00:00.000Z",
+          isOwner: false,
+          selected: true,
+        },
+      ],
+    })),
+    replaceSelections: vi.fn(async (classId: string, sourceIds: string[]) => ({
+      classId,
+      selectedSourceIds: sourceIds,
+    })),
+    uploadPdf: vi.fn(async () => "source-new"),
+  },
+}));
 
 describe("App", () => {
   beforeEach(() => {
@@ -78,6 +110,20 @@ describe("App", () => {
     expect(screen.getByPlaceholderText(/correo electr[oó]nico/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /entrar/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /olvidaste tu contrase/i })).not.toBeInTheDocument();
+  });
+
+  it("renders the shared materials library for teachers", async () => {
+    useAuthStore.setState({
+      status: "authenticated",
+      user: { role: "teacher", id: "teacher-1", displayName: "Sra. Henderson" },
+    });
+
+    renderApp("/teacher/materials");
+
+    expect(await screen.findByRole("heading", { name: /biblioteca de materiales/i })).toBeInTheDocument();
+    expect(await screen.findByText("Comprension-lectora.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /agregar material/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /guardar seleccion/i })).toBeDisabled();
   });
 
   it("keeps focused login fields on a dark surface in dark mode", async () => {
