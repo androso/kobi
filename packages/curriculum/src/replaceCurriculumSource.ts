@@ -5,6 +5,7 @@ const EMBEDDING_DIMENSIONS = 768;
 const MAX_REPLACE_ROWS = 1_000;
 
 export interface ReplaceCurriculumSourceInput {
+  sourceId?: string | null;
   sourceDocument: string;
   classId?: string | null;
   rows: CurriculumChunkRow[];
@@ -33,6 +34,7 @@ export async function replaceCurriculumSource(
   }
 
   const classId = input.classId?.trim() || null;
+  const sourceId = input.sourceId?.trim() || null;
   const payload = input.rows.map((row, index) => {
     if (row.source_document !== sourceDocument) {
       throw new Error(
@@ -55,6 +57,7 @@ export async function replaceCurriculumSource(
     }
     return {
       ...row,
+      source_id: sourceId ?? row.source_id ?? null,
       class_id: classId ?? row.class_id ?? null,
       source_document: sourceDocument,
     };
@@ -66,6 +69,7 @@ export async function replaceCurriculumSource(
   }
 
   const { data, error } = await supabase.rpc("replace_curriculum_source", {
+    p_source_id: sourceId,
     p_class_id: classId,
     p_source_document: sourceDocument,
     p_rows: payload,
