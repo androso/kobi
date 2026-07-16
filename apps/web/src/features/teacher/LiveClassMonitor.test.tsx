@@ -66,7 +66,7 @@ const mocks = vi.hoisted(() => {
       pending: 0,
       transcribing: 0,
       transcribed: 2,
-      failed: 0,
+      terminalFailed: 0,
       lessonStateThroughChunkIndex: 1 as number | null,
       complete: true,
     })),
@@ -223,7 +223,7 @@ describe("LiveClassMonitor activity delivery", () => {
       pending: 0,
       transcribing: 0,
       transcribed: 1,
-      failed: 0,
+      terminalFailed: 0,
       lessonStateThroughChunkIndex: 0,
       complete: true,
     };
@@ -273,7 +273,7 @@ describe("LiveClassMonitor activity delivery", () => {
       pending: 0,
       transcribing: 0,
       transcribed: 0,
-      failed: 1,
+      terminalFailed: 1,
       lessonStateThroughChunkIndex: null,
       complete: false,
     });

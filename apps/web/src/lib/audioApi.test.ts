@@ -57,7 +57,7 @@ describe("getTranscriptionStatus", () => {
       pending: 0,
       transcribing: 0,
       transcribed: 2,
-      failed: 0,
+      terminalFailed: 0,
       lessonStateThroughChunkIndex: 1,
       complete: true,
     };

@@ -566,7 +566,10 @@ async function getTranscriptionStatus(
   writeJson(res, 200, {
     expectedChunks,
     uploaded,
-    ...counts,
+    pending: counts.pending,
+    transcribing: counts.transcribing,
+    transcribed: counts.transcribed,
+    terminalFailed: counts.failed,
     lessonStateThroughChunkIndex,
     complete,
   });

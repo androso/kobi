@@ -957,8 +957,8 @@ export function LiveClassMonitor() {
     const deadline = Date.now() + TRANSCRIPTION_STATUS_TIMEOUT_MS;
     while (Date.now() < deadline) {
       const status = await getTranscriptionStatus({ sessionId, expectedChunks });
-      if (status.failed > 0) {
-        throw new Error(`${status.failed} fragmento(s) no se pudieron transcribir.`);
+      if (status.terminalFailed > 0) {
+        throw new Error(`${status.terminalFailed} fragmento(s) no se pudieron transcribir.`);
       }
       setUploadStatus(
         `Transcribiendo ${status.transcribed} de ${expectedChunks} fragmentos`,
