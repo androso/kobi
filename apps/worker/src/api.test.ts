@@ -5,6 +5,7 @@ import type PgBoss from "pg-boss";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { routeRequest } from "./api.js";
 import { runGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
+import { silentLessonState } from "./silentLessonState.js";
 
 vi.mock("@kobi/curriculum", async (importOriginal) => {
   const original = await importOriginal<typeof import("@kobi/curriculum")>();
@@ -67,6 +68,28 @@ describe("worker API", () => {
     );
 
     expect(response.statusCode).toBe(409);
+    expect(runGenerateActivityArtifactsJob).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 when activity candidates are requested from a silence-only lesson state", async () => {
+    const supabase = fakeSupabase();
+    supabase.segments.push({
+      session_id: SESSION_ID,
+      lesson_state: silentLessonState,
+      created_at: "2026-07-16T21:00:00.000Z",
+    });
+
+    const response = await callRoute(
+      `/api/sessions/${SESSION_ID}/activity-candidates`,
+      supabase,
+      fakeBoss(),
+      {},
+    );
+
+    expect(response.statusCode).toBe(409);
+    expect(response.body).toEqual({
+      error: "No spoken lesson content is available. Enter the topic manually before generating activities.",
+    });
     expect(runGenerateActivityArtifactsJob).not.toHaveBeenCalled();
   });
 

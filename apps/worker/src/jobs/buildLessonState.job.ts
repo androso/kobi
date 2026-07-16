@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildLessonState, type LessonState } from "@kobi/ai-core";
 import type PgBoss from "pg-boss";
+import { silentLessonState } from "../silentLessonState.js";
 
 export interface BuildLessonStateJobData {
   sessionId: string;
@@ -9,18 +10,6 @@ export interface BuildLessonStateJobData {
   subject?: string;
   unit?: string;
 }
-
-const silentLessonState: LessonState = {
-  topic: "Sin contenido hablado",
-  objective_guess: null,
-  key_terms: [],
-  transcript_summary: "El audio procesado no contiene habla transcribible.",
-  confidence: 0,
-  evidence: {
-    quoted_phrases: [],
-    reason: "Los fragmentos procesados solo contienen silencio.",
-  },
-};
 
 /**
  * Build the rolling lesson_state from bounded batches of 1-2 chunks. A single

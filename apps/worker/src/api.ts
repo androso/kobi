@@ -12,6 +12,7 @@ import {
   createOpenAiActivityGeneratorFromEnv,
   validateOpenAiActivityConfig,
 } from "./activity-generation/openaiArtifactGenerator.js";
+import { isSilentLessonState } from "./silentLessonState.js";
 
 interface ApiServerOptions {
   supabase: SupabaseClient;
@@ -590,6 +591,12 @@ async function createActivityCandidates(
   const lessonState = await loadLatestLessonState(supabase, sessionId);
   if (!lessonState) {
     writeJson(res, 409, { error: "No lesson_state is available for this session yet." });
+    return;
+  }
+  if (isSilentLessonState(lessonState)) {
+    writeJson(res, 409, {
+      error: "No spoken lesson content is available. Enter the topic manually before generating activities.",
+    });
     return;
   }
 
