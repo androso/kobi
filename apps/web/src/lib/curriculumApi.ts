@@ -80,7 +80,7 @@ export const curriculumApi = {
       { method: "PUT", body: JSON.stringify({ sourceIds }) },
     ),
 
-  uploadPdf: async (classId: string, file: File) => {
+  uploadPdf: async (classId: string, file: File, pageCount: number) => {
     if (!supabase) throw new Error("Supabase no esta configurado.");
     const signed = await request<SignedUploadResponse>(
       `/api/classes/${classId}/curriculum/uploads`,
@@ -90,6 +90,7 @@ export const curriculumApi = {
           filename: file.name,
           contentType: file.type || "application/pdf",
           sizeBytes: file.size,
+          pageCount,
         }),
       },
     );

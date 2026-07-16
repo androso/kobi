@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
+import { countPdfPages } from "../../lib/pdfPageCount";
 import { useAuthStore, useClassStore } from "../../lib/store";
 import {
   curriculumApi,
@@ -19,6 +20,7 @@ import {
 
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
 const MAX_BATCH_FILES = 10;
+const MAX_PDF_PAGES = 400;
 
 type LibraryTab = "all" | "selected" | "mine";
 type UploadState = "queued" | "uploading" | "sent" | "failed";
@@ -26,6 +28,7 @@ type UploadState = "queued" | "uploading" | "sent" | "failed";
 interface UploadEntry {
   file: File;
   state: UploadState;
+  pageCount: number;
   error?: string;
 }
 
@@ -62,28 +65,51 @@ function UploadMaterialModal({
   const [entries, setEntries] = useState<UploadEntry[]>([]);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [checkingPages, setCheckingPages] = useState(false);
 
-  function chooseFiles(files: FileList | null) {
+  async function chooseFiles(files: FileList | null) {
     if (!files) return;
     const next = [...files];
     if (next.length > MAX_BATCH_FILES) {
-      setValidationError(`Selecciona un maximo de ${MAX_BATCH_FILES} archivos.`);
+      setValidationError("Selecciona un maximo de " + MAX_BATCH_FILES + " archivos.");
       return;
     }
     const invalid = next.find(
       (file) => file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf"),
     );
     if (invalid) {
-      setValidationError(`${invalid.name} no es un archivo PDF.`);
+      setValidationError(invalid.name + " no es un archivo PDF.");
       return;
     }
     const oversized = next.find((file) => file.size > MAX_FILE_BYTES);
     if (oversized) {
-      setValidationError(`${oversized.name} supera el limite de 50 MB.`);
+      setValidationError(oversized.name + " supera el limite de 50 MB.");
       return;
     }
+
+    setCheckingPages(true);
     setValidationError(null);
-    setEntries(next.map((file) => ({ file, state: "queued" })));
+    try {
+      const pageCounts = await Promise.all(next.map((file) => countPdfPages(file)));
+      const overLimitIndex = pageCounts.findIndex((pageCount) => pageCount > MAX_PDF_PAGES);
+      if (overLimitIndex >= 0) {
+        setValidationError(
+          next[overLimitIndex]!.name + " tiene " + pageCounts[overLimitIndex] +
+            " paginas. El limite es " + MAX_PDF_PAGES + ".",
+        );
+        return;
+      }
+
+      setEntries(next.map((file, index) => ({
+        file,
+        pageCount: pageCounts[index]!,
+        state: "queued",
+      })));
+    } catch {
+      setValidationError("No se pudo leer la cantidad de paginas del PDF.");
+    } finally {
+      setCheckingPages(false);
+    }
   }
 
   function updateEntry(index: number, patch: Partial<UploadEntry>) {
@@ -97,7 +123,7 @@ function UploadMaterialModal({
     for (let index = 0; index < entries.length; index += 1) {
       updateEntry(index, { state: "uploading", error: undefined });
       try {
-        await curriculumApi.uploadPdf(classId, entries[index]!.file);
+        await curriculumApi.uploadPdf(classId, entries[index]!.file, entries[index]!.pageCount);
         updateEntry(index, { state: "sent" });
       } catch (error) {
         updateEntry(index, {
@@ -117,7 +143,7 @@ function UploadMaterialModal({
       <button
         aria-label="Cerrar"
         className="absolute inset-0 bg-slate-950/35 backdrop-blur-sm"
-        disabled={uploading}
+        disabled={uploading || checkingPages}
         onClick={onClose}
         type="button"
       />
@@ -130,7 +156,7 @@ function UploadMaterialModal({
         <button
           aria-label="Cerrar"
           className="absolute right-5 top-5 flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-          disabled={uploading}
+          disabled={uploading || checkingPages}
           onClick={onClose}
           type="button"
         >
@@ -148,19 +174,20 @@ function UploadMaterialModal({
         <input
           accept="application/pdf,.pdf"
           className="sr-only"
+          disabled={uploading || checkingPages}
           multiple
-          onChange={(event) => chooseFiles(event.target.files)}
+          onChange={(event) => void chooseFiles(event.target.files)}
           ref={inputRef}
           type="file"
         />
         <button
           className="mt-6 flex min-h-40 w-full flex-col items-center justify-center border-2 border-dashed border-slate-200 bg-slate-50 px-6 py-8 text-center transition hover:border-blue-300 hover:bg-blue-50/50"
-          disabled={uploading}
+          disabled={uploading || checkingPages}
           onClick={() => inputRef.current?.click()}
           onDragOver={(event) => event.preventDefault()}
           onDrop={(event) => {
             event.preventDefault();
-            chooseFiles(event.dataTransfer.files);
+            void chooseFiles(event.dataTransfer.files);
           }}
           type="button"
         >
@@ -168,9 +195,16 @@ function UploadMaterialModal({
             <Upload className="h-5 w-5" />
           </span>
           <span className="mt-3 text-sm font-bold text-slate-900">Selecciona o arrastra tus PDF</span>
-          <span className="mt-1 text-xs text-slate-500">Hasta 10 archivos, 50 MB por archivo</span>
+          <span className="mt-1 text-xs text-slate-500">Hasta 10 archivos, 50 MB y 400 paginas por archivo</span>
         </button>
 
+
+        {checkingPages ? (
+          <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-slate-500">
+            <LoaderCircle className="h-4 w-4 animate-spin text-[#004ac6]" />
+            Verificando paginas...
+          </p>
+        ) : null}
         {validationError ? (
           <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-red-600">
             <AlertCircle className="h-4 w-4" />
@@ -186,7 +220,7 @@ function UploadMaterialModal({
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-slate-800">{entry.file.name}</p>
                   <p className="text-xs text-slate-400">
-                    {entry.error ?? formatBytes(entry.file.size)}
+                    {entry.error ?? (formatBytes(entry.file.size) + " / " + entry.pageCount + " paginas")}
                   </p>
                 </div>
                 {entry.state === "uploading" ? (
@@ -204,7 +238,7 @@ function UploadMaterialModal({
         <div className="mt-6 flex justify-end gap-3">
           <button
             className="h-11 px-4 text-sm font-bold text-slate-600 hover:text-slate-950"
-            disabled={uploading}
+            disabled={uploading || checkingPages}
             onClick={onClose}
             type="button"
           >
@@ -213,7 +247,7 @@ function UploadMaterialModal({
           {!finished ? (
             <button
               className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#004ac6] px-5 text-sm font-bold text-white transition hover:bg-[#003ea8] disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={entries.length === 0 || uploading}
+              disabled={entries.length === 0 || uploading || checkingPages}
               onClick={() => void startUpload()}
               type="button"
             >
