@@ -77,6 +77,7 @@ const retrieveCurriculumSchema = z.object({
 const MAX_JSON_BODY_BYTES = 32 * 1024;
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 const RATE_WINDOW_MS = 60_000;
+const CORS_ALLOWED_METHODS = "GET,POST,PATCH,PUT,OPTIONS";
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 
 function logApi(message: string, details?: Record<string, unknown>) {
@@ -103,7 +104,7 @@ function writeJson(
 ) {
   res.writeHead(statusCode, {
     "content-type": "application/json",
-    "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
+    "access-control-allow-methods": CORS_ALLOWED_METHODS,
     "access-control-allow-headers": "content-type,authorization",
     ...corsHeaders(req),
     ...extraHeaders,
@@ -113,7 +114,7 @@ function writeJson(
 
 function handleOptions(req: IncomingMessage, res: ServerResponse) {
   res.writeHead(204, {
-    "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
+    "access-control-allow-methods": CORS_ALLOWED_METHODS,
     "access-control-allow-headers": "content-type,authorization",
     "access-control-max-age": "86400",
     ...corsHeaders(req),

@@ -65,6 +65,17 @@ describe("worker demo transcript API", () => {
     expect(res.body).toEqual({ error: { code: "invalid_json" } });
   });
 
+  it("allows PUT curriculum selection requests through CORS preflight", async () => {
+    const req = fakeRawRequest("", { host: "localhost", origin: "http://localhost:5173" });
+    req.method = "OPTIONS";
+    const res = fakeResponse();
+
+    await routeRequest(req, res, fakeSupabase().client, fakeBoss().instance);
+
+    expect(res.statusCode).toBe(204);
+    expect(res.headers["access-control-allow-methods"]).toContain("PUT");
+  });
+
   it("inserts transcribed chunks idempotently and enqueues build-lesson-state once", async () => {
     const supabase = fakeSupabase();
     const boss = fakeBoss();
@@ -228,8 +239,10 @@ function fakeResponse() {
   return {
     statusCode: 0,
     body: null as unknown,
-    writeHead(this: ApiTestResponse, statusCode: number) {
+    headers: {} as Record<string, string>,
+    writeHead(this: ApiTestResponse, statusCode: number, headers?: Record<string, string>) {
       this.statusCode = statusCode;
+      this.headers = headers ?? {};
       return this;
     },
     end(this: ApiTestResponse, payload: string) {
@@ -239,7 +252,7 @@ function fakeResponse() {
   } as unknown as ApiTestResponse;
 }
 
-type ApiTestResponse = ServerResponse & { statusCode: number; body: unknown };
+type ApiTestResponse = ServerResponse & { statusCode: number; body: unknown; headers: Record<string, string> };
 
 function fakeBoss() {
   const sent: Array<{ name: string; data: unknown }> = [];
