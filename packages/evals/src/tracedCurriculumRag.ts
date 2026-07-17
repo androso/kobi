@@ -122,7 +122,9 @@ export function createTracedCurriculumRetriever(options: CreateTracedCurriculumR
       sourceIds: string[];
       matchCount: number;
     }) => {
-      const matches = await retrieveCurriculumMatches(options.supabase, {
+      const matches = await retrieveCurriculumMatches(
+        options.supabase as unknown as Parameters<typeof retrieveCurriculumMatches>[0],
+        {
         queryText: input.queryText,
         grade: input.grade,
         subject: input.subject,
