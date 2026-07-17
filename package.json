@@ -13,6 +13,8 @@
     "build": "pnpm --filter @kobi/web build",
     "check:repo": "pnpm --filter @kobi/repo-hygiene check",
     "test": "pnpm --filter @kobi/web test",
+    "test:evals": "pnpm --filter @kobi/evals test",
+    "evals:triangles": "pnpm --filter @kobi/evals run:triangles",
     "typecheck": "pnpm -r --if-present run typecheck"
   },
   "devDependencies": {
