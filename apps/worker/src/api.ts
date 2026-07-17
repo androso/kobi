@@ -486,10 +486,11 @@ async function createDemoTranscriptChunk(
 
   const { chunk_index: chunkIndex } = parseBody(demoChunkSchema, await readJsonBody(req));
 
-  const transcriptText = demoTranscriptChunks[chunkIndex];
-  if (!transcriptText) {
+  const rawTranscriptText = demoTranscriptChunks[chunkIndex];
+  if (!rawTranscriptText) {
     throw new ApiRequestError("invalid_chunk_index", 422);
   }
+  const transcriptText = rawTranscriptText;
 
   await ensureDemoCurriculumSeed(supabase);
 
