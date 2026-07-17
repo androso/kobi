@@ -5,9 +5,16 @@ import { lessonStateSchema, type LessonState } from "./lessonState.schema.js";
 const DEFAULT_LESSON_STATE_MODEL = "gpt-4o-mini";
 const MAX_TRANSCRIPT_CHARS = 8_000;
 
+export interface LessonStateClassContext {
+  grade: number;
+  subject: string;
+}
+
 export interface BuildLessonStateInput {
   /** Concatenated transcript text from the last 1-2 audio chunks. */
   transcriptText: string;
+  /** Class context anchors the model to the correct grade and subject. */
+  classContext: LessonStateClassContext;
   /** Optional context to keep the model anchored, e.g. previous lesson_state. */
   previousLessonState?: LessonState | null;
   model?: string;
@@ -21,6 +28,7 @@ export async function buildLessonState(
   input: BuildLessonStateInput,
 ): Promise<LessonState> {
   const transcriptText = normalizeTranscriptText(input.transcriptText);
+  const classContext = normalizeClassContext(input.classContext);
   if (!transcriptText) {
     throw new Error("buildLessonState: transcriptText is required");
   }
@@ -30,7 +38,7 @@ export async function buildLessonState(
     model: createLessonStateModel(modelName),
     schema: lessonStateSchema,
     prompt: [
-      "You are analyzing a short slice of a 7th-grade Lenguaje class transcript in El Salvador.",
+      `You are analyzing a short slice of a ${classContext.grade}.° grado ${classContext.subject} class transcript in El Salvador.`,
       "Infer the current topic, likely curriculum objective, key vocabulary, and your confidence.",
       "Use Spanish for every user-facing field. Keep quoted_phrases short and copy them verbatim from the transcript.",
       "If the transcript is noisy or unrelated to class content, lower confidence instead of inventing an objective.",
@@ -91,6 +99,18 @@ export function lessonStateFromManualEntry(input: {
       reason: "Manual entry by teacher (transcription fallback, D6).",
     },
   };
+}
+
+function normalizeClassContext(value: LessonStateClassContext): LessonStateClassContext {
+  const grade = value.grade;
+  const subject = value.subject.trim();
+  if (!Number.isInteger(grade) || grade <= 0) {
+    throw new Error("buildLessonState: classContext.grade must be a positive integer");
+  }
+  if (!subject) {
+    throw new Error("buildLessonState: classContext.subject is required");
+  }
+  return { grade, subject };
 }
 
 function normalizeTranscriptText(value: string): string {
