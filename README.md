@@ -59,7 +59,7 @@ pnpm --filter @kobi/worker dev   # start the worker/API separately (port 8787)
 | AI core (`packages/ai-core`) | **shipped** | Audio transcription, `lesson_state` schema/builder, and manual fallback. |
 | Curriculum (`packages/curriculum`) | **partial/environment-dependent** | Ingestion, embedding, and pgvector retrieval implemented; needs real textbook unit data in `content/curriculum` for meaningful matches. |
 | Activities (`packages/activities`) | **shipped** | Artifact manifest schema, verifier, static/OpenAI candidate generation, and SDK contracts. |
-| Evals (`packages/evals`) | **planned** | Harness design documented; no runner implemented yet. |
+| Evals (`packages/evals`) | **partial/environment-dependent** | LangSmith/Supabase retrieval smoke harness for the retained reviewed fixture; requires real service credentials. |
 
 ## Contracts
 
