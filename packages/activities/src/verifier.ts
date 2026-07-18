@@ -56,7 +56,16 @@ const forbiddenElements = new Map([
   ["object", "embedded content is forbidden"],
 ]);
 
-const urlAttributes = new Set(["action", "data", "formaction", "href", "poster", "src", "srcset"]);
+const urlAttributes = new Set([
+  "action",
+  "data",
+  "formaction",
+  "href",
+  "poster",
+  "src",
+  "srcset",
+  "xlink:href",
+]);
 const svgUrlPresentationAttributes = new Set([
   "clip-path",
   "fill",
@@ -255,7 +264,7 @@ function isUnsafeUrl(
   }
 
   if (value === "") return true;
-  if (value.startsWith("#")) return attributeName !== "href";
+  if (value.startsWith("#")) return !["href", "xlink:href"].includes(attributeName ?? "");
   if (value.startsWith("data:")) {
     return !(
       tagName === "img" &&

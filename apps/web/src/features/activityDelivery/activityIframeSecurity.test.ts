@@ -17,7 +17,8 @@ describe("activity iframe security policy", () => {
     const secured = secureActivitySrcDoc("<!doctype html><html><head></head><body></body></html>");
     const parsed = new DOMParser().parseFromString(secured, "text/html");
 
-    expect(secured).toMatch(/^<meta http-equiv="Content-Security-Policy"/);
+    expect(secured).toMatch(/^<!doctype html><meta http-equiv="Content-Security-Policy"/i);
+    expect(parsed.compatMode).toBe("CSS1Compat");
     expect(parsed.head.querySelector('meta[http-equiv="Content-Security-Policy"]')).not.toBeNull();
     expect(activityIframeCsp).toContain("default-src 'none'");
     expect(activityIframeCsp).toContain("connect-src 'none'");
@@ -43,7 +44,7 @@ describe("activity iframe security policy", () => {
     const secured = secureActivitySrcDoc(bundle);
 
     expect(secured).toBe(
-      `<meta http-equiv="Content-Security-Policy" content="${activityIframeCsp}">${bundle}`,
+      `<!doctype html><meta http-equiv="Content-Security-Policy" content="${activityIframeCsp}"><html><head></head><body><img src="https://evil.test/pixel"></body></html>`,
     );
   });
 });
