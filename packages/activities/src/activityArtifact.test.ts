@@ -99,6 +99,8 @@ describe("activity artifact contracts", () => {
     ["external network reference", "<img src='https://evil.test/tracker.png'>", "external or executable URL references are forbidden"],
     ["root-relative subresource", "<img src='/activity.js'>", "external or executable URL references are forbidden"],
     ["dot-relative subresource", "<script src='./main.js'></script>", "external or executable URL references are forbidden"],
+    ["empty executable source", "<script src=''></script>", "external or executable URL references are forbidden"],
+    ["fragment executable source", "<script src='#stub'></script>", "external or executable URL references are forbidden"],
     ["relative poster", "<video poster='asset.png'></video>", "external or executable URL references are forbidden"],
     ["relative srcset candidate", "<img srcset='asset.png 1x'>", "external or executable URL references are forbidden"],
     ["style import", "<style>@import './theme.css';</style>", "CSS URL references are forbidden"],

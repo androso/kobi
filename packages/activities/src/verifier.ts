@@ -235,7 +235,8 @@ function isUnsafeUrl(
     return tagName !== "img" || !isSafeDataImageSrcset(value);
   }
 
-  if (value === "" || value.startsWith("#")) return false;
+  if (value === "") return true;
+  if (value.startsWith("#")) return attributeName !== "href";
   if (value.startsWith("data:")) {
     return !(
       tagName === "img" &&
