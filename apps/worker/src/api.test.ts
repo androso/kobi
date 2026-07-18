@@ -4,7 +4,6 @@ import { retrieveCurriculumMatches } from "@kobi/curriculum";
 import type PgBoss from "pg-boss";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { routeRequest } from "./api.js";
-import { JOB_BUILD_LESSON_STATE } from "./queue.js";
 import { runGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
 
 vi.mock("@kobi/curriculum", async (importOriginal) => {
@@ -25,30 +24,17 @@ vi.mock("./jobs/generateActivityArtifacts.job.js", () => ({
   })),
 }));
 
-describe("worker demo transcript API", () => {
-  const originalMode = process.env.KOBI_PROJECT_MODE;
+describe("worker API", () => {
+  const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
+  const originalActivityModel = process.env.OPENAI_ACTIVITY_MODEL;
 
   beforeEach(() => {
-    process.env.KOBI_PROJECT_MODE = "demo";
     vi.clearAllMocks();
   });
 
   afterEach(() => {
-    process.env.KOBI_PROJECT_MODE = originalMode;
-  });
-
-  it("rejects demo chunks outside demo mode", async () => {
-    process.env.KOBI_PROJECT_MODE = "live";
-
-    const response = await callDemoRoute(fakeSupabase(), fakeBoss(), { chunk_index: 0 });
-
-    expect(response.statusCode).toBe(403);
-  });
-
-  it("returns 400 for invalid chunk indexes", async () => {
-    const response = await callDemoRoute(fakeSupabase(), fakeBoss(), { chunk_index: -1 });
-
-    expect(response.statusCode).toBe(422);
+    restoreEnv("OPENAI_API_KEY", originalOpenAiApiKey);
+    restoreEnv("OPENAI_ACTIVITY_MODEL", originalActivityModel);
   });
 
   it("returns 400 for malformed JSON request bodies", async () => {
@@ -61,35 +47,15 @@ describe("worker demo transcript API", () => {
     expect(res.body).toEqual({ error: { code: "invalid_json" } });
   });
 
-  it("inserts transcribed chunks idempotently and enqueues build-lesson-state once", async () => {
-    const supabase = fakeSupabase();
-    const boss = fakeBoss();
+  it("allows PUT curriculum selection requests through CORS preflight", async () => {
+    const req = fakeRawRequest("", { host: "localhost", origin: "http://localhost:5173" });
+    req.method = "OPTIONS";
+    const res = fakeResponse();
 
-    const first = await callDemoRoute(supabase, boss, { chunk_index: 0 });
-    const second = await callDemoRoute(supabase, boss, { chunk_index: 0 });
+    await routeRequest(req, res, fakeSupabase().client, fakeBoss().instance);
 
-    expect(first.statusCode).toBe(201);
-    expect(second.statusCode).toBe(200);
-    expect(first.body).toMatchObject({
-      audioChunkId: "audio-chunk-1",
-      chunkIndex: 0,
-      done: false,
-    });
-    expect(second.body).toMatchObject({
-      audioChunkId: "audio-chunk-1",
-      chunkIndex: 0,
-      done: false,
-    });
-    expect(supabase.audioChunks).toEqual([
-      expect.objectContaining({
-        session_id: SESSION_ID,
-        chunk_index: 0,
-        status: "transcribed",
-        storage_path: `demo-transcript/${SESSION_ID}/0.txt`,
-        transcript_text: expect.stringContaining("Profesor:"),
-      }),
-    ]);
-    expect(boss.sent).toEqual([{ name: JOB_BUILD_LESSON_STATE, data: { sessionId: SESSION_ID } }]);
+    expect(res.statusCode).toBe(204);
+    expect(res.headers["access-control-allow-methods"]).toContain("PUT");
   });
 
   it("returns 409 when activity candidates are requested before lesson_state exists", async () => {
@@ -105,6 +71,8 @@ describe("worker demo transcript API", () => {
   });
 
   it("generates activity candidates on the worker from the latest lesson_state", async () => {
+    process.env.OPENAI_API_KEY = "sk-test";
+    process.env.OPENAI_ACTIVITY_MODEL = "gpt-activity-test";
     const supabase = fakeSupabase();
     supabase.segments.push({
       session_id: SESSION_ID,
@@ -125,11 +93,15 @@ describe("worker demo transcript API", () => {
       supabase.client,
       expect.objectContaining({ grade: 7, subject: "lenguaje", unit: "U4" }),
     );
-    expect(runGenerateActivityArtifactsJob).toHaveBeenCalledWith(supabase.client, {
-      sessionId: SESSION_ID,
-      lessonState,
-      curriculumMatches: [curriculumMatch],
-    });
+    expect(runGenerateActivityArtifactsJob).toHaveBeenCalledWith(
+      supabase.client,
+      {
+        sessionId: SESSION_ID,
+        lessonState,
+        curriculumMatches: [curriculumMatch],
+      },
+      { openAiGenerator: expect.any(Function) },
+    );
   });
 
   it("returns 401 for anonymous and expired tokens", async () => {
@@ -146,7 +118,6 @@ describe("worker demo transcript API", () => {
     ["session creation", "/api/sessions", { classId: CLASS_ID }],
     ["audio upload", `/api/sessions/${SESSION_ID}/audio-chunks`, {}],
     ["manual lesson state", `/api/sessions/${SESSION_ID}/manual-lesson-state`, {}],
-    ["demo transcript", `/api/sessions/${SESSION_ID}/demo-transcript-chunks`, {}],
     ["activity generation", `/api/sessions/${SESSION_ID}/activity-candidates`, {}],
   ])("returns 403 before privileged work for cross-teacher %s", async (_name, url, body) => {
     const supabase = fakeSupabase();
@@ -170,12 +141,9 @@ describe("worker demo transcript API", () => {
   });
 });
 
-async function callDemoRoute(
-  supabase: ReturnType<typeof fakeSupabase>,
-  boss: ReturnType<typeof fakeBoss>,
-  body: Record<string, unknown>,
-) {
-  return callRoute(`/api/sessions/${SESSION_ID}/demo-transcript-chunks`, supabase, boss, body);
+function restoreEnv(name: string, value: string | undefined) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
 }
 
 async function callRoute(
@@ -201,7 +169,7 @@ function fakeRawRequest(payload: string | Buffer, headers?: Record<string, strin
   const body = Buffer.isBuffer(payload) ? payload : Buffer.from(payload);
   return {
     method: "POST",
-    url: `/api/sessions/${SESSION_ID}/demo-transcript-chunks`,
+    url: `/api/sessions/${SESSION_ID}/manual-lesson-state`,
     headers: headers ?? { host: "localhost", "content-type": "application/json", authorization: "Bearer valid-token" },
     async *[Symbol.asyncIterator]() {
       yield body;
@@ -213,8 +181,10 @@ function fakeResponse() {
   return {
     statusCode: 0,
     body: null as unknown,
-    writeHead(this: ApiTestResponse, statusCode: number) {
+    headers: {} as Record<string, string>,
+    writeHead(this: ApiTestResponse, statusCode: number, headers?: Record<string, string>) {
       this.statusCode = statusCode;
+      this.headers = headers ?? {};
       return this;
     },
     end(this: ApiTestResponse, payload: string) {
@@ -224,7 +194,7 @@ function fakeResponse() {
   } as unknown as ApiTestResponse;
 }
 
-type ApiTestResponse = ServerResponse & { statusCode: number; body: unknown };
+type ApiTestResponse = ServerResponse & { statusCode: number; body: unknown; headers: Record<string, string> };
 
 function fakeBoss() {
   const sent: Array<{ name: string; data: unknown }> = [];

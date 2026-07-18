@@ -4,7 +4,7 @@ Model routing for every AI stage. Cheap online path, expensive offline path — 
 
 | Stage | Model class | Mode | Notes |
 |---|---|---|---|
-| Transcription | Gemini Flash, 45-60s chunks | rolling async | chunked > streaming: cheaper, resilient |
+| Transcription | OpenAI `gpt-4o-mini-transcribe`, 45-60s chunks | rolling async | chunked > streaming: cheaper, resilient |
 | Lesson-state builder | small model, structured output | every ~2 min | emits `lesson_state` JSON; raw transcript never travels downstream |
 | Retrieval | pgvector top-3 + metadata filters | sync | curriculum chunks are atomic, objective-level, ~150-300 tokens |
 | Planner + generator | frontier model | background (pre-creation) | retrieval-first: adapt existing before authoring support/core/challenge artifacts |

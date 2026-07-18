@@ -17,6 +17,7 @@ import {
 describe("generateActivityArtifacts job planning", () => {
   it("skips generation when retrieval returns no curriculum matches", async () => {
     const supabase = fakeSupabase();
+    let openAiCalls = 0;
 
     const result = await runGenerateActivityArtifactsJob(
       supabase.client,
@@ -27,7 +28,8 @@ describe("generateActivityArtifacts job planning", () => {
       },
       {
         openAiGenerator: async () => {
-          throw new Error("generator should not be called without curriculum matches");
+          openAiCalls += 1;
+          return { candidates: [], attempted: true, attempts: 1, errors: [] };
         },
       },
     );
@@ -38,6 +40,7 @@ describe("generateActivityArtifacts job planning", () => {
       generated: 0,
       skippedReason: "no curriculum matches",
     });
+    expect(openAiCalls).toBe(0);
     expect(supabase.insertedCandidates).toHaveLength(0);
   });
 

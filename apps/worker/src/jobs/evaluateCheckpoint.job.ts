@@ -13,6 +13,7 @@ import {
   type EvaluateCheckpointInput,
 } from "../checkpoint/evaluateCheckpoint.js";
 import { JOB_GENERATE_ACTIVITY_ARTIFACTS } from "../queue.js";
+import { loadSelectedCurriculumSourceIds } from "../curriculumSelections.js";
 
 export interface EvaluateCheckpointJobData {
   sessionId: string;
@@ -26,7 +27,7 @@ export type CheckpointEvaluator = (input: EvaluateCheckpointInput) => Promise<Ch
 
 export type CurriculumRetriever = (
   supabase: SupabaseClient,
-  input: { queryText: string; grade: number; subject: string; unit?: string },
+  input: { queryText: string; grade: number; subject: string; unit?: string; sourceIds?: string[] },
 ) => Promise<CurriculumMatch[]>;
 
 export interface EvaluateCheckpointJobOptions {
@@ -121,11 +122,13 @@ export async function runEvaluateCheckpointJob(
   const latestLessonState = lessonStates.at(-1)!;
   const queryText = buildCurriculumQueryText(latestLessonState);
   const retrievalContext = await resolveRetrievalContext(supabase, data);
+  const sourceIds = await loadSelectedCurriculumSourceIds(supabase, retrievalContext.classId);
   const curriculumMatches = await curriculumRetriever(supabase, {
     queryText,
     grade: retrievalContext.grade,
     subject: retrievalContext.subject,
     unit: retrievalContext.unit,
+    sourceIds,
   });
 
   await boss.send(JOB_GENERATE_ACTIVITY_ARTIFACTS, buildGenerateActivityArtifactsJobData({
@@ -140,14 +143,14 @@ export async function runEvaluateCheckpointJob(
 async function resolveRetrievalContext(
   supabase: SupabaseClient,
   data: EvaluateCheckpointJobData,
-): Promise<{ grade: number; subject: string; unit?: string }> {
+): Promise<{ classId?: string; grade: number; subject: string; unit?: string }> {
   if (data.grade && data.subject) {
     return { grade: data.grade, subject: data.subject, unit: data.unit };
   }
 
   const { data: row, error } = await supabase
     .from("sessions")
-    .select("classes(grade, subject, unit)")
+    .select("class_id, classes(grade, subject, unit)")
     .eq("id", data.sessionId)
     .maybeSingle();
 
@@ -157,6 +160,7 @@ async function resolveRetrievalContext(
 
   const classContext = normalizeClassContext(row?.classes);
   return {
+    classId: typeof row?.class_id === "string" ? row.class_id : undefined,
     grade: data.grade ?? classContext?.grade ?? 7,
     subject: data.subject ?? classContext?.subject ?? "lenguaje",
     unit: data.unit ?? classContext?.unit,

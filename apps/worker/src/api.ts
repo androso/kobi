@@ -5,9 +5,13 @@ import { buildCurriculumQueryText, embedText, retrieveCurriculumMatches } from "
 import { classifySafeError, lessonStateFromManualEntry, lessonStateSchema, safeLog, type LessonState } from "@kobi/ai-core";
 import type PgBoss from "pg-boss";
 import { z } from "zod";
-import { demoTranscriptChunks, DEMO_TRANSCRIPT_TICK_MS } from "./demoTranscript.js";
-import { JOB_BUILD_LESSON_STATE, JOB_TRANSCRIBE_CHUNK } from "./queue.js";
+import { JOB_BUILD_LESSON_STATE, JOB_INGEST_CURRICULUM_SOURCE, JOB_TRANSCRIBE_CHUNK } from "./queue.js";
+import { loadSelectedCurriculumSourceIds } from "./curriculumSelections.js";
 import { runGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
+import {
+  createOpenAiActivityGeneratorFromEnv,
+  validateOpenAiActivityConfig,
+} from "./activity-generation/openaiArtifactGenerator.js";
 
 interface ApiServerOptions {
   supabase: SupabaseClient;
@@ -16,16 +20,10 @@ interface ApiServerOptions {
 }
 
 const DEFAULT_AUDIO_BUCKET = "audio-chunks";
-const DEMO_MODE = "demo";
-const DEMO_CURRICULUM = {
-  grade: 7,
-  subject: "matematicas",
-  unit: "geometria-triangulos-cuadrilateros",
-  objective_code: "M7.GEO.1",
-  text:
-    "Conozcamos los triangulos y cuadrilateros: identifica segmentos, lados, vertices y angulos en figuras planas. Clasifica figuras con tres lados como triangulos y figuras con cuatro lados como cuadrilateros, usando el conteo de lados, vertices y angulos.",
-};
-
+const DEFAULT_CURRICULUM_BUCKET = "curriculum-sources";
+const MAX_CURRICULUM_PDF_BYTES = 50 * 1024 * 1024;
+const MAX_CURRICULUM_PDF_PAGES = 400;
+const SIGNED_UPLOAD_TTL_SECONDS = 60 * 30;
 class ApiRequestError extends Error {
   constructor(
     readonly code: string,
@@ -43,10 +41,31 @@ const manualLessonStateSchema = z.object({
   topic: z.string().trim().min(1).max(2_000),
   objective: z.string().trim().max(2_000).optional(),
 }).strict();
-const demoChunkSchema = z.object({ chunk_index: z.number().int().nonnegative() }).strict();
+const createCurriculumUploadSchema = z.object({
+  filename: z.string().trim().min(1).max(255),
+  contentType: z.string().trim().min(1).max(120),
+  sizeBytes: z.number().int().positive().max(MAX_CURRICULUM_PDF_BYTES),
+  pageCount: z.number().int().positive().max(MAX_CURRICULUM_PDF_PAGES),
+}).strict();
+const completeCurriculumUploadSchema = z.object({
+  sourceId: uuidSchema,
+}).strict();
+const replaceCurriculumSelectionsSchema = z.object({
+  sourceIds: z.array(uuidSchema).max(50),
+}).strict().refine((value) => new Set(value.sourceIds).size === value.sourceIds.length, {
+  message: "sourceIds must be unique",
+});
+const retrieveCurriculumSchema = z.object({
+  queryText: z.string().trim().min(1).max(4_000).optional(),
+  topic: z.string().trim().min(1).max(2_000).optional(),
+  objective: z.string().trim().max(2_000).optional(),
+  keyTerms: z.array(z.string().trim().min(1).max(80)).max(20).optional(),
+  matchCount: z.number().int().min(1).max(8).optional(),
+}).strict();
 const MAX_JSON_BODY_BYTES = 32 * 1024;
 const MAX_AUDIO_BYTES = 10 * 1024 * 1024;
 const RATE_WINDOW_MS = 60_000;
+const CORS_ALLOWED_METHODS = "GET,POST,PATCH,PUT,OPTIONS";
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 
 function logApi(message: string, details?: Record<string, unknown>) {
@@ -73,7 +92,7 @@ function writeJson(
 ) {
   res.writeHead(statusCode, {
     "content-type": "application/json",
-    "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
+    "access-control-allow-methods": CORS_ALLOWED_METHODS,
     "access-control-allow-headers": "content-type,authorization",
     ...corsHeaders(req),
     ...extraHeaders,
@@ -83,7 +102,7 @@ function writeJson(
 
 function handleOptions(req: IncomingMessage, res: ServerResponse) {
   res.writeHead(204, {
-    "access-control-allow-methods": "GET,POST,PATCH,OPTIONS",
+    "access-control-allow-methods": CORS_ALLOWED_METHODS,
     "access-control-allow-headers": "content-type,authorization",
     "access-control-max-age": "86400",
     ...corsHeaders(req),
@@ -309,10 +328,6 @@ function sanitizeMs(value: unknown, field: string) {
   return parsed;
 }
 
-function isDemoMode() {
-  return process.env.KOBI_PROJECT_MODE === DEMO_MODE;
-}
-
 function extensionForMimeType(mimeType: string) {
   if (mimeType.includes("webm")) return "webm";
   if (mimeType.includes("mp4")) return "mp4";
@@ -327,10 +342,6 @@ async function createSession(req: IncomingMessage, res: ServerResponse, supabase
   await authorizeClass(supabase, classId, actor);
 
   logApi("creating session", { classId });
-  if (isDemoMode()) {
-    await configureDemoClass(supabase, classId);
-  }
-
   const { data, error } = await supabase
     .from("sessions")
     .insert({ class_id: classId, status: "active" })
@@ -344,21 +355,6 @@ async function createSession(req: IncomingMessage, res: ServerResponse, supabase
   console.log(`[api] session created: sessionId=${data.id} classId=${classId}`);
   logApi("session created", { sessionId: data.id, classId });
   writeJson(res, 201, { sessionId: data.id });
-}
-
-async function configureDemoClass(supabase: SupabaseClient, classId: string) {
-  const { error } = await supabase
-    .from("classes")
-    .update({
-      grade: DEMO_CURRICULUM.grade,
-      subject: DEMO_CURRICULUM.subject,
-      unit: DEMO_CURRICULUM.unit,
-    })
-    .eq("id", classId);
-
-  if (error) {
-    logApi("demo class metadata update failed", { classId, error: error.message });
-  }
 }
 
 async function createManualLessonState(
@@ -397,115 +393,6 @@ async function createManualLessonState(
 
   logApi("manual lesson_state created", { sessionId, segmentId: data.id });
   writeJson(res, 201, { segmentId: data.id, lessonState });
-}
-
-async function ensureDemoCurriculumSeed(supabase: SupabaseClient) {
-  const { data: existing, error: selectError } = await supabase
-    .from("curriculum_chunks")
-    .select("id")
-    .eq("grade", DEMO_CURRICULUM.grade)
-    .eq("subject", DEMO_CURRICULUM.subject)
-    .eq("unit", DEMO_CURRICULUM.unit)
-    .limit(1);
-
-  if (selectError) {
-    logApi("demo curriculum seed check failed", { error: selectError.message });
-    return;
-  }
-
-  if ((existing ?? []).length > 0) return;
-
-  try {
-    const embedding = await embedText(DEMO_CURRICULUM.text, "RETRIEVAL_DOCUMENT");
-    const { error: insertError } = await supabase.from("curriculum_chunks").insert({
-      ...DEMO_CURRICULUM,
-      embedding,
-    });
-
-    if (insertError) {
-      logApi("demo curriculum seed insert failed", { error: insertError.message });
-    } else {
-      logApi("demo curriculum seed inserted", {
-        grade: DEMO_CURRICULUM.grade,
-        subject: DEMO_CURRICULUM.subject,
-        unit: DEMO_CURRICULUM.unit,
-      });
-    }
-  } catch (error) {
-    logApi("demo curriculum seed skipped", {
-      error: error instanceof Error ? error.message : "Embedding failed",
-    });
-  }
-}
-
-async function createDemoTranscriptChunk(
-  req: IncomingMessage,
-  res: ServerResponse,
-  sessionId: string,
-  supabase: SupabaseClient,
-  boss: PgBoss,
-) {
-  if (!isDemoMode()) {
-    writeJson(res, 403, { error: "Demo transcript chunks are only available when KOBI_PROJECT_MODE=demo." });
-    return;
-  }
-
-  const { chunk_index: chunkIndex } = parseBody(demoChunkSchema, await readJsonBody(req));
-
-  const transcriptText = demoTranscriptChunks[chunkIndex];
-  if (!transcriptText) {
-    throw new ApiRequestError("invalid_chunk_index", 422);
-  }
-
-  await ensureDemoCurriculumSeed(supabase);
-
-  const { data: existing, error: existingError } = await supabase
-    .from("audio_chunks")
-    .select("id")
-    .eq("session_id", sessionId)
-    .eq("chunk_index", chunkIndex)
-    .maybeSingle();
-
-  if (existingError) {
-    throw new ApiRequestError("datastore_error", 500);
-  }
-
-  if (existing?.id) {
-    writeJson(res, 200, {
-      audioChunkId: existing.id,
-      chunkIndex,
-      totalChunks: demoTranscriptChunks.length,
-      done: chunkIndex === demoTranscriptChunks.length - 1,
-    });
-    return;
-  }
-
-  const { data: chunk, error: insertError } = await supabase
-    .from("audio_chunks")
-    .insert({
-      session_id: sessionId,
-      chunk_index: chunkIndex,
-      storage_path: `demo-transcript/${sessionId}/${chunkIndex}.txt`,
-      start_ms: chunkIndex * DEMO_TRANSCRIPT_TICK_MS,
-      end_ms: (chunkIndex + 1) * DEMO_TRANSCRIPT_TICK_MS,
-      status: "transcribed",
-      transcript_text: transcriptText,
-    })
-    .select("id")
-    .single();
-
-  if (insertError) {
-    throw new ApiRequestError("audio_chunk_create_failed", 500);
-  }
-
-  await boss.send(JOB_BUILD_LESSON_STATE, { sessionId });
-
-  writeJson(res, 201, {
-    audioChunkId: chunk.id,
-    chunkIndex,
-    totalChunks: demoTranscriptChunks.length,
-    done: chunkIndex === demoTranscriptChunks.length - 1,
-  });
 }
 
 async function uploadAudioChunk(
@@ -636,21 +523,62 @@ async function createActivityCandidates(
     return;
   }
 
-  const classContext = await loadSessionClassContext(supabase, sessionId);
-  const curriculumMatches = await retrieveCurriculumMatches(supabase, {
-    queryText: buildCurriculumQueryText(lessonState),
-    grade: classContext.grade,
-    subject: classContext.subject,
-    unit: classContext.unit,
-  });
-
-  const result = await runGenerateActivityArtifactsJob(supabase, {
+  const startedAt = Date.now();
+  let stage = "loading class context";
+  logApi("activity generation starting", {
     sessionId,
-    lessonState,
-    curriculumMatches,
+    topic: lessonState.topic,
+    confidence: lessonState.confidence,
   });
 
-  writeJson(res, result.skippedReason ? 200 : 201, result);
+  try {
+    const classContext = await loadSessionClassContext(supabase, sessionId);
+    const sourceIds = await loadSelectedCurriculumSourceIds(supabase, classContext.classId);
+    stage = "retrieving curriculum matches";
+    logApi("activity generation retrieving curriculum", { sessionId, ...classContext });
+    const curriculumMatches = await retrieveCurriculumMatches(supabase, {
+      queryText: buildCurriculumQueryText(lessonState),
+      grade: classContext.grade,
+      subject: classContext.subject,
+      unit: classContext.unit,
+      sourceIds,
+    });
+
+    stage = "generating artifacts";
+    logApi("activity generation curriculum ready", {
+      sessionId,
+      curriculumMatchCount: curriculumMatches.length,
+    });
+    const activityConfig = validateOpenAiActivityConfig(process.env);
+    const openAiGenerator = createOpenAiActivityGeneratorFromEnv(process.env);
+    logApi("activity generator configured", {
+      sessionId,
+      provider: openAiGenerator ? "openai" : "static fallback",
+      model: openAiGenerator ? activityConfig.model : null,
+    });
+    const result = await runGenerateActivityArtifactsJob(supabase, {
+      sessionId,
+      lessonState,
+      curriculumMatches,
+    }, {
+      openAiGenerator,
+    });
+
+    logApi("activity generation finished", {
+      sessionId,
+      durationMs: Date.now() - startedAt,
+      ...result,
+    });
+    writeJson(res, result.skippedReason ? 200 : 201, result);
+  } catch (error) {
+    safeLog("error", "activity_generation.failed", {
+      sessionId,
+      stage,
+      latencyMs: Date.now() - startedAt,
+      outcome: classifySafeError(error),
+    });
+    throw error;
+  }
 }
 
 async function loadLatestLessonState(
@@ -676,10 +604,10 @@ async function loadLatestLessonState(
 async function loadSessionClassContext(
   supabase: SupabaseClient,
   sessionId: string,
-): Promise<{ grade: number; subject: string; unit?: string }> {
+): Promise<{ classId?: string; grade: number; subject: string; unit?: string }> {
   const { data, error } = await supabase
     .from("sessions")
-    .select("classes(grade, subject, unit)")
+    .select("class_id, classes(grade, subject, unit)")
     .eq("id", sessionId)
     .maybeSingle();
 
@@ -689,6 +617,7 @@ async function loadSessionClassContext(
 
   const classContext = normalizeClassContext(data?.classes);
   return {
+    classId: typeof data?.class_id === "string" ? data.class_id : undefined,
     grade: classContext?.grade ?? 7,
     subject: classContext?.subject ?? "lenguaje",
     unit: classContext?.unit,
@@ -707,6 +636,410 @@ function normalizeClassContext(value: unknown): { grade: number; subject: string
   if (!Number.isInteger(grade) || grade <= 0 || !subject) return null;
   return { grade, subject, unit };
 }
+/**
+ * Sanitizes a curriculum filename to be safe for storage keys.
+ *  
+ * @param filename - Raw filename or path (e.g. "Libro de texto 7.° grado-0.pdf")
+ * @returns Sanitized filename safe for storage keys
+ * @example
+ * sanitizeCurriculumFilename("Libro de texto 7.° grado-0.pdf")
+ * // => "Libro-de-texto-7.-grado-0.pdf"
+ */
+function sanitizeCurriculumFilename(filename: string): string {
+  const base = filename.split(/[/\\]/).pop()?.trim() || "curriculum.pdf";
+  const cleaned = base.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  const withExtension = cleaned.toLowerCase().endsWith(".pdf") ? cleaned : `${cleaned || "curriculum"}.pdf`;
+  return withExtension.slice(0, 180);
+}
+
+async function createCurriculumUploadUrl(
+  req: IncomingMessage,
+  res: ServerResponse,
+  classId: string,
+  supabase: SupabaseClient,
+  actor: ApiActor,
+) {
+  await authorizeClass(supabase, classId, actor);
+  enforceRateLimit(`curriculum-upload:${actor.id}:${classId}`, 10);
+
+  const { data: classRow, error: classError } = await supabase
+    .from("classes")
+    .select("grade,subject,unit")
+    .eq("id", classId)
+    .maybeSingle();
+  if (classError) throw new ApiRequestError("datastore_error", 500);
+  const grade = Number(classRow?.grade);
+  const subject = typeof classRow?.subject === "string" ? classRow.subject.trim() : "";
+  const unit = typeof classRow?.unit === "string" ? classRow.unit.trim() : "";
+  if (!Number.isInteger(grade) || grade <= 0 || !subject || !unit) {
+    throw new ApiRequestError("class_context_incomplete", 422);
+  }
+
+  const { data: selectedRows, error: selectedError } = await supabase
+    .from("curriculum_source_selections")
+    .select("source_id")
+    .eq("class_id", classId)
+    .limit(50);
+  if (selectedError) throw new ApiRequestError("datastore_error", 500);
+  if ((selectedRows ?? []).length >= 50) {
+    throw new ApiRequestError("curriculum_selection_limit", 409);
+  }
+
+  const body = parseBody(createCurriculumUploadSchema, await readJsonBody(req));
+  if (!body.contentType.toLowerCase().includes("pdf")) {
+    throw new ApiRequestError("invalid_content_type", 422);
+  }
+
+  const sourceId = crypto.randomUUID();
+  const safeFilename = sanitizeCurriculumFilename(body.filename);
+  const storagePath = `${classId}/${sourceId}/${safeFilename}`;
+  const sourceDocument = `class-${classId}-source-${sourceId}`;
+  const bucket = process.env.CURRICULUM_BUCKET ?? DEFAULT_CURRICULUM_BUCKET;
+
+  const { data: source, error: insertError } = await supabase
+    .from("curriculum_sources")
+    .insert({
+      id: sourceId,
+      origin_class_id: classId,
+      uploaded_by: actor.id,
+      grade,
+      subject,
+      unit,
+      source_document: sourceDocument,
+      original_filename: safeFilename,
+      content_type: body.contentType,
+      size_bytes: body.sizeBytes,
+      storage_path: storagePath,
+      status: "pending_upload",
+    })
+    .select("id,status,storage_path,source_document,original_filename,size_bytes,created_at")
+    .single();
+
+  if (insertError || !source) {
+    safeLog("error", "curriculum.upload_create_failed", {
+      classId,
+      outcome: classifySafeError(insertError ?? new Error("missing source")),
+    });
+    throw new ApiRequestError("curriculum_source_create_failed", 500);
+  }
+
+  const { error: selectionError } = await supabase.from("curriculum_source_selections").insert({
+    class_id: classId,
+    source_id: sourceId,
+    selected_by: actor.id,
+  });
+  if (selectionError) {
+    await supabase.from("curriculum_sources").delete().eq("id", sourceId);
+    throw new ApiRequestError("curriculum_selection_update_failed", 500);
+  }
+
+  const { data: signed, error: signedError } = await supabase.storage
+    .from(bucket)
+    .createSignedUploadUrl(storagePath);
+
+  if (signedError || !signed?.signedUrl) {
+    await supabase.from("curriculum_sources").delete().eq("id", sourceId);
+    safeLog("error", "curriculum.signed_upload_failed", {
+      classId,
+      sourceId,
+      outcome: classifySafeError(signedError ?? new Error("missing signed url")),
+    });
+    throw new ApiRequestError("curriculum_signed_url_failed", 500);
+  }
+
+  logApi("curriculum signed upload created", {
+    classId,
+    sourceId,
+    sizeBytes: body.sizeBytes,
+  });
+
+  writeJson(res, 201, {
+    sourceId: source.id,
+    status: source.status,
+    storagePath: source.storage_path,
+    sourceDocument: source.source_document,
+    bucket,
+    upload: {
+      signedUrl: signed.signedUrl,
+      token: signed.token,
+      path: signed.path ?? storagePath,
+      expiresInSeconds: SIGNED_UPLOAD_TTL_SECONDS,
+    },
+  });
+}
+
+async function completeCurriculumUpload(
+  req: IncomingMessage,
+  res: ServerResponse,
+  classId: string,
+  supabase: SupabaseClient,
+  actor: ApiActor,
+  boss: PgBoss,
+) {
+  await authorizeClass(supabase, classId, actor);
+  enforceRateLimit(`curriculum-complete:${actor.id}:${classId}`, 10);
+
+  const { sourceId } = parseBody(completeCurriculumUploadSchema, await readJsonBody(req));
+  const { data: source, error } = await supabase
+    .from("curriculum_sources")
+    .select("id,origin_class_id,status,storage_path,size_bytes")
+    .eq("id", sourceId)
+    .eq("origin_class_id", classId)
+    .maybeSingle();
+
+  if (error) throw new ApiRequestError("datastore_error", 500);
+  if (!source) throw new ApiRequestError("curriculum_source_not_found", 404);
+
+  if (source.status === "ready" || source.status === "processing") {
+    writeJson(res, 200, { sourceId: source.id, status: source.status, enqueued: false });
+    return;
+  }
+
+  const bucket = process.env.CURRICULUM_BUCKET ?? DEFAULT_CURRICULUM_BUCKET;
+  const { error: probeError } = await supabase.storage
+    .from(bucket)
+    .createSignedUrl(source.storage_path, 60);
+  if (probeError) {
+    throw new ApiRequestError("curriculum_object_missing", 409);
+  }
+
+  const { error: updateError } = await supabase
+    .from("curriculum_sources")
+    .update({
+      status: "uploaded",
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", sourceId)
+    .eq("origin_class_id", classId);
+
+  if (updateError) throw new ApiRequestError("curriculum_source_update_failed", 500);
+
+  try {
+    await boss.send(
+      JOB_INGEST_CURRICULUM_SOURCE,
+      { sourceId, classId },
+      { singletonKey: sourceId, singletonSeconds: 60 * 30 },
+    );
+  } catch (queueError) {
+    safeLog("error", "curriculum.ingest_enqueue_failed", {
+      classId,
+      sourceId,
+      outcome: classifySafeError(queueError),
+    });
+    throw new ApiRequestError("curriculum_ingest_enqueue_failed", 500);
+  }
+
+  logApi("curriculum ingest enqueued", { classId, sourceId });
+  writeJson(res, 202, { sourceId, status: "uploaded", enqueued: true });
+}
+
+async function getCurriculumSource(
+  res: ServerResponse,
+  classId: string,
+  sourceId: string,
+  supabase: SupabaseClient,
+  actor: ApiActor,
+) {
+  await authorizeClass(supabase, classId, actor);
+
+  const { data, error } = await supabase
+    .from("curriculum_sources")
+    .select(
+      "id,origin_class_id,source_document,original_filename,content_type,size_bytes,status,error_message,page_count,chunks_built,storage_deleted_at,created_at,updated_at",
+    )
+    .eq("id", sourceId)
+    .eq("origin_class_id", classId)
+    .maybeSingle();
+
+  if (error) throw new ApiRequestError("datastore_error", 500);
+  if (!data) throw new ApiRequestError("curriculum_source_not_found", 404);
+
+  writeJson(res, 200, { source: data });
+}
+
+async function listCurriculumSources(
+  res: ServerResponse,
+  classId: string,
+  supabase: SupabaseClient,
+  actor: ApiActor,
+) {
+  await authorizeClass(supabase, classId, actor);
+
+  const { data, error } = await supabase
+    .from("curriculum_sources")
+    .select(
+      "id,origin_class_id,source_document,original_filename,content_type,size_bytes,status,error_message,page_count,chunks_built,storage_deleted_at,created_at,updated_at",
+    )
+    .eq("origin_class_id", classId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) throw new ApiRequestError("datastore_error", 500);
+  writeJson(res, 200, { sources: data ?? [] });
+}
+
+async function getCurriculumLibrary(
+  res: ServerResponse,
+  classId: string,
+  supabase: SupabaseClient,
+  actor: ApiActor,
+) {
+  await authorizeClass(supabase, classId, actor);
+
+  const { data: classRow, error: classError } = await supabase
+    .from("classes")
+    .select("id,grade,subject,unit")
+    .eq("id", classId)
+    .maybeSingle();
+  if (classError) throw new ApiRequestError("datastore_error", 500);
+  if (!classRow) throw new ApiRequestError("class_not_found", 404);
+
+  const grade = Number(classRow.grade);
+  const subject = typeof classRow.subject === "string" ? classRow.subject.trim() : "";
+  const unit = typeof classRow.unit === "string" ? classRow.unit.trim() : "";
+  if (!Number.isInteger(grade) || grade <= 0 || !subject) {
+    throw new ApiRequestError("class_context_incomplete", 422);
+  }
+
+  const fields =
+    "id,origin_class_id,uploaded_by,original_filename,size_bytes,status,error_message,grade,subject,unit,page_count,chunks_built,storage_deleted_at,created_at,updated_at";
+  const { data: readySources, error: readyError } = await supabase
+    .from("curriculum_sources")
+    .select(fields)
+    .eq("grade", grade)
+    .eq("subject", subject)
+    .eq("status", "ready")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (readyError) throw new ApiRequestError("datastore_error", 500);
+
+  const { data: ownPending, error: pendingError } = await supabase
+    .from("curriculum_sources")
+    .select(fields)
+    .eq("uploaded_by", actor.id)
+    .eq("grade", grade)
+    .eq("subject", subject)
+    .neq("status", "ready")
+    .order("created_at", { ascending: false })
+    .limit(20);
+  if (pendingError) throw new ApiRequestError("datastore_error", 500);
+
+  const selectedIds = new Set(await loadSelectedCurriculumSourceIds(supabase, classId));
+  const byId = new Map<string, Record<string, unknown>>();
+  for (const source of [...(readySources ?? []), ...(ownPending ?? [])]) {
+    if (typeof source.id === "string") byId.set(source.id, source);
+  }
+
+  const sources = [...byId.values()]
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+    .map((source) => ({
+      id: source.id,
+      originalFilename: source.original_filename,
+      sizeBytes: source.size_bytes,
+      status: source.status,
+      errorMessage: source.error_message,
+      grade: source.grade,
+      subject: source.subject,
+      unit: source.unit,
+      pageCount: source.page_count,
+      chunksBuilt: source.chunks_built,
+      storageDeletedAt: source.storage_deleted_at,
+      createdAt: source.created_at,
+      updatedAt: source.updated_at,
+      isOwner: source.uploaded_by === actor.id,
+      selected: typeof source.id === "string" && selectedIds.has(source.id),
+    }));
+
+  writeJson(res, 200, {
+    classContext: { id: classId, grade, subject, unit },
+    selectedSourceIds: [...selectedIds],
+    sources,
+  });
+}
+
+async function replaceCurriculumSelections(
+  req: IncomingMessage,
+  res: ServerResponse,
+  classId: string,
+  supabase: SupabaseClient,
+  actor: ApiActor,
+) {
+  await authorizeClass(supabase, classId, actor);
+  enforceRateLimit(`curriculum-selections:${actor.id}:${classId}`, 20);
+  const { sourceIds } = parseBody(replaceCurriculumSelectionsSchema, await readJsonBody(req));
+
+  const { error } = await supabase.rpc("replace_class_curriculum_selections", {
+    p_class_id: classId,
+    p_selected_by: actor.id,
+    p_source_ids: sourceIds,
+  });
+  if (error) {
+    safeLog("error", "curriculum.selection_replace_failed", {
+      classId,
+      outcome: classifySafeError(error),
+    });
+    throw new ApiRequestError("curriculum_selection_invalid", 422);
+  }
+
+  writeJson(res, 200, { classId, selectedSourceIds: sourceIds });
+}
+
+async function retrieveCurriculumForClass(
+  req: IncomingMessage,
+  res: ServerResponse,
+  classId: string,
+  supabase: SupabaseClient,
+  actor: ApiActor,
+) {
+  await authorizeClass(supabase, classId, actor);
+  enforceRateLimit(`curriculum-retrieve:${actor.id}:${classId}`, 30);
+
+  const body = parseBody(retrieveCurriculumSchema, await readJsonBody(req));
+  const { data: classRow, error } = await supabase
+    .from("classes")
+    .select("id,grade,subject,unit")
+    .eq("id", classId)
+    .maybeSingle();
+
+  if (error) throw new ApiRequestError("datastore_error", 500);
+  if (!classRow) throw new ApiRequestError("class_not_found", 404);
+
+  const grade = Number(classRow.grade);
+  const subject = typeof classRow.subject === "string" ? classRow.subject : "";
+  const unit = typeof classRow.unit === "string" ? classRow.unit : undefined;
+  if (!Number.isInteger(grade) || grade <= 0 || !subject) {
+    throw new ApiRequestError("class_context_incomplete", 422);
+  }
+
+  let queryText = body.queryText?.trim() ?? "";
+  if (!queryText) {
+    queryText = buildCurriculumQueryText({
+      topic: body.topic ?? unit ?? subject,
+      objective_guess: body.objective,
+      key_terms: body.keyTerms,
+    });
+  }
+
+  const matches = await retrieveCurriculumMatches(supabase, {
+    queryText,
+    grade,
+    subject,
+    unit,
+    sourceIds: await loadSelectedCurriculumSourceIds(supabase, classId),
+    matchCount: body.matchCount,
+  });
+
+  writeJson(res, 200, {
+    classId,
+    grade,
+    subject,
+    unit,
+    matchCount: matches.length,
+    matches,
+  });
+}
+
 
 export async function routeRequest(
   req: IncomingMessage,
@@ -754,15 +1087,6 @@ export async function routeRequest(
       return;
     }
 
-    const demoTranscriptChunkMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/demo-transcript-chunks$/);
-    if (req.method === "POST" && demoTranscriptChunkMatch?.[1]) {
-      const sessionId = parseBody(uuidSchema, demoTranscriptChunkMatch[1]);
-      await authorizeSession(supabase, sessionId, actor);
-      if (!boss) throw new ApiRequestError("background_queue_starting", 503);
-      await createDemoTranscriptChunk(req, res, sessionId, supabase, boss);
-      return;
-    }
-
     const manualLessonStateMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/manual-lesson-state$/);
     if (req.method === "POST" && manualLessonStateMatch?.[1]) {
       const sessionId = parseBody(uuidSchema, manualLessonStateMatch[1]);
@@ -775,8 +1099,60 @@ export async function routeRequest(
     if (req.method === "POST" && activityCandidatesMatch?.[1]) {
       const sessionId = parseBody(uuidSchema, activityCandidatesMatch[1]);
       await authorizeSession(supabase, sessionId, actor);
-      enforceRateLimit(`generation:${actor.id}:${sessionId}`, 5);
+      // The web client polls this endpoint every 10 seconds while lesson_state is pending.
+      enforceRateLimit(`generation:${actor.id}:${sessionId}`, 10);
       await createActivityCandidates(res, sessionId, supabase);
+      return;
+    }
+
+    const curriculumUploadMatch = url.pathname.match(/^\/api\/classes\/([^/]+)\/curriculum\/uploads$/);
+    if (req.method === "POST" && curriculumUploadMatch?.[1]) {
+      const classId = parseBody(uuidSchema, curriculumUploadMatch[1]);
+      await createCurriculumUploadUrl(req, res, classId, supabase, actor);
+      return;
+    }
+
+    const curriculumCompleteMatch = url.pathname.match(/^\/api\/classes\/([^/]+)\/curriculum\/uploads\/complete$/);
+    if (req.method === "POST" && curriculumCompleteMatch?.[1]) {
+      const classId = parseBody(uuidSchema, curriculumCompleteMatch[1]);
+      if (!boss) throw new ApiRequestError("background_queue_starting", 503);
+      await completeCurriculumUpload(req, res, classId, supabase, actor, boss);
+      return;
+    }
+
+    const curriculumSourceMatch = url.pathname.match(/^\/api\/classes\/([^/]+)\/curriculum\/sources\/([^/]+)$/);
+    if (req.method === "GET" && curriculumSourceMatch?.[1] && curriculumSourceMatch[2]) {
+      const classId = parseBody(uuidSchema, curriculumSourceMatch[1]);
+      const sourceId = parseBody(uuidSchema, curriculumSourceMatch[2]);
+      await getCurriculumSource(res, classId, sourceId, supabase, actor);
+      return;
+    }
+
+    const curriculumSourcesMatch = url.pathname.match(/^\/api\/classes\/([^/]+)\/curriculum\/sources$/);
+    if (req.method === "GET" && curriculumSourcesMatch?.[1]) {
+      const classId = parseBody(uuidSchema, curriculumSourcesMatch[1]);
+      await listCurriculumSources(res, classId, supabase, actor);
+      return;
+    }
+
+    const curriculumLibraryMatch = url.pathname.match(/^\/api\/classes\/([^/]+)\/curriculum\/library$/);
+    if (req.method === "GET" && curriculumLibraryMatch?.[1]) {
+      const classId = parseBody(uuidSchema, curriculumLibraryMatch[1]);
+      await getCurriculumLibrary(res, classId, supabase, actor);
+      return;
+    }
+
+    const curriculumSelectionsMatch = url.pathname.match(/^\/api\/classes\/([^/]+)\/curriculum\/selections$/);
+    if (req.method === "PUT" && curriculumSelectionsMatch?.[1]) {
+      const classId = parseBody(uuidSchema, curriculumSelectionsMatch[1]);
+      await replaceCurriculumSelections(req, res, classId, supabase, actor);
+      return;
+    }
+
+    const curriculumRetrieveMatch = url.pathname.match(/^\/api\/classes\/([^/]+)\/curriculum\/retrieve$/);
+    if (req.method === "POST" && curriculumRetrieveMatch?.[1]) {
+      const classId = parseBody(uuidSchema, curriculumRetrieveMatch[1]);
+      await retrieveCurriculumForClass(req, res, classId, supabase, actor);
       return;
     }
 

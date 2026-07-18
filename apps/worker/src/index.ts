@@ -11,6 +11,10 @@ import {
   registerCheckpointSchedulerJob,
   scheduleCheckpointSchedulerJob,
 } from "./jobs/checkpointScheduler.job.js";
+import {
+  reconcileCurriculumSourceCleanup,
+  registerIngestCurriculumSourceJob,
+} from "./jobs/ingestCurriculumSource.job.js";
 import { startApiServer } from "./api.js";
 import type PgBoss from "pg-boss";
 
@@ -42,9 +46,11 @@ async function main() {
   await registerGenerateActivityArtifactsJob(boss, supabase);
   await registerEvaluateCheckpointJob(boss, supabase);
   await registerCheckpointSchedulerJob(boss, supabase);
+  await registerIngestCurriculumSourceJob(boss, supabase);
+  await reconcileCurriculumSourceCleanup(supabase);
   await scheduleCheckpointSchedulerJob(boss);
   console.log(
-    "Kobi worker running: API, transcribe-chunk, build-lesson-state, checkpoint-scheduler, evaluate-checkpoint, generate-activity-artifacts",
+    "Kobi worker running: API, transcribe-chunk, build-lesson-state, checkpoint-scheduler, evaluate-checkpoint, generate-activity-artifacts, ingest-curriculum-source",
   );
 
   let shuttingDown = false;

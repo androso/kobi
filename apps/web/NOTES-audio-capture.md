@@ -19,7 +19,7 @@ Teacher mic
 Use the browser-native `MediaRecorder` + `getUserMedia` APIs — no extra library needed for v0. Implemented in `apps/web/src/features/teacher/LiveClassMonitor.tsx`: a single `getUserMedia` stream stays open for the whole session, but instead of one long-lived `MediaRecorder` with a `timeslice`, a new `MediaRecorder` instance is stopped and restarted on that same stream every `AUDIO_CHUNK_MS` (`rotateRecorderSegment` / `startNewRecorderSegment`). This matters because most browsers only put the container header in the *first* `ondataavailable` blob of a given `MediaRecorder` instance — later timeslice blobs from the same instance aren't independently decodable. Since each chunk is uploaded and transcribed on its own, every chunk must come from its own recorder instance to guarantee it's a complete, standalone file.
 
 - Chunk length: ~15 seconds (`AUDIO_CHUNK_MS` in `LiveClassMonitor.tsx`).
-- Format: whatever `MediaRecorder` gives you by default (e.g. `audio/webm`) is fine — Gemini's audio understanding handles common formats, no client-side transcoding needed.
+- Format: use a browser-native audio format accepted by the OpenAI transcription API (for example, `audio/webm`); no client-side transcoding is needed for supported formats.
 
 ## `POST /api/sessions/:id/audio-chunks`
 

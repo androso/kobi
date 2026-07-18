@@ -120,4 +120,6 @@ Written to the `events` table on every student interaction; read back for the li
 
 See [`docs/area-bc-contract.md`](area-bc-contract.md) for the full write-up shared with Androso. Returned by `retrieveCurriculumMatches()` in `packages/curriculum`.
 
+`CurriculumMatch.source_id` identifies shared teacher-fed evidence. Automatic retrieval uses the ready source IDs selected for the session's class; an empty selection uses compatible curated defaults. Activity evidence remains a generation-time snapshot if selections later change.
+
 Status: `lesson_state` and `curriculum_match` are **shipped** (see `packages/ai-core`, `packages/curriculum`). `ActivityArtifact`, telemetry, and sandbox contracts are **shipped** in `packages/activities` and consumed by `apps/web` and `apps/worker`; Gate 0 for the artifact contract is recorded here.

@@ -27,3 +27,12 @@ export const assignmentStatusEnum = pgEnum("assignment_status", [
   "completed",
 ]);
 export const eventTypeEnum = pgEnum("event_type", ["attempt", "hint", "complete"]);
+export const curriculumSourceStatusEnum = pgEnum("curriculum_source_status", [
+  "pending_upload",
+  "uploaded",
+  "processing",
+  "cleanup_pending",
+  "ready",
+  "failed",
+  "superseded",
+]);

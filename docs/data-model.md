@@ -40,9 +40,22 @@ student_profiles                audio_chunks     segments    checkpoints
                                    transcript_text
                                    unique(session_id, chunk_index)
 
-curriculum_chunks (standalone, Area B)
-  id, grade, subject, unit, objective_code, text, embedding vector(768), created_at
-  + ivfflat index, match_curriculum_chunks() RPC
+curriculum_sources (Area B shared teacher-fed material)
+  id, origin_class_id (nullable FK), uploaded_by, grade, subject, unit,
+  source_document, original_filename, content_type, size_bytes, storage_path,
+  status (pending_upload|uploaded|processing|cleanup_pending|ready|failed|superseded),
+  storage_deleted_at, error_message, page_count, chunks_built, created_at, updated_at
+
+curriculum_source_selections
+  class_id (FK), source_id (FK), selected_by, created_at
+  primary key (class_id, source_id)
+
+curriculum_chunks (standalone / class-scoped, Area B)
+  id, source_id (nullable FK -> curriculum_sources.id), class_id (legacy/curated scope),
+  grade, subject, unit, objective_code, text,
+  embedding vector(768), source_document, source_page_start, source_page_end,
+  section_title, chunk_index, content_hash, created_at
+  + ivfflat index, service-role match_curriculum_chunks() RPC (selected source IDs or source-less curated defaults), replace_curriculum_source() RPC
 
 activity_bundles
   ref (text, PK)

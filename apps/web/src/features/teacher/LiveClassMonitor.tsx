@@ -1,6 +1,5 @@
 import { useMemo, useState, useEffect, useRef, type FormEvent } from "react";
 import {
-  Pause,
   StopCircle,
   Sparkles,
   AlertTriangle,
@@ -20,16 +19,13 @@ import {
 import {
   createBackendSession,
   isAudioApiConfigured,
-  isDemoProjectMode,
   requestActivityCandidates,
   resolveBackendClassId,
-  submitDemoTranscript,
   submitManualLessonState,
   uploadAudioChunk,
 } from "../../lib/audioApi";
 
 const AUDIO_CHUNK_MS = 15_000;
-const isDemoMode = isDemoProjectMode();
 
 interface LessonStateSnapshot {
   topic: string;
@@ -189,16 +185,7 @@ function TranscriptPlayerCard({
           ) : null}
         </div>
 
-        {isRecording && isDemoMode ? (
-          <button
-            onClick={onToggleRecording}
-            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-3 font-bold text-sm transition-all hover:shadow-lg active:scale-95"
-            type="button"
-          >
-            <Pause className="h-5 w-5" />
-            PAUSAR
-          </button>
-        ) : isRecording ? (
+        {isRecording ? (
           <button
             onClick={onToggleRecording}
             className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-3 font-bold text-sm transition-all hover:shadow-lg active:scale-95"
@@ -765,6 +752,7 @@ export function LiveClassMonitor() {
   const recordingStartedAtRef = useRef<number | null>(null);
   const rotationTimerRef = useRef<number | null>(null);
   const isStoppingRef = useRef(false);
+  const pendingAudioUploadsRef = useRef<Set<Promise<void>>>(new Set());
 
   // Timer runs only while recording
   useEffect(() => {
@@ -775,7 +763,7 @@ export function LiveClassMonitor() {
 
   useEffect(() => {
     return () => {
-      stopBrowserRecording();
+      void stopBrowserRecording();
     };
   }, []);
 
@@ -807,28 +795,7 @@ export function LiveClassMonitor() {
     };
   }, [apiSessionId]);
 
-  useEffect(() => {
-    if (!isDemoMode || !apiSessionId || !activeClass || !deliveryStore) return;
-
-    let cancelled = false;
-    const activeSessionId = apiSessionId;
-
-    async function loadReadyCandidates() {
-      const loaded = await loadCandidatesForSession(activeSessionId, { allowEmpty: true });
-      if (!cancelled && loaded) {
-        setUploadStatus("Actividades listas para aprobar");
-      }
-    }
-
-    void loadReadyCandidates();
-    const intervalId = window.setInterval(loadReadyCandidates, 4_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [apiSessionId, activeClass, deliveryStore]);
-
-  function stopBrowserRecording() {
+  async function stopBrowserRecording() {
     isStoppingRef.current = true;
 
     if (rotationTimerRef.current !== null) {
@@ -839,13 +806,19 @@ export function LiveClassMonitor() {
     const recorder = mediaRecorderRef.current;
     if (recorder && recorder.state !== "inactive") {
       logRecorder("stopping recorder", { state: recorder.state });
+      const stopped = new Promise<void>((resolve) => {
+        recorder.addEventListener("stop", () => resolve(), { once: true });
+      });
       recorder.stop();
+      await stopped;
     }
 
     mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
     logRecorder("microphone tracks stopped");
     mediaRecorderRef.current = null;
     mediaStreamRef.current = null;
+
+    await Promise.all(Array.from(pendingAudioUploadsRef.current));
   }
 
   async function ensureBackendSession() {
@@ -863,29 +836,6 @@ export function LiveClassMonitor() {
     apiSessionIdRef.current = sessionId;
     setApiSessionId(sessionId);
     return sessionId;
-  }
-
-  async function processDemoTranscript() {
-    setElapsed(0);
-    setUploadedChunkCount(0);
-    setRecordingError(null);
-    setLatestLessonState(null);
-
-    try {
-      const sessionId = await ensureBackendSession();
-      apiSessionIdRef.current = sessionId;
-      setApiSessionId(sessionId);
-      chunkIndexRef.current = 0;
-      isStoppingRef.current = false;
-      setUploadStatus("Procesando transcripcion demo completa");
-      setIsRecording(true);
-      const acceptedChunks = await submitDemoTranscript({ sessionId });
-      setUploadedChunkCount(acceptedChunks.length);
-      setUploadStatus("Transcripcion demo completa enviada al worker");
-    } catch (error) {
-      setRecordingError(error instanceof Error ? error.message : "No se pudo iniciar la demo.");
-      setUploadStatus(null);
-    }
   }
 
   async function handleAudioChunk(audio: Blob) {
@@ -936,7 +886,9 @@ export function LiveClassMonitor() {
   // fragmentos periodicos que sean decodificables de forma independiente.
   function attachRecorderHandlers(recorder: MediaRecorder) {
     recorder.ondataavailable = (event) => {
-      void handleAudioChunk(event.data);
+      const upload = handleAudioChunk(event.data);
+      pendingAudioUploadsRef.current.add(upload);
+      void upload.finally(() => pendingAudioUploadsRef.current.delete(upload));
     };
     recorder.onerror = () => {
       setRecordingError("No se pudo grabar el audio del navegador.");
@@ -967,11 +919,6 @@ export function LiveClassMonitor() {
   }
 
   async function startRecording() {
-    if (isDemoMode) {
-      await processDemoTranscript();
-      return;
-    }
-
     setElapsed(0);
     setUploadedChunkCount(0);
     setRecordingError(null);
@@ -1006,7 +953,7 @@ export function LiveClassMonitor() {
       setUploadStatus(
         sessionId
           ? "Grabando audio para transcripcion"
-          : "Microfono activo en modo demo; configura VITE_KOBI_API_URL para transcribir.",
+          : "Microfono activo; configura VITE_KOBI_API_URL para transcribir.",
       );
       setIsRecording(true);
     } catch (error) {
@@ -1028,9 +975,9 @@ export function LiveClassMonitor() {
     }
   }
 
-  function stopRecording() {
-    stopBrowserRecording();
+  async function stopRecording() {
     setIsRecording(false);
+    await stopBrowserRecording();
     setUploadStatus(apiSessionIdRef.current ? "Sesion enviada al worker" : uploadStatus);
 
     if (activeClass) {
@@ -1043,7 +990,7 @@ export function LiveClassMonitor() {
 
   function toggleRecording() {
     if (isRecording) {
-      stopRecording();
+      void stopRecording();
       return;
     }
     void startRecording();

@@ -85,10 +85,31 @@ export function registerGenerateActivityArtifactsJob(
       const job = jobs[0];
       if (!job) return;
 
-      await runGenerateActivityArtifactsJob(supabase, job.data, {
-        openAiGenerator,
-        maxOpenAiGenerationsPerSession,
+      const startedAt = Date.now();
+      console.info("[activityGenerator] queued job started", {
+        sessionId: job.data.sessionId,
+        jobId: job.id,
       });
+      try {
+        const result = await runGenerateActivityArtifactsJob(supabase, job.data, {
+          openAiGenerator,
+          maxOpenAiGenerationsPerSession,
+        });
+        console.info("[activityGenerator] queued job finished", {
+          sessionId: job.data.sessionId,
+          jobId: job.id,
+          durationMs: Date.now() - startedAt,
+          ...result,
+        });
+      } catch (error) {
+        console.error("[activityGenerator] queued job failed", {
+          sessionId: job.data.sessionId,
+          jobId: job.id,
+          durationMs: Date.now() - startedAt,
+          error: error instanceof Error ? error.stack ?? error.message : error,
+        });
+        throw error;
+      }
     },
   );
 }
@@ -98,8 +119,14 @@ export async function runGenerateActivityArtifactsJob(
   data: GenerateActivityArtifactsJobData,
   options: GenerateActivityArtifactsJobOptions = {},
 ): Promise<GenerateActivityArtifactsJobResult> {
-  const { sessionId, lessonState, curriculumMatches } = data;
+  const { sessionId, lessonState } = data;
+  const curriculumMatches = data.curriculumMatches;
+  console.info("[activityGenerator] planning candidates", {
+    sessionId,
+    curriculumMatchCount: curriculumMatches.length,
+  });
   if (curriculumMatches.length === 0) {
+    console.warn("[activityGenerator] skipped because no curriculum matches were found", { sessionId });
     return { inserted: 0, reused: 0, generated: 0, skippedReason: "no curriculum matches" };
   }
 
@@ -107,6 +134,7 @@ export async function runGenerateActivityArtifactsJob(
   const sessionContext = buildActivitySessionContext(lessonStates);
 
   if (await hasCurrentReadyCandidates(supabase, sessionId, sessionContext)) {
+    console.info("[activityGenerator] current candidates already exist", { sessionId });
     return { inserted: 0, reused: 0, generated: 0, skippedReason: "ready candidates are current" };
   }
 
@@ -128,6 +156,12 @@ export async function runGenerateActivityArtifactsJob(
 
     if (generatedCount < maxOpenAiGenerationsPerSession) {
       try {
+        console.info("[activityGenerator] requesting OpenAI candidates", {
+          sessionId,
+          bands: missingBands,
+          generatedCount,
+          generationLimit: maxOpenAiGenerationsPerSession,
+        });
         const result = await options.openAiGenerator({
           lessonState,
           sessionContext,
@@ -136,7 +170,16 @@ export async function runGenerateActivityArtifactsJob(
           parentIdByBand,
         });
         openAiCandidates = result.candidates;
-      } catch {
+        console.info("[activityGenerator] OpenAI candidates received", {
+          sessionId,
+          candidateCount: openAiCandidates.length,
+        });
+      } catch (error) {
+        console.error("[activityGenerator] OpenAI generation failed; using static candidates", {
+          sessionId,
+          bands: missingBands,
+          error: error instanceof Error ? error.stack ?? error.message : error,
+        });
         openAiCandidates = [];
       }
     }
@@ -191,13 +234,16 @@ export async function runGenerateActivityArtifactsJob(
     await insertSessionCandidate(supabase, candidate);
   }
 
-  return {
+  const result = {
     inserted: candidatesToInsert.length,
     reused: candidatesToInsert.filter((candidate) => candidate.source !== "new").length,
     generated: candidatesToInsert.filter((candidate) => candidate.origin === "openai").length,
     skippedReason: null,
   };
+  console.info("[activityGenerator] candidates persisted", { sessionId, ...result });
+  return result;
 }
+
 
 export function planSessionArtifacts(input: {
   reusableByBand: Partial<Record<DifficultyBand, RankedActivityRepositoryRow>>;

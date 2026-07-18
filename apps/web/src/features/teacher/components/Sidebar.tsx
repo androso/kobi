@@ -2,6 +2,7 @@ import {
   LayoutGrid,
   TrendingUp,
   FolderOpen,
+  Library,
   Plus,
   CircleHelp,
   LogOut,
@@ -19,6 +20,7 @@ interface SidebarProps {
 
 const teacherNavItems: Array<{ label: string; icon: LucideIcon; path: string }> = [
   { label: "Panel", icon: LayoutGrid, path: "/teacher" },
+  { label: "Biblioteca", icon: Library, path: "/teacher/materials" },
   { label: "Monitoreo en vivo", icon: TrendingUp, path: "/teacher/monitor" },
   { label: "Clases anteriores", icon: FolderOpen, path: "/teacher/repositories" },
 ];

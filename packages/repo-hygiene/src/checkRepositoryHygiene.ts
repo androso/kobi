@@ -91,7 +91,7 @@ const SUSPICIOUS_ROOT_FILENAMES = new Set([
 
 const SECRET_PATTERNS: ReadonlyArray<{ readonly name: string; readonly pattern: RegExp }> = [
   { name: "OpenAI API key", pattern: /\bsk-[A-Za-z0-9_-]{20,}\b/ },
-  { name: "Gemini or Google API key", pattern: /\bAIza[0-9A-Za-z_-]{20,}\b/ },
+  { name: "Google-style API key", pattern: /\bAIza[0-9A-Za-z_-]{20,}\b/ },
   { name: "private key block", pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
   {
     name: "database URL with embedded credentials",
