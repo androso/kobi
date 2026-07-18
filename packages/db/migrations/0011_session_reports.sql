@@ -89,6 +89,39 @@ begin
   end if;
 end $$;
 
+alter table segments enable row level security;
+
+drop policy if exists segments_teacher_select on segments;
+create policy segments_teacher_select
+  on segments
+  for select
+  to authenticated
+  using (
+    exists (
+      select 1
+        from sessions
+        join classes on classes.id = sessions.class_id
+       where sessions.id = segments.session_id
+         and classes.teacher_id = auth.uid()
+    )
+  );
+
+drop policy if exists events_teacher_select on events;
+create policy events_teacher_select
+  on events
+  for select
+  to authenticated
+  using (
+    exists (
+      select 1
+        from assignments
+        join sessions on sessions.id = assignments.session_id
+        join classes on classes.id = sessions.class_id
+       where assignments.id = events.assignment_id
+         and classes.teacher_id = auth.uid()
+    )
+  );
+
 create or replace function close_teacher_session(input_session_id uuid)
 returns table(id uuid, ended_at timestamptz)
 language plpgsql

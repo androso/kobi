@@ -81,7 +81,7 @@ beforeEach(() => {
 });
 
 describe("PreviousClasses report refresh", () => {
-  it("reloads reports when delayed lesson-state segments arrive", async () => {
+  it("reloads reports when tenant-visible segments or events arrive", async () => {
     render(
       <MemoryRouter>
         <PreviousClasses />
@@ -94,6 +94,10 @@ describe("PreviousClasses report refresh", () => {
     act(() => mocks.callbacks.get("segments")?.());
 
     await waitFor(() => expect(mocks.loadSessionReports).toHaveBeenCalledTimes(2));
+
+    act(() => mocks.callbacks.get("events")?.());
+
+    await waitFor(() => expect(mocks.loadSessionReports).toHaveBeenCalledTimes(3));
   });
 
   it("does not let an older report request overwrite a newer realtime reload", async () => {

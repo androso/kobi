@@ -115,7 +115,7 @@ Written to the `events` table on every student interaction; read back for the li
 }
 ```
 
-Session reports are database-derived through `list_teacher_session_reports`: the RPC checks teacher/class ownership and combines sessions, lesson-state segments, assignments, and events into bounded, paginated results. Assignments are the canonical completion/score record, so late corrections replace the stored outcome; event rows supply hints and difficult-item counts. Each difficult-item entry is scoped by `candidate_id`, `activity_id`, `variant`, and `item_index`, so support/core/challenge prompts never collapse into one count. Activity `times_used` and `avg_score` are recomputed idempotently from current, non-dismissed assignments.
+Session reports are database-derived through `list_teacher_session_reports`: the RPC checks teacher/class ownership and combines sessions, lesson-state segments, assignments, and events into bounded, paginated results. Assignments are the canonical completion/score record, so late corrections replace the stored outcome; event rows supply hints and difficult-item counts. Each difficult-item entry is scoped by `candidate_id`, `activity_id`, `variant`, and `item_index`, so support/core/challenge prompts never collapse into one count. Realtime report refreshes observe `segments` and `events` through teacher-owned SELECT policies, so changed rows are delivered only for the authenticated teacher's classes. Activity `times_used` and `avg_score` are recomputed idempotently from current, non-dismissed assignments.
 
 ## 5. `curriculum_match` (Area B -> Area C)
 
