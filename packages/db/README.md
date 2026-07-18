@@ -8,7 +8,7 @@ Supabase schema/migrations + shared TS types. One datastore (Postgres + pgvector
 |---|---|---|
 | `teacher_profiles` / `classes` / `students` | Teachers use Supabase Auth; teachers provision durable student Auth accounts | teacher_id, username, auth_user_id, is_active |
 | `sessions` | One class period | class_id, status, started_at |
-| `segments` | Rolling lesson state | session_id, lesson_state (jsonb), confidence, transcript_summary |
+| `segments` | Rolling lesson state | session_id, lesson_state (jsonb), confidence, transcript_summary, source_through_chunk_index |
 | `curriculum_chunks` | Ingested textbook unit, objective-level | unit, objective_code, text, embedding |
 | `curriculum_sources` / `curriculum_source_selections` | Shared PDF sources and each class's active RAG corpus | uploader, grade, subject, status, source_id |
 | `activity_bundles` | Self-contained runnable HTML bundles | ref, index_html, checksum |

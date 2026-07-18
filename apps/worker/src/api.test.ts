@@ -5,6 +5,7 @@ import type PgBoss from "pg-boss";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { routeRequest } from "./api.js";
 import { runGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
+import { silentLessonState } from "./silentLessonState.js";
 
 vi.mock("@kobi/curriculum", async (importOriginal) => {
   const original = await importOriginal<typeof import("@kobi/curriculum")>();
@@ -68,6 +69,100 @@ describe("worker API", () => {
 
     expect(response.statusCode).toBe(409);
     expect(runGenerateActivityArtifactsJob).not.toHaveBeenCalled();
+  });
+
+  it("returns 409 when activity candidates are requested from a silence-only lesson state", async () => {
+    const supabase = fakeSupabase();
+    supabase.segments.push({
+      session_id: SESSION_ID,
+      lesson_state: silentLessonState,
+      created_at: "2026-07-16T21:00:00.000Z",
+    });
+
+    const response = await callRoute(
+      `/api/sessions/${SESSION_ID}/activity-candidates`,
+      supabase,
+      fakeBoss(),
+      {},
+    );
+
+    expect(response.statusCode).toBe(409);
+    expect(response.body).toEqual({
+      error: "No spoken lesson content is available. Enter the topic manually before generating activities.",
+    });
+    expect(runGenerateActivityArtifactsJob).not.toHaveBeenCalled();
+  });
+
+  it("reports transcription completion only after the final lesson-state segment", async () => {
+    const supabase = fakeSupabase();
+    supabase.audioChunks.push(
+      {
+        session_id: SESSION_ID,
+        chunk_index: 0,
+        status: "transcribed",
+        transcript_text: "Primer fragmento",
+      },
+      {
+        session_id: SESSION_ID,
+        chunk_index: 1,
+        status: "transcribed",
+        transcript_text: "Segundo fragmento",
+      },
+    );
+    supabase.segments.push({
+      session_id: SESSION_ID,
+      source_through_chunk_index: null,
+    });
+    supabase.segments.push({
+      session_id: SESSION_ID,
+      source_through_chunk_index: 1,
+    });
+
+    const req = fakeRequest({});
+    req.method = "GET";
+    req.url = `/api/sessions/${SESSION_ID}/transcription-status?expected_chunks=2`;
+    const res = fakeResponse();
+    await routeRequest(req, res, supabase.client, fakeBoss().instance);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({
+      expectedChunks: 2,
+      uploaded: 2,
+      pending: 0,
+      transcribing: 0,
+      transcribed: 2,
+      spokenChunks: 2,
+      terminalFailed: 0,
+      lessonStateThroughChunkIndex: 1,
+      complete: true,
+    });
+  });
+
+  it("reports completed silence without counting it as spoken audio", async () => {
+    const supabase = fakeSupabase();
+    supabase.audioChunks.push({
+      session_id: SESSION_ID,
+      chunk_index: 0,
+      status: "transcribed",
+      transcript_text: "   ",
+    });
+    supabase.segments.push({
+      session_id: SESSION_ID,
+      source_through_chunk_index: 0,
+    });
+
+    const req = fakeRequest({});
+    req.method = "GET";
+    req.url = `/api/sessions/${SESSION_ID}/transcription-status?expected_chunks=1`;
+    const res = fakeResponse();
+    await routeRequest(req, res, supabase.client, fakeBoss().instance);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toMatchObject({
+      transcribed: 1,
+      spokenChunks: 0,
+      complete: true,
+    });
   });
 
   it("generates activity candidates on the worker from the latest lesson_state", async () => {
@@ -304,6 +399,7 @@ const curriculumMatch = {
 
 class FakeQuery {
   private filters = new Map<string, unknown>();
+  private notNullFilters = new Set<string>();
   private pendingInsert: Record<string, unknown> | null = null;
 
   constructor(
@@ -323,6 +419,13 @@ class FakeQuery {
 
   eq(column: string, value: unknown) {
     this.filters.set(column, value);
+    return this;
+  }
+
+  not(column: string, operator: string, value: unknown) {
+    if (operator === "is" && value === null) {
+      this.notNullFilters.add(column);
+    }
     return this;
   }
 
@@ -358,9 +461,18 @@ class FakeQuery {
 
     if (this.table === "segments") {
       const match = this.state.segments.find((segment) =>
-        segment.session_id === this.filters.get("session_id"),
+        segment.session_id === this.filters.get("session_id") &&
+        Array.from(this.notNullFilters).every((column) => segment[column] !== null),
       );
-      return Promise.resolve({ data: match ? { lesson_state: match.lesson_state } : null, error: null });
+      return Promise.resolve({
+        data: match
+          ? {
+              lesson_state: match.lesson_state,
+              source_through_chunk_index: match.source_through_chunk_index,
+            }
+          : null,
+        error: null,
+      });
     }
 
     if (this.table === "sessions") {
@@ -387,6 +499,12 @@ class FakeQuery {
   ) {
     if (this.table === "curriculum_chunks") {
       return Promise.resolve({ data: this.state.curriculumChunks, error: null }).then(onfulfilled, onrejected);
+    }
+    if (this.table === "audio_chunks") {
+      const rows = this.state.audioChunks.filter((chunk) =>
+        chunk.session_id === this.filters.get("session_id"),
+      );
+      return Promise.resolve({ data: rows, error: null }).then(onfulfilled, onrejected);
     }
 
     return Promise.resolve({ data: [], error: null }).then(onfulfilled, onrejected);

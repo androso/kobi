@@ -12,6 +12,7 @@ import {
   createOpenAiActivityGeneratorFromEnv,
   validateOpenAiActivityConfig,
 } from "./activity-generation/openaiArtifactGenerator.js";
+import { isSilentLessonState } from "./silentLessonState.js";
 
 interface ApiServerOptions {
   supabase: SupabaseClient;
@@ -512,6 +513,76 @@ async function uploadAudioChunk(
   writeJson(res, 201, { audioChunkId: chunk.id });
 }
 
+async function getTranscriptionStatus(
+  res: ServerResponse,
+  url: URL,
+  sessionId: string,
+  supabase: SupabaseClient,
+) {
+  const expectedChunks = Number(url.searchParams.get("expected_chunks"));
+  if (!Number.isInteger(expectedChunks) || expectedChunks < 1) {
+    throw new ApiRequestError("invalid_request", 422);
+  }
+
+  const { data: chunks, error: chunksError } = await supabase
+    .from("audio_chunks")
+    .select("status, transcript_text")
+    .eq("session_id", sessionId);
+  if (chunksError) throw new ApiRequestError("datastore_error", 500);
+
+  const counts = {
+    pending: 0,
+    transcribing: 0,
+    transcribed: 0,
+    failed: 0,
+  };
+  for (const chunk of chunks ?? []) {
+    if (chunk.status in counts) {
+      counts[chunk.status as keyof typeof counts] += 1;
+    }
+  }
+  const spokenChunks = (chunks ?? []).filter(
+    (chunk) =>
+      chunk.status === "transcribed" &&
+      typeof chunk.transcript_text === "string" &&
+      chunk.transcript_text.trim().length > 0,
+  ).length;
+
+  const { data: latestSegment, error: segmentError } = await supabase
+    .from("segments")
+    .select("source_through_chunk_index")
+    .eq("session_id", sessionId)
+    .not("source_through_chunk_index", "is", null)
+    .order("source_through_chunk_index", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (segmentError) throw new ApiRequestError("datastore_error", 500);
+
+  const lessonStateThroughChunkIndex =
+    typeof latestSegment?.source_through_chunk_index === "number"
+      ? latestSegment.source_through_chunk_index
+      : null;
+  const uploaded = chunks?.length ?? 0;
+  const complete =
+    uploaded === expectedChunks &&
+    counts.transcribed === expectedChunks &&
+    counts.failed === 0 &&
+    lessonStateThroughChunkIndex !== null &&
+    lessonStateThroughChunkIndex >= expectedChunks - 1;
+
+  writeJson(res, 200, {
+    expectedChunks,
+    uploaded,
+    pending: counts.pending,
+    transcribing: counts.transcribing,
+    transcribed: counts.transcribed,
+    spokenChunks,
+    terminalFailed: counts.failed,
+    lessonStateThroughChunkIndex,
+    complete,
+  });
+}
+
 async function createActivityCandidates(
   res: ServerResponse,
   sessionId: string,
@@ -520,6 +591,12 @@ async function createActivityCandidates(
   const lessonState = await loadLatestLessonState(supabase, sessionId);
   if (!lessonState) {
     writeJson(res, 409, { error: "No lesson_state is available for this session yet." });
+    return;
+  }
+  if (isSilentLessonState(lessonState)) {
+    writeJson(res, 409, {
+      error: "No spoken lesson content is available. Enter the topic manually before generating activities.",
+    });
     return;
   }
 
@@ -1085,6 +1162,14 @@ export async function routeRequest(
       enforceRateLimit(`audio:${actor.id}:${sessionId}`, 30);
       if (!boss) throw new ApiRequestError("background_queue_starting", 503);
       await uploadAudioChunk(req, res, url, sessionId, supabase, boss);
+      return;
+    }
+
+    const transcriptionStatusMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/transcription-status$/);
+    if (req.method === "GET" && transcriptionStatusMatch?.[1]) {
+      const sessionId = parseBody(uuidSchema, transcriptionStatusMatch[1]);
+      await authorizeSession(supabase, sessionId, actor);
+      await getTranscriptionStatus(res, url, sessionId, supabase);
       return;
     }
 
