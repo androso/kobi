@@ -7,6 +7,7 @@ import {
   type ActivityRubricScores,
   type ActivityVerifierScores,
 } from "./types.js";
+import { parse, parseFragment, type ParserError } from "parse5";
 
 export interface VerifyActivityArtifactResult {
   ok: boolean;
@@ -15,9 +16,6 @@ export interface VerifyActivityArtifactResult {
 }
 
 const forbiddenPatterns: Array<{ pattern: RegExp; reason: string }> = [
-  { pattern: /<script\b[^>]*\bsrc\s*=/i, reason: "external script sources are forbidden" },
-  { pattern: /<link\b[^>]*\bhref\s*=/i, reason: "external link assets are forbidden" },
-  { pattern: /<img\b[^>]*\bsrc\s*=\s*["']?https?:/i, reason: "external image assets are forbidden" },
   { pattern: /\bfetch\s*\(/i, reason: "network fetch is forbidden" },
   { pattern: /\bXMLHttpRequest\b/i, reason: "XMLHttpRequest is forbidden" },
   { pattern: /\bWebSocket\b/i, reason: "WebSocket is forbidden" },
@@ -30,9 +28,67 @@ const forbiddenPatterns: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bindexedDB\b/i, reason: "indexedDB is forbidden" },
   { pattern: /\bdocument\.cookie\b/i, reason: "cookie access is forbidden" },
   { pattern: /\bwindow\.open\s*\(/i, reason: "popups are forbidden" },
+  {
+    pattern: /(?:\.\s*location\b|\[\s*["']location["']\s*\])/i,
+    reason: "self-navigation is forbidden",
+  },
+  {
+    pattern: /(^|[^\w$.])location\s*(?:\.|\[|=)/i,
+    reason: "self-navigation is forbidden",
+  },
   { pattern: /\btop\.location\b/i, reason: "top-level navigation is forbidden" },
+  { pattern: /\bwindow\.top\b/i, reason: "top-window access is forbidden" },
+  { pattern: /\bparent\.location\b/i, reason: "parent navigation is forbidden" },
+  {
+    pattern: /\bdocument\s*(?:\.\s*write(?:ln)?|\[\s*["']write(?:ln)?["']\s*\])\s*\(/i,
+    reason: "document.write is forbidden",
+  },
+  { pattern: /\beval\s*\(/i, reason: "eval is forbidden" },
+  { pattern: /\bnew\s+Function\s*\(/i, reason: "Function constructor is forbidden" },
   { pattern: /https?:\/\//i, reason: "absolute network URLs are forbidden" },
 ];
+
+const forbiddenElements = new Map([
+  ["base", "base URL declarations are forbidden"],
+  ["embed", "embedded content is forbidden"],
+  ["form", "forms are forbidden"],
+  ["frame", "nested browsing contexts are forbidden"],
+  ["frameset", "nested browsing contexts are forbidden"],
+  ["iframe", "nested browsing contexts are forbidden"],
+  ["link", "external link assets are forbidden"],
+  ["object", "embedded content is forbidden"],
+]);
+
+const urlAttributes = new Set([
+  "action",
+  "data",
+  "formaction",
+  "href",
+  "poster",
+  "src",
+  "srcset",
+  "xlink:href",
+]);
+const svgUrlPresentationAttributes = new Set([
+  "clip-path",
+  "fill",
+  "filter",
+  "marker",
+  "marker-end",
+  "marker-mid",
+  "marker-start",
+  "mask",
+  "stroke",
+]);
+
+interface HtmlNode {
+  nodeName: string;
+  tagName?: string;
+  attrs?: Array<{ name: string; value: string }>;
+  content?: HtmlNode;
+  childNodes?: HtmlNode[];
+  value?: string;
+}
 
 const minimumRubricScores: ActivityRubricScores = {
   curriculum_alignment: 0.8,
@@ -60,6 +116,7 @@ export function verifyActivityArtifact(
   const bundleHtml = candidate.bundle_html ?? "";
   const staticErrors = [
     ...checkHtmlShape(bundleHtml),
+    ...checkHtmlStructure(bundleHtml),
     ...checkNewManifestFields(candidate),
     ...checkForbiddenApis(bundleHtml),
     ...checkSdkTelemetry(bundleHtml),
@@ -100,11 +157,142 @@ function checkHtmlShape(bundleHtml: string): string[] {
   if (!/<!doctype html>/i.test(bundleHtml)) errors.push("bundle must declare <!doctype html>");
   if (!/<html\b/i.test(bundleHtml)) errors.push("bundle must include an <html> root");
   if (!/<script\b/i.test(bundleHtml)) errors.push("bundle must include inline JavaScript");
-  if (!/<meta[^>]+http-equiv=["\']Content-Security-Policy["\']/i.test(bundleHtml)) {
-    errors.push("bundle must include a restrictive Content-Security-Policy meta tag");
-  }
-  if (/<iframe\b/i.test(bundleHtml)) errors.push("nested iframes are forbidden");
   return errors;
+}
+
+function checkHtmlStructure(bundleHtml: string): string[] {
+  const errors: string[] = [];
+  const parseErrors: ParserError[] = [];
+  const document = parse(bundleHtml, { onParseError: (error) => parseErrors.push(error) }) as HtmlNode;
+
+  if (parseErrors.some((error) => error.code !== "missing-doctype")) {
+    errors.push("bundle must be well-formed HTML");
+  }
+
+  errors.push(...inspectHtmlNodeTree(document, true));
+
+  return [...new Set(errors)];
+}
+
+function inspectHtmlNodeTree(root: HtmlNode, inspectScriptMarkup: boolean): string[] {
+  const errors: string[] = [];
+
+  visit(root, (node) => {
+    const tagName = node.tagName?.toLowerCase();
+    if (!tagName) return;
+
+    const forbiddenReason = forbiddenElements.get(tagName);
+    if (forbiddenReason) errors.push(forbiddenReason);
+
+    for (const attribute of node.attrs ?? []) {
+      const name = attribute.name.toLowerCase();
+      const value = attribute.value.trim().toLowerCase();
+      if (name.startsWith("on")) errors.push("inline event handlers are forbidden");
+      if (name === "sandbox") errors.push("artifact-controlled sandbox attributes are forbidden");
+      if (name === "target" && value !== "_self") {
+        errors.push("navigation targets are forbidden");
+      }
+      if (urlAttributes.has(name) && isUnsafeUrl(value, name, tagName)) {
+        errors.push("external or executable URL references are forbidden");
+      }
+      if (name === "http-equiv" && value === "refresh") {
+        errors.push("meta refresh is forbidden");
+      }
+      if (
+        tagName === "meta" &&
+        name === "http-equiv" &&
+        ["content-security-policy", "content-security-policy-report-only"].includes(value)
+      ) {
+        errors.push("artifact-controlled CSP meta tags are forbidden");
+      }
+      if (name === "style" && /(?:@import|url\s*\()/i.test(attribute.value)) {
+        errors.push("CSS URL references are forbidden");
+      }
+      if (svgUrlPresentationAttributes.has(name) && isUnsafeSvgPresentationUrl(attribute.value)) {
+        errors.push("SVG URL references are forbidden");
+      }
+    }
+
+    if (tagName === "style" && /(?:@import|url\s*\()/i.test(textContent(node))) {
+      errors.push("CSS URL references are forbidden");
+    }
+
+    if (inspectScriptMarkup && tagName === "script") {
+      errors.push(...checkScriptMarkup(node));
+    }
+  });
+
+  return errors;
+}
+
+function isUnsafeSvgPresentationUrl(value: string): boolean {
+  if (!/url\s*\(/i.test(value)) return false;
+  return !/^url\s*\(\s*(["']?)#[A-Za-z_][\w:.-]*\1\s*\)$/i.test(value.trim());
+}
+
+function checkScriptMarkup(scriptNode: HtmlNode): string[] {
+  const errors: string[] = [];
+  for (const literal of extractScriptStringLiterals(textContent(scriptNode))) {
+    errors.push(...inspectHtmlNodeTree(parseFragment(literal) as HtmlNode, false));
+  }
+  return errors;
+}
+
+function extractScriptStringLiterals(scriptText: string): string[] {
+  const stringLiteralPattern = /(["'`])(?:\\[\s\S]|(?!\1)[\s\S])*\1/g;
+  return (scriptText.match(stringLiteralPattern) ?? []).map((literal) => literal.slice(1, -1));
+}
+
+function textContent(node: HtmlNode): string {
+  if (node.nodeName === "#text") return node.value ?? "";
+  return [
+    ...(node.childNodes ?? []).map(textContent),
+    ...(node.content ? [textContent(node.content)] : []),
+  ].join("");
+}
+
+function visit(node: HtmlNode, callback: (node: HtmlNode) => void): void {
+  callback(node);
+  if (node.content) visit(node.content, callback);
+  for (const child of node.childNodes ?? []) visit(child, callback);
+}
+
+function isUnsafeUrl(
+  value: string,
+  attributeName?: string,
+  tagName?: string,
+): boolean {
+  if (attributeName === "srcset") {
+    return tagName !== "img" || !isSafeDataImageSrcset(value);
+  }
+
+  if (value === "") return true;
+  if (value.startsWith("#")) return !["href", "xlink:href"].includes(attributeName ?? "");
+  if (value.startsWith("data:")) {
+    return !(
+      tagName === "img" &&
+      (attributeName === "src" || attributeName === "srcset") &&
+      /^data:image\//i.test(value)
+    );
+  }
+  return true;
+}
+
+function isSafeDataImageSrcset(value: string): boolean {
+  let remaining = value.trim();
+  const candidatePattern = /^data:image\/[a-z0-9.+-]+(?:;[a-z0-9.+-]+(?:=[^,;\s]+)?)*,[^,\s]+(?:\s+(?:\d+(?:\.\d+)?x|\d+w))?/i;
+
+  while (remaining.length > 0) {
+    const candidate = remaining.match(candidatePattern)?.[0];
+    if (!candidate) return false;
+
+    remaining = remaining.slice(candidate.length).trimStart();
+    if (remaining.length === 0) return true;
+    if (!remaining.startsWith(",")) return false;
+    remaining = remaining.slice(1).trimStart();
+  }
+
+  return false;
 }
 
 function checkNewManifestFields(candidate: ActivityArtifactCandidate): string[] {
@@ -118,7 +306,6 @@ function checkNewManifestFields(candidate: ActivityArtifactCandidate): string[] 
   if (!manifest.visual_theme?.accent) errors.push("manifest.visual_theme.accent is required for new artifacts");
   return errors;
 }
-
 function checkForbiddenApis(bundleHtml: string): string[] {
   return forbiddenPatterns
     .filter(({ pattern }) => pattern.test(bundleHtml))

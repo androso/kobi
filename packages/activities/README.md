@@ -65,8 +65,9 @@ Implemented exports:
 - manifest, artifact, evidence, verifier-score, source, and SDK `postMessage` validators
 - `buildActivitySessionContext()` for bounded context from structured `lesson_state` rows only
 - `createActivityArtifactCandidates()` for deterministic support/core/challenge HTML fallback artifacts
-- `verifyActivityArtifact()` for schema, static bundle, SDK hook, and manifest/code consistency checks
+- `verifyActivityArtifact()` for schema, structural HTML, forbidden API, SDK hook, and manifest/code consistency checks
+- `createUnguessableBundleRef()` for cryptographically random, opaque bundle locators
 - `authorizeActivityTelemetryMessage()` for parent-owned assignment telemetry validation
 - repository ranking helpers that bias objective match, current lesson context, verifier score, usage, outcomes, and set-level coherence
 
-The package verifier performs deterministic checks plus local rubric scoring. The worker's OpenAI generation path adds a separate structured AI review gate before generated candidates can be persisted; browser sandbox boot remains Area E-owned.
+The verifier performs structural and deterministic checks plus local rubric scoring, and the worker's OpenAI path adds a structured AI review before persistence. These are generation-time defenses; the web host still enforces the shared iframe sandbox/CSP policy, and bundle delivery still requires assignment/class authorization.

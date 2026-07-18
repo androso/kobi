@@ -95,17 +95,21 @@ Assignment rows are only valid for approved candidates from the same session: `a
 
 ### Artifact bundle rules
 
-- Bundle format is one self-contained `index.html` with inline CSS/JS.
+- Bundle format is one self-contained `index.html` with inline CSS/JS; URL-bearing subresource attributes must not point to relative paths or external schemes, while `data:` URLs remain available for inline assets such as images.
 - No external imports, assets, network calls, credentialed requests, storage APIs, top navigation, popups, or same-origin assumptions.
 - Allowed families are `match_classify`, `sequence_order`, and `guided_practice`; newly generated/adapted manifests also include a valid `mechanic`, `learning_design`, and `visual_theme`.
 - `content.items[]` is required and must include prompts plus answer keys; hints default to an empty list when omitted.
 - `bundle_ref` must be unguessable and authorized by assignment/class before iframe delivery.
+- Bundle references are generated from cryptographically random UUIDs; they are opaque locators, not bearer credentials, and possession never bypasses assignment/class authorization.
 - Students authenticate with teacher-managed username/password accounts. Delivery derives the student mapping from `auth.uid()`; assignment reads, dismissals, telemetry, and completion are restricted to that mapping by RLS. `join_class_by_code` and browser-held student bearer tokens are not part of the active contract.
 - Authenticated teachers can read candidates, artifacts, bundles, assignments, and telemetry only through sessions in classes they own. They may approve candidates and publish assignments, while candidate/artifact/bundle creation and telemetry insertion remain worker/service-role or student-owned operations.
 - The parent injects only manifest, assignment id, and difficulty band. It must not inject Supabase credentials, student PII, raw transcript, or broader class/session context.
 - The iframe communicates only through the Activity SDK over `postMessage`: `getManifest()`, `getBand()`, `reportAttempt()`, `reportHint()`, and `reportComplete()`.
 - The parent validates message source, schema, assignment authorization, method allowlist, payload size, and telemetry rate limits.
+- The host injects a restrictive CSP and renders both teacher previews and student delivery with `sandbox="allow-scripts"` and `referrerPolicy="no-referrer"`; the artifact receives no same-origin, form, navigation, popup, frame, or network capability.
 - Teacher edits are manifest-only and must pass schema validation, escaped rendering, forbidden field checks, and manifest/code consistency smoke validation.
+
+The structural verifier and its JavaScript source checks are generation-time defense-in-depth. They reject known unsafe artifact shapes and improve diagnostics, but parser acceptance is not a security boundary by itself; runtime isolation comes from the host sandbox/CSP plus assignment-scoped delivery authorization.
 
 ## 4. Telemetry event
 

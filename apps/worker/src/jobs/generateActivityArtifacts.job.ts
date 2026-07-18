@@ -6,6 +6,7 @@ import {
   buildActivitySessionContext,
   createAdaptedGamePlan,
   createActivityArtifactCandidates,
+  createUnguessableBundleRef,
   createGamePlan,
   hasMaterialContextChange,
   pickAdaptationSource,
@@ -31,7 +32,6 @@ import type PgBoss from "pg-boss";
 import {
   createOpenAiActivityGeneratorFromEnv,
   createActivitySetId,
-  createUnguessableBundleRef,
   type GenerateOpenAiActivityCandidatesInput,
   type OpenAiActivityGenerationResult,
 } from "../activity-generation/openaiArtifactGenerator.js";

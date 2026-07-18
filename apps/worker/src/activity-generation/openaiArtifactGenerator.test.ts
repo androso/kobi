@@ -135,7 +135,7 @@ describe("OpenAI activity artifact generator", () => {
     expect(result.errors).toContain("draft schema: missing requested difficulty band core");
   });
 
-  it("replaces a model-provided CSP with the server-owned policy", () => {
+  it("removes a model-provided CSP so the host owns the runtime policy", () => {
     const permissiveHtml = validHtml("Actividad core", "Responde sobre la noticia en nivel core.")
       .replace(
         "<head>",
@@ -147,7 +147,7 @@ describe("OpenAI activity artifact generator", () => {
     );
 
     expect(result.candidates).toHaveLength(1);
-    expect(result.candidates[0].bundle_html).toContain("default-src 'none'");
+    expect(result.candidates[0].bundle_html).not.toContain("Content-Security-Policy");
     expect(result.candidates[0].bundle_html).not.toContain("default-src *");
   });
 

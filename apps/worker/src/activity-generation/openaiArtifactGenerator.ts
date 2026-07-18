@@ -10,6 +10,7 @@ import {
   ACTIVITY_ARTIFACT_CONTRACT_VERSION,
   ACTIVITY_SDK_VERSION,
   activityManifestSchema,
+  createUnguessableBundleRef,
   createGamePlan,
   evidenceFromCurriculumMatches,
   verifyActivityArtifact,
@@ -569,13 +570,12 @@ export function normalizeOpenAiActivityDrafts(
 }
 
 function ensureSecurityAndDesignBrief(html: string): string {
-  const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">`;
   const design = `<style>:focus-visible{outline:3px solid #f59e0b;outline-offset:3px}button{border-radius:14px;padding:12px 16px;background:#2563eb;color:white}body{font-family:system-ui,sans-serif;background:#eff6ff;color:#0f172a}@media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}</style>`;
   const withoutModelCsp = html.replace(
     /<meta\b(?=[^>]*\bhttp-equiv\s*=\s*["']Content-Security-Policy["'])[^>]*>/gi,
     "",
   );
-  return withoutModelCsp.replace(/<head(\s[^>]*)?>/i, (head) => `${head}${csp}${design}`);
+  return withoutModelCsp.replace(/<head(\s[^>]*)?>/i, (head) => `${head}${design}`);
 }
 
 function recordMissingDraftBands(
@@ -740,12 +740,6 @@ function redactPotentialNames(value: string): string {
 function truncateExample(value: string): string {
   return value.length > 120 ? `${value.slice(0, 117)}...` : value;
 }
-
-export function createUnguessableBundleRef(namespace?: string): string {
-  const path = namespace ? `${namespace}/${randomUUID()}` : randomUUID();
-  return `artifact-bundles/${path}/index.html`;
-}
-
 export function createActivitySetId(): string {
   return `set-${randomUUID()}`;
 }
