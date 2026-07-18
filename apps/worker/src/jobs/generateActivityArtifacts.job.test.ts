@@ -43,11 +43,22 @@ describe("generateActivityArtifacts job planning", () => {
         sessionId: "session-1",
         lessonState,
         curriculumMatches,
-        curriculumFallback: { classId: "class-1", grade: 7, subject: "matematicas", unit: "fracciones" },
+        curriculumFallback: {
+          classId: "class-1",
+          grade: 7,
+          subject: "matematicas",
+          unit: "fracciones",
+          sourceIds: ["source-selected"],
+        },
       },
       async (_supabase, input) => {
         receivedQuery = input.queryText;
-        expect(input).toMatchObject({ classId: "class-1", grade: 7, subject: "matematicas", unit: "fracciones" });
+        expect(input).toMatchObject({
+          grade: 7,
+          subject: "matematicas",
+          unit: "fracciones",
+          sourceIds: ["source-selected"],
+        });
         return refreshedMatches;
       },
     );

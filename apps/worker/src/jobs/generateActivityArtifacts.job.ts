@@ -45,6 +45,7 @@ export interface GenerateActivityArtifactsJobData {
     grade: number;
     subject: string;
     unit?: string;
+    sourceIds?: string[];
   };
 }
 
@@ -62,7 +63,7 @@ export interface GenerateActivityArtifactsJobOptions {
 
 export type CurriculumRetriever = (
   supabase: SupabaseClient,
-  input: { queryText: string; grade: number; subject: string; unit?: string; classId?: string },
+  input: { queryText: string; grade: number; subject: string; unit?: string; sourceIds?: string[] },
 ) => Promise<CurriculumMatch[]>;
 
 export interface GenerateActivityArtifactsJobResult {
@@ -163,7 +164,7 @@ export async function refreshGenerateActivityArtifactsJobData(
     grade: retrievalContext.grade,
     subject: retrievalContext.subject,
     unit: retrievalContext.unit,
-    classId: retrievalContext.classId,
+    sourceIds: retrievalContext.sourceIds,
   });
 
   return { ...data, lessonState, curriculumMatches };
