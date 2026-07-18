@@ -29,7 +29,7 @@ const forbiddenPatterns: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bdocument\.cookie\b/i, reason: "cookie access is forbidden" },
   { pattern: /\bwindow\.open\s*\(/i, reason: "popups are forbidden" },
   {
-    pattern: /\b(?:window|document|self|globalThis)\s*(?:\.\s*location|\[\s*["']location["']\s*\])/i,
+    pattern: /(?:\.\s*location\b|\[\s*["']location["']\s*\])/i,
     reason: "self-navigation is forbidden",
   },
   {
@@ -39,7 +39,10 @@ const forbiddenPatterns: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\btop\.location\b/i, reason: "top-level navigation is forbidden" },
   { pattern: /\bwindow\.top\b/i, reason: "top-window access is forbidden" },
   { pattern: /\bparent\.location\b/i, reason: "parent navigation is forbidden" },
-  { pattern: /\bdocument\.write\s*\(/i, reason: "document.write is forbidden" },
+  {
+    pattern: /\bdocument\s*(?:\.\s*write(?:ln)?|\[\s*["']write(?:ln)?["']\s*\])\s*\(/i,
+    reason: "document.write is forbidden",
+  },
   { pattern: /\beval\s*\(/i, reason: "eval is forbidden" },
   { pattern: /\bnew\s+Function\s*\(/i, reason: "Function constructor is forbidden" },
   { pattern: /https?:\/\//i, reason: "absolute network URLs are forbidden" },
@@ -186,7 +189,7 @@ function inspectHtmlNodeTree(root: HtmlNode, inspectScriptMarkup: boolean): stri
       const value = attribute.value.trim().toLowerCase();
       if (name.startsWith("on")) errors.push("inline event handlers are forbidden");
       if (name === "sandbox") errors.push("artifact-controlled sandbox attributes are forbidden");
-      if (name === "target" && ["_top", "_parent", "_blank"].includes(value)) {
+      if (name === "target" && value !== "_self") {
         errors.push("navigation targets are forbidden");
       }
       if (urlAttributes.has(name) && isUnsafeUrl(value, name, tagName)) {

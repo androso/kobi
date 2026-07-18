@@ -19,7 +19,9 @@ export const activityIframeSecurityAttributes = {
 
 export function secureActivitySrcDoc(bundleHtml: string): string {
   const cspMeta = `<meta http-equiv="Content-Security-Policy" content="${activityIframeCsp}">`;
-  const doctype = bundleHtml.match(/^\s*<!doctype\b[^>]*>/i)?.[0];
+  const doctype = bundleHtml.match(
+    /^\s*(?:<!--[\s\S]*?-->\s*)*<!doctype\b[^>]*>/i,
+  )?.[0];
   if (doctype) {
     return `${doctype}${cspMeta}${bundleHtml.slice(doctype.length)}`;
   }

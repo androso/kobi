@@ -39,6 +39,19 @@ describe("activity iframe security policy", () => {
     expect(parsed.body.textContent).toContain('<head>');
   });
 
+  it("keeps CSP after a doctype that follows leading comments", () => {
+    const secured = secureActivitySrcDoc(
+      '<!-- generated --><!doctype html><html><head></head><body></body></html>',
+    );
+    const parsed = new DOMParser().parseFromString(secured, "text/html");
+
+    expect(secured).toMatch(
+      /^<!-- generated --><!doctype html><meta http-equiv="Content-Security-Policy"/i,
+    );
+    expect(parsed.compatMode).toBe("CSS1Compat");
+    expect(parsed.head.querySelector('meta[http-equiv="Content-Security-Policy"]')).not.toBeNull();
+  });
+
   it("does not parse untrusted resources in the parent document", () => {
     const bundle = '<!doctype html><html><head></head><body><img src="https://evil.test/pixel"></body></html>';
     const secured = secureActivitySrcDoc(bundle);
