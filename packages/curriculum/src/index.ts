@@ -4,3 +4,5 @@ export * from "./embedCurriculumChunk.js";
 export * from "./ingestUnit.js";
 export * from "./retrieveCurriculumMatches.js";
 export * from "./buildCurriculumQueryText.js";
+export * from "./digestTextbookPdf.js";
+export * from "./replaceCurriculumSource.js";

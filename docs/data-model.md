@@ -40,9 +40,31 @@ student_profiles                audio_chunks     segments    checkpoints
                                    transcript_text
                                    unique(session_id, chunk_index)
 
-curriculum_chunks (standalone, Area B)
-  id, grade, subject, unit, objective_code, text, embedding vector(768), created_at
-  + ivfflat index, match_curriculum_chunks() RPC
+curriculum_sources (Area B shared teacher-fed material)
+  id, origin_class_id (nullable FK), uploaded_by, grade, subject, unit,
+  source_document, original_filename, content_type, size_bytes, storage_path,
+  status (pending_upload|uploaded|processing|cleanup_pending|ready|failed|superseded),
+  storage_deleted_at, error_message, page_count, chunks_built, created_at, updated_at
+
+curriculum_source_selections
+  class_id (FK), source_id (FK), selected_by, created_at
+  primary key (class_id, source_id)
+
+curriculum_chunks (standalone / class-scoped, Area B)
+  id, source_id (nullable FK -> curriculum_sources.id), class_id (legacy/curated scope),
+  grade, subject, unit, objective_code, text,
+  embedding vector(768), source_document, source_page_start, source_page_end,
+  section_title, chunk_index, content_hash, created_at
+  + ivfflat index, service-role match_curriculum_chunks() RPC (selected source IDs or source-less curated defaults), replace_curriculum_source() RPC
+
+activity_generation_attempts
+  id (uuid, PK)
+  session_id (FK -> sessions.id)
+  provider (openai)
+  activity_set_id
+  created_at
+  unique(session_id, activity_set_id, provider)
+  -- durable spend-control ledger; failed and rejected calls still consume quota
 
 activity_bundles
   ref (text, PK)
@@ -55,13 +77,14 @@ activities (the repository — Area C, revised per D2)
   manifest (jsonb)                -- curriculum tags, answer key, hints, est_minutes, variants
   evidence (jsonb)                -- generation-time visible curriculum evidence
   status (candidate|verified|rejected|superseded)
-  embedding (vector(768), nullable) -- for repository semantic reuse search
+  embedding (vector(768), nullable) -- reserved for future semantic reuse; v0 ranking does not require it
   curriculum_tags (text[])
-  source (seeded|reused|new)
+  source (seeded|reused|adapted|new)
   verifier_scores (jsonb)
   times_used (int, default 0)
   avg_score (real, nullable)
   parent_id (FK -> activities.id, nullable)
+  activity_set_id (text, nullable) -- shared by one coherent support/core/challenge set
   created_at, updated_at
       │
       │ 1—N
@@ -72,9 +95,12 @@ session_activity_candidates
   activity_id (FK -> activities.id)
   difficulty_band (support|core|challenge)
   status (ready|approved|rejected|superseded)
-  source (seeded|reused|new)
+  source (seeded|reused|adapted|new)
   context_snapshot, evidence, verifier_scores (jsonb)
   created_at, approved_at
+  + replace_session_activity_candidates() RPC publishes one complete three-band set
+    atomically under a per-session advisory lock
+
       │
       │ 1—N
       ▼

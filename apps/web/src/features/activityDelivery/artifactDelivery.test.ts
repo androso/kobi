@@ -9,6 +9,7 @@ import type {
 import {
   buildAssignmentUpserts,
   handleStudentActivityMessage,
+  normalizeCompletionScore,
   publishAssignments,
   SupabaseActivityDeliveryStore,
 } from "./artifactDelivery";
@@ -275,5 +276,61 @@ describe("artifact delivery bridge", () => {
       type: "attempt",
       payload: expect.objectContaining({ assignment_id: "assignment-1" }),
     });
+  });
+
+  it("normalizes raw completion counts before storing assignment outcomes", async () => {
+    const fakeStore = store();
+    const assignment: StudentAssignment = {
+      id: "assignment-1",
+      sessionId: "session-1",
+      activityId: "activity-core",
+      studentId: "student-1",
+      variant: "core",
+      status: "assigned",
+      manifest: manifest("core"),
+      bundleHtml: "<!doctype html><html><body>ok</body></html>",
+    };
+
+    const result = await handleStudentActivityMessage({
+      store: fakeStore,
+      assignment,
+      sourceMatches: true,
+      message: {
+        sdk: "activity-sdk/v1",
+        type: "event",
+        method: "reportComplete",
+        payload: {
+          score_unit: "count",
+          score: 2,
+          total: 4,
+          completed_at: "2026-07-15T12:00:00.000Z",
+        },
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(fakeStore.markAssignmentComplete).toHaveBeenCalledWith({
+      assignmentId: "assignment-1",
+      score: 0.5,
+      completedAt: "2026-07-15T12:00:00.000Z",
+    });
+  });
+
+  it("normalizes explicitly declared count and normalized score units", () => {
+    expect(normalizeCompletionScore("normalized", 0.75, undefined)).toBe(0.75);
+    expect(normalizeCompletionScore("count", 2, 4)).toBe(0.5);
+    expect(normalizeCompletionScore(undefined, 2, 4)).toBe(0.5);
+    expect(() => normalizeCompletionScore("normalized", 0.75, 4)).toThrow(
+      "Completion total must be omitted for normalized scores.",
+    );
+    expect(() => normalizeCompletionScore("count", 0.75, 4)).toThrow(
+      "Count completion score must be an integer.",
+    );
+    expect(() => normalizeCompletionScore("count", 2, 1)).toThrow(
+      "Count completion score cannot exceed total.",
+    );
+    expect(() => normalizeCompletionScore("count", 0, 0)).toThrow(
+      "Count completion total must be a positive integer.",
+    );
   });
 });

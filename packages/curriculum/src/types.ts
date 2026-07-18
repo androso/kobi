@@ -4,7 +4,18 @@
  * alongside lesson_state and the activity repository. See
  * docs/area-bc-contract.md for the full write-up shared with Androso.
  */
-export interface CurriculumMatch {
+export interface CurriculumChunkMetadata {
+  source_id?: string | null;
+  class_id?: string | null;
+  source_document?: string | null;
+  source_page_start?: number | null;
+  source_page_end?: number | null;
+  section_title?: string | null;
+  chunk_index?: number | null;
+  content_hash?: string | null;
+}
+
+export interface CurriculumMatch extends CurriculumChunkMetadata {
   objective_code: string;
   unit: string;
   grade: number;
@@ -14,7 +25,7 @@ export interface CurriculumMatch {
   similarity: number;
 }
 
-export interface CurriculumChunkInput {
+export interface CurriculumChunkInput extends CurriculumChunkMetadata {
   grade: number;
   subject: string;
   unit: string;
@@ -29,6 +40,12 @@ export interface RetrieveCurriculumMatchesInput {
   subject: string;
   /** Optional — narrows to one unit when known (e.g. the class's selected unit). */
   unit?: string;
+  /** Optional — prefer chunks uploaded for this class. */
+  sourceIds?: string[];
   /** Defaults to 3, matching the spec's "pgvector top-3" retrieval mode. */
   matchCount?: number;
+}
+
+export interface CurriculumChunkRow extends CurriculumChunkInput {
+  embedding: number[];
 }

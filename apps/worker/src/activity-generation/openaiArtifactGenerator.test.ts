@@ -4,6 +4,7 @@ import type { CurriculumMatch } from "@kobi/curriculum";
 import type { DifficultyBand, SessionContext } from "@kobi/activities/contracts";
 import {
   buildActivityGenerationPrompt,
+  createActivitySetId,
   generateOpenAiActivityCandidates,
   normalizeOpenAiActivityDrafts,
   type OpenAiActivityDraftClient,
@@ -43,8 +44,13 @@ const curriculumMatches: CurriculumMatch[] = [
     similarity: 0.91,
   },
 ];
+const activitySetId = "set-test-run";
 
 describe("OpenAI activity artifact generator", () => {
+  it("creates a unique server-owned set id for each orchestration run", () => {
+    expect(createActivitySetId()).not.toBe(createActivitySetId());
+  });
+
   it("normalizes a valid raw DTO into server-derived ActivityArtifactCandidates", () => {
     const result = normalizeOpenAiActivityDrafts(
       { artifacts: [rawArtifact("core")] },
@@ -53,6 +59,7 @@ describe("OpenAI activity artifact generator", () => {
         sessionContext,
         curriculumMatches,
         bands: ["core"],
+        activitySetId,
         parentIdByBand: { core: "parent-1" },
       },
       () => "artifact-bundles/test/index.html",
@@ -91,6 +98,7 @@ describe("OpenAI activity artifact generator", () => {
         sessionContext,
         curriculumMatches,
         bands: ["support"],
+        activitySetId,
       },
       () => "artifact-bundles/test/index.html",
     );
@@ -110,7 +118,7 @@ describe("OpenAI activity artifact generator", () => {
           },
         ],
       },
-      { lessonState, sessionContext, curriculumMatches, bands: ["support"] },
+      { lessonState, sessionContext, curriculumMatches, bands: ["support"], activitySetId },
     );
 
     expect(result.candidates).toHaveLength(0);
@@ -120,11 +128,27 @@ describe("OpenAI activity artifact generator", () => {
   it("reports requested bands that are missing from a parsed draft response", () => {
     const result = normalizeOpenAiActivityDrafts(
       { artifacts: [rawArtifact("support")] },
-      { lessonState, sessionContext, curriculumMatches, bands: ["support", "core"] },
+      { lessonState, sessionContext, curriculumMatches, bands: ["support", "core"], activitySetId },
     );
 
     expect(result.candidates).toHaveLength(1);
     expect(result.errors).toContain("draft schema: missing requested difficulty band core");
+  });
+
+  it("removes a model-provided CSP so the host owns the runtime policy", () => {
+    const permissiveHtml = validHtml("Actividad core", "Responde sobre la noticia en nivel core.")
+      .replace(
+        "<head>",
+        '<head><meta http-equiv="Content-Security-Policy" content="default-src *; connect-src *">',
+      );
+    const result = normalizeOpenAiActivityDrafts(
+      { artifacts: [{ ...rawArtifact("core"), index_html: permissiveHtml }] },
+      { lessonState, sessionContext, curriculumMatches, bands: ["core"], activitySetId },
+    );
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.candidates[0].bundle_html).not.toContain("Content-Security-Policy");
+    expect(result.candidates[0].bundle_html).not.toContain("default-src *");
   });
 
   it("rejects unsafe HTML before returning candidates for persistence", async () => {
@@ -133,11 +157,11 @@ describe("OpenAI activity artifact generator", () => {
     ]);
 
     const result = await generateOpenAiActivityCandidates(
-      { lessonState, sessionContext, curriculumMatches, bands: ["core"] },
+      { lessonState, sessionContext, curriculumMatches, bands: ["core"], activitySetId },
       {
         client,
         model: "gpt-5.5",
-        templates: { system: "system", repair: "repair" },
+        templates: { system: "system", repair: "repair", review: "review" },
         maxRepairAttempts: 0,
       },
     );
@@ -154,11 +178,11 @@ describe("OpenAI activity artifact generator", () => {
     ]);
 
     const result = await generateOpenAiActivityCandidates(
-      { lessonState, sessionContext, curriculumMatches, bands: ["challenge"] },
+      { lessonState, sessionContext, curriculumMatches, bands: ["challenge"], activitySetId },
       {
         client,
         model: "gpt-5.5",
-        templates: { system: "system", repair: "repair" },
+        templates: { system: "system", repair: "repair", review: "review" },
         bundleRefFactory: () => "artifact-bundles/repaired/index.html",
       },
     );
@@ -176,11 +200,11 @@ describe("OpenAI activity artifact generator", () => {
     ]);
 
     const result = await generateOpenAiActivityCandidates(
-      { lessonState, sessionContext, curriculumMatches, bands: ["support", "core"] },
+      { lessonState, sessionContext, curriculumMatches, bands: ["support", "core"], activitySetId },
       {
         client,
         model: "gpt-5.5",
-        templates: { system: "system", repair: "repair" },
+        templates: { system: "system", repair: "repair", review: "review" },
       },
     );
 
@@ -201,11 +225,11 @@ describe("OpenAI activity artifact generator", () => {
     ]);
 
     const result = await generateOpenAiActivityCandidates(
-      { lessonState, sessionContext, curriculumMatches, bands: ["core"] },
+      { lessonState, sessionContext, curriculumMatches, bands: ["core"], activitySetId },
       {
         client,
         model: "gpt-5.5",
-        templates: { system: "system", repair: "repair" },
+        templates: { system: "system", repair: "repair", review: "review" },
         maxRepairAttempts: 2,
       },
     );
@@ -217,12 +241,42 @@ describe("OpenAI activity artifact generator", () => {
     expect(thirdPrompt.verifier_errors.core).not.toContain("bundle is missing SDK hook: getManifest");
   });
 
+  it("fails closed when the structured AI review rejects a generated set", async () => {
+    const client = mockClient(
+      [{ artifacts: [rawArtifact("core")] }],
+      [{
+        approved: false,
+        findings: [{
+          difficulty_band: "core",
+          category: "answer_correctness",
+          severity: "error",
+          message: "La respuesta no esta respaldada por la evidencia.",
+        }],
+      }],
+    );
+
+    const result = await generateOpenAiActivityCandidates(
+      { lessonState, sessionContext, curriculumMatches, bands: ["core"], activitySetId },
+      {
+        client,
+        model: "gpt-5.5",
+        templates: { system: "system", repair: "repair", review: "review" },
+        maxRepairAttempts: 0,
+      },
+    );
+
+    expect(client.reviewCalls).toBe(1);
+    expect(result.candidates).toEqual([]);
+    expect(result.errors.some((error) => error.includes("answer_correctness"))).toBe(true);
+  });
+
   it("keeps raw transcript and likely student names out of prompt input", () => {
     const prompt = buildActivityGenerationPrompt({
       lessonState,
       sessionContext,
       curriculumMatches,
       bands: ["core"],
+      activitySetId,
     });
 
     expect(prompt).not.toContain("RAW TRANSCRIPT SHOULD NOT LEAVE AREA A");
@@ -236,6 +290,7 @@ describe("OpenAI activity artifact generator", () => {
       sessionContext,
       curriculumMatches,
       bands: ["support", "core", "challenge"],
+      activitySetId,
     });
     const parsed = JSON.parse(prompt);
 
@@ -250,6 +305,39 @@ describe("OpenAI activity artifact generator", () => {
     expect(parsed.creativity_brief.avoid).toContain(
       "generic multiple-choice unless it is clearly the strongest fit",
     );
+    expect(parsed.sdk.completion_score_contract.count).toContain("score_unit=count");
+    expect(parsed.sdk.completion_score_contract.normalized).toContain("score_unit=normalized");
+    expect(parsed.sdk.completion_score_contract.submit_once).toContain("first valid reportComplete");
+  });
+
+  it("uses the supplied adapted game plan in the generation prompt", () => {
+    const prompt = buildActivityGenerationPrompt({
+      lessonState,
+      sessionContext,
+      curriculumMatches,
+      bands: ["support", "core", "challenge"],
+      activitySetId,
+      gamePlan: {
+        family: "sequence_order",
+        mechanic: "timeline_builder",
+        learning_goal: "Ordenar los hechos de la noticia.",
+        interaction_metaphor: "linea de tiempo",
+        kobi_visual_direction: "Azul Kobi",
+        rationale: "Conserva el mecanismo de la actividad padre.",
+        band_requirements: {
+          support: "Dos pasos guiados.",
+          core: "Tres pasos.",
+          challenge: "Cuatro pasos con justificacion.",
+        },
+      },
+    });
+    const parsed = JSON.parse(prompt);
+
+    expect(parsed.artifact_contract.required_shared_game_plan).toMatchObject({
+      family: "sequence_order",
+      mechanic: "timeline_builder",
+      interaction_metaphor: "linea de tiempo",
+    });
   });
 });
 
@@ -306,7 +394,7 @@ function validHtml(title: string, prompt: string) {
     function reportComplete(payload) { emit("reportComplete", payload); }
     document.getElementById("attempt").addEventListener("click", () => reportAttempt({ assignment_id: "assignment-1", item_index: 0, correct: true }));
     document.getElementById("hint").addEventListener("click", () => reportHint({ assignment_id: "assignment-1", item_index: 0, hint_index: 0 }));
-    document.getElementById("complete").addEventListener("click", () => reportComplete({ assignment_id: "assignment-1", score: 1, total: 1 }));
+    document.getElementById("complete").addEventListener("click", () => reportComplete({ assignment_id: "assignment-1", score_unit: "count", score: 1, total: 1 }));
   </script>
 </body>
 </html>`;
@@ -314,14 +402,25 @@ function validHtml(title: string, prompt: string) {
 
 function mockClient(
   responses: unknown[],
-): OpenAiActivityDraftClient & { calls: number; requests: OpenAiActivityDraftRequest[] } {
+  reviewResponses: unknown[] = [{ approved: true, findings: [] }],
+): OpenAiActivityDraftClient & {
+  calls: number;
+  reviewCalls: number;
+  requests: OpenAiActivityDraftRequest[];
+} {
   return {
     calls: 0,
+    reviewCalls: 0,
     requests: [],
     async generateActivityDrafts(request) {
       this.requests.push(request);
       const response = responses[this.calls];
       this.calls += 1;
+      return response;
+    },
+    async reviewActivityCandidates() {
+      const response = reviewResponses[this.reviewCalls] ?? reviewResponses.at(-1);
+      this.reviewCalls += 1;
       return response;
     },
   };

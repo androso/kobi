@@ -9,6 +9,7 @@ import { segments } from "./segments.js";
 import { checkpoints } from "./checkpoints.js";
 import { activityBundles } from "./activityBundles.js";
 import { activities } from "./activities.js";
+import { activityGenerationAttempts } from "./activityGenerationAttempts.js";
 import { sessionActivityCandidates } from "./sessionActivityCandidates.js";
 import { assignments } from "./assignments.js";
 import { events } from "./events.js";
@@ -45,6 +46,7 @@ export const sessionsRelations = relations(sessions, ({ one, many }) => ({
   segments: many(segments),
   checkpoints: many(checkpoints),
   activityCandidates: many(sessionActivityCandidates),
+  activityGenerationAttempts: many(activityGenerationAttempts),
   assignments: many(assignments),
 }));
 
@@ -73,6 +75,16 @@ export const activitiesRelations = relations(activities, ({ one, many }) => ({
   sessionCandidates: many(sessionActivityCandidates),
   assignments: many(assignments),
 }));
+
+export const activityGenerationAttemptsRelations = relations(
+  activityGenerationAttempts,
+  ({ one }) => ({
+    session: one(sessions, {
+      fields: [activityGenerationAttempts.sessionId],
+      references: [sessions.id],
+    }),
+  }),
+);
 
 export const sessionActivityCandidatesRelations = relations(
   sessionActivityCandidates,

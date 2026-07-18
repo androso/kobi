@@ -11,12 +11,66 @@ import {
 } from "@kobi/activities/server";
 import {
   planSessionArtifacts,
+  refreshGenerateActivityArtifactsJobData,
   runGenerateActivityArtifactsJob,
 } from "./generateActivityArtifacts.job.js";
 
 describe("generateActivityArtifacts job planning", () => {
-  it("skips generation when retrieval returns no curriculum matches", async () => {
+  it("refreshes stale queued lesson and curriculum data before generation", async () => {
+    const latestLessonState: LessonState = {
+      ...lessonState,
+      topic: "Fracciones equivalentes",
+      objective_guess: "Comparar fracciones equivalentes",
+      transcript_summary: "La docente comparo medios, cuartos y octavos.",
+      key_terms: ["fraccion", "equivalente", "cuartos"],
+    };
+    const supabase = fakeSupabase({ segments: [lessonState, latestLessonState] });
+    const refreshedMatches: CurriculumMatch[] = [
+      {
+        objective_code: "M7.2.1",
+        unit: "fracciones",
+        grade: 7,
+        subject: "matematicas",
+        text: "Compara fracciones equivalentes.",
+        similarity: 0.93,
+      },
+    ];
+    let receivedQuery = "";
+
+    const result = await refreshGenerateActivityArtifactsJobData(
+      supabase.client,
+      {
+        sessionId: "session-1",
+        lessonState,
+        curriculumMatches,
+        curriculumFallback: {
+          classId: "class-1",
+          grade: 7,
+          subject: "matematicas",
+          unit: "fracciones",
+          sourceIds: ["source-selected"],
+        },
+      },
+      async (_supabase, input) => {
+        receivedQuery = input.queryText;
+        expect(input).toMatchObject({
+          grade: 7,
+          subject: "matematicas",
+          unit: "fracciones",
+          sourceIds: ["source-selected"],
+        });
+        return refreshedMatches;
+      },
+    );
+
+    expect(receivedQuery).toContain("Fracciones equivalentes");
+    expect(result.lessonState).toEqual(latestLessonState);
+    expect(result.curriculumMatches).toEqual(refreshedMatches);
+  });
+
+  it("generates from lesson_state when retrieval returns no curriculum matches", async () => {
     const supabase = fakeSupabase();
+    let receivedMatches: CurriculumMatch[] = [];
 
     const result = await runGenerateActivityArtifactsJob(
       supabase.client,
@@ -24,41 +78,92 @@ describe("generateActivityArtifacts job planning", () => {
         sessionId: "session-1",
         lessonState,
         curriculumMatches: [],
+        curriculumFallback: { grade: 7, subject: "matematicas", unit: "algebra" },
       },
       {
-        openAiGenerator: async () => {
-          throw new Error("generator should not be called without curriculum matches");
+        openAiGenerator: async (input) => {
+          receivedMatches = input.curriculumMatches;
+          return { candidates: [], attempted: true, attempts: 1, errors: [] };
         },
       },
     );
 
-    expect(result).toEqual({
-      inserted: 0,
-      reused: 0,
-      generated: 0,
-      skippedReason: "no curriculum matches",
-    });
-    expect(supabase.insertedCandidates).toHaveLength(0);
+    expect(result.inserted).toBe(3);
+    expect(result.skippedReason).toBeNull();
+    expect(receivedMatches).toEqual([
+      expect.objectContaining({
+        objective_code: "UNMAPPED_LESSON_STATE",
+        grade: 7,
+        subject: "matematicas",
+        unit: "algebra",
+        similarity: 0,
+      }),
+    ]);
+    expect(supabase.insertedCandidates).toHaveLength(3);
+    expect(supabase.rpcCalls).toContain("replace_session_activity_candidates");
   });
 
-  it("uses reusable activities first, OpenAI candidates for missing bands, then static fallback", () => {
+  it("uses one complete source set instead of mixing repository, OpenAI, and static bands", () => {
     const reusableSupport = repositoryRow("support", 0.92);
     const openAiCore = candidate("core", "openai-core");
     const staticCore = candidate("core", "static-core");
+    const staticSupport = candidate("support", "static-support");
     const staticChallenge = candidate("challenge", "static-challenge");
 
     const planned = planSessionArtifacts({
-      reusableByBand: { support: reusableSupport },
+      reusableSet: [reusableSupport],
       openAiCandidates: [openAiCore],
-      staticCandidates: [staticCore, staticChallenge],
+      staticCandidates: [staticSupport, staticCore, staticChallenge],
     });
 
     expect(planned).toHaveLength(3);
-    expect(planned[0].reusable?.id).toBe("activity-support");
-    expect(planned[1].candidate?.bundle_ref).toBe("artifact-bundles/openai-core/index.html");
-    expect(planned[1].origin).toBe("openai");
-    expect(planned[2].candidate?.bundle_ref).toBe("artifact-bundles/static-challenge/index.html");
-    expect(planned[2].origin).toBe("static");
+    expect(planned.every((artifact) => artifact.origin === "static")).toBe(true);
+    expect(planned.map((artifact) => artifact.candidate?.activity_set_id)).toEqual([
+      "set-test",
+      "set-test",
+      "set-test",
+    ]);
+  });
+
+  it("accepts a complete exact-curriculum legacy repository set", () => {
+    const legacySet = (["support", "core", "challenge"] as const).map((band) => ({
+      ...repositoryRow(band, 0.9),
+      activity_set_id: null,
+    }));
+
+    const planned = planSessionArtifacts({
+      reusableSet: legacySet,
+      openAiCandidates: [],
+      staticCandidates: [],
+    });
+
+    expect(planned).toHaveLength(3);
+    expect(planned.map((artifact) => artifact.reusable?.id)).toEqual([
+      "activity-support",
+      "activity-core",
+      "activity-challenge",
+    ]);
+  });
+
+  it("persists medium-match generations as adapted with parent lineage", async () => {
+    const parent = repositoryRow("core", 0.6);
+    const supabase = fakeSupabase({ repositoryRows: [parent] });
+
+    const result = await runGenerateActivityArtifactsJob(
+      supabase.client,
+      {
+        sessionId: "session-1",
+        lessonState,
+        curriculumMatches,
+      },
+      { openAiGenerator: null },
+    );
+
+    expect(result).toMatchObject({ inserted: 3, reused: 3, generated: 0 });
+    expect(supabase.activityUpserts).toHaveLength(3);
+    expect(supabase.activityUpserts.every((row) => row.source === "adapted")).toBe(true);
+    expect(supabase.activityUpserts.every((row) => row.parent_id === parent.id)).toBe(true);
+    expect(new Set(supabase.activityUpserts.map((row) => row.activity_set_id)).size).toBe(1);
   });
 
   it("falls back to static candidates when OpenAI generation throws", async () => {
@@ -138,28 +243,36 @@ describe("generateActivityArtifacts job planning", () => {
     }
   });
 
-  it("counts only OpenAI bundle refs against the per-session OpenAI quota", async () => {
-    const supabase = fakeSupabase({ openAiGenerationCount: 3 });
+  it("records failed OpenAI calls before fallback and enforces the per-session quota", async () => {
+    const supabase = fakeSupabase();
     let openAiCalls = 0;
 
-    await runGenerateActivityArtifactsJob(
-      supabase.client,
-      {
-        sessionId: "session-1",
-        lessonState,
-        curriculumMatches,
-      },
-      {
-        openAiGenerator: async () => {
-          openAiCalls += 1;
-          return { candidates: [candidate("core", "openai-core")], attempted: true, attempts: 1, errors: [] };
+    const run = () =>
+      runGenerateActivityArtifactsJob(
+        supabase.client,
+        {
+          sessionId: "session-1",
+          lessonState,
+          curriculumMatches,
         },
-        maxOpenAiGenerationsPerSession: 3,
-      },
-    );
+        {
+          openAiGenerator: async () => {
+            openAiCalls += 1;
+            throw new Error("review rejected the set");
+          },
+          maxOpenAiGenerationsPerSession: 1,
+        },
+      );
 
-    expect(openAiCalls).toBe(0);
-    expect(supabase.likeFilters).toContain("activities.bundle_ref=artifact-bundles/openai/%");
+    await run();
+    await run();
+
+    expect(openAiCalls).toBe(1);
+    expect(supabase.generationAttempts).toHaveLength(1);
+    expect(supabase.generationAttempts[0]).toMatchObject({
+      session_id: "session-1",
+      provider: "openai",
+    });
   });
 
 });
@@ -198,6 +311,7 @@ function repositoryRow(
     bundle_ref: `artifact-bundles/reusable-${band}/index.html`,
     evidence: [{ objective_code: "L7.4.2", section: "U4 / L7.4.2", text: "La noticia" }],
     parent_id: null,
+    activity_set_id: "set-reusable",
     status: "verified",
     source: "seeded",
     verifier_scores: {
@@ -241,6 +355,7 @@ function candidate(
     },
     evidence: [{ objective_code: "L7.4.2", section: "U4 / L7.4.2", text: "La noticia" }],
     parent_id: null,
+    activity_set_id: "set-test",
     status: "candidate",
   };
 }
@@ -248,6 +363,7 @@ function candidate(
 function manifest(band: "support" | "core" | "challenge", title: string): ActivityManifest {
   return {
     family: "guided_practice" as const,
+    mechanic: "source_check_desk" as const,
     title,
     difficulty_band: band,
     curriculum: {
@@ -269,45 +385,95 @@ function manifest(band: "support" | "core" | "challenge", title: string): Activi
     entry: "index.html" as const,
     sdk_version: ACTIVITY_SDK_VERSION,
     allowed_capabilities: ["dom", "css"],
+    learning_design: {
+      learning_goal: "Reconocer las partes de una noticia.",
+      interaction_summary: "Revisar fuentes y evidencias.",
+      success_criteria: ["Identifica la evidencia correcta."],
+    },
+    visual_theme: { scene: "mesa de fuentes", accent: "azul" },
   };
 }
 
-function fakeSupabase(options: { openAiGenerationCount?: number; segments?: LessonState[] } = {}) {
+function fakeSupabase(options: {
+  openAiAttemptCount?: number;
+  segments?: LessonState[];
+  repositoryRows?: RankedActivityRepositoryRow[];
+} = {}) {
   const insertedCandidates: Array<{
     context_snapshot: { latest_topic: string; vocabulary: string[]; segment_count: number };
     evidence: unknown;
   }> = [];
   const bundleRefs: string[] = [];
   const likeFilters: string[] = [];
+  const inFilters: string[] = [];
+  const activityUpserts: Array<Record<string, unknown>> = [];
+  const generationAttempts: Array<Record<string, unknown>> = Array.from(
+    { length: options.openAiAttemptCount ?? 0 },
+    (_, index) => ({ id: `attempt-${index}`, session_id: "session-1", provider: "openai" }),
+  );
+  const rpcCalls: string[] = [];
   let nextActivityId = 0;
   const state: FakeQueryState = {
     insertedCandidates,
     bundleRefs,
     likeFilters,
+    inFilters,
     nextActivityId: () => {
       nextActivityId += 1;
       return `activity-${nextActivityId}`;
     },
-    openAiGenerationCount: options.openAiGenerationCount ?? 0,
+    generationAttempts,
     segments: options.segments ?? [],
+    repositoryRows: options.repositoryRows ?? [],
+    activityUpserts,
   };
 
   const client = {
     from(table: string) {
       return new FakeQuery(table, state);
     },
+    async rpc(name: string, args: Record<string, unknown>) {
+      rpcCalls.push(name);
+      if (name === "claim_openai_activity_generation_attempt") {
+        const limit = Number(args.input_limit);
+        if (generationAttempts.length >= limit) return { data: false, error: null };
+        generationAttempts.push({
+          session_id: args.input_session_id,
+          provider: "openai",
+          activity_set_id: args.input_activity_set_id,
+        });
+        return { data: true, error: null };
+      }
+      if (name === "replace_session_activity_candidates") {
+        const candidates = Array.isArray(args.input_candidates) ? args.input_candidates : [];
+        insertedCandidates.splice(0, insertedCandidates.length, ...candidates);
+      }
+      return { data: null, error: null };
+    },
   } as unknown as SupabaseClient;
 
-  return { client, insertedCandidates, bundleRefs, likeFilters };
+  return {
+    client,
+    insertedCandidates,
+    bundleRefs,
+    likeFilters,
+    inFilters,
+    activityUpserts,
+    generationAttempts,
+    rpcCalls,
+  };
 }
 
 interface FakeQueryState {
   insertedCandidates: unknown[];
   bundleRefs: string[];
   likeFilters: string[];
+  inFilters: string[];
   nextActivityId: () => string;
-  openAiGenerationCount: number;
+  generationAttempts: Array<Record<string, unknown>>;
   segments: LessonState[];
+  repositoryRows: RankedActivityRepositoryRow[];
+  activityUpserts: Array<Record<string, unknown>>;
 }
 
 class FakeQuery {
@@ -344,6 +510,7 @@ class FakeQuery {
     if (this.table === "activity_bundles" && typeof value.ref === "string") {
       this.state.bundleRefs.push(value.ref);
     }
+    if (this.table === "activities") this.state.activityUpserts.push(value);
     return this;
   }
 
@@ -352,6 +519,11 @@ class FakeQuery {
   }
 
   overlaps() {
+    return this;
+  }
+
+  in(column: string, values: string[]) {
+    this.state.inFilters.push(`${column}=${values.join(",")}`);
     return this;
   }
 
@@ -392,20 +564,10 @@ class FakeQuery {
     }
 
     if (this.table === "activities" && this.operation === "select") {
-      return { data: [], error: null };
+      return { data: this.state.repositoryRows, error: null };
     }
 
     if (this.table === "session_activity_candidates" && this.operation === "select") {
-      if (this.selected.includes("activities!inner")) {
-        return {
-          data: Array.from({ length: this.state.openAiGenerationCount }, (_, index) => ({
-            id: `candidate-${index}`,
-            activities: { bundle_ref: `artifact-bundles/openai/${index}/index.html` },
-          })),
-          error: null,
-        };
-      }
-
       return { data: [], error: null };
     }
 

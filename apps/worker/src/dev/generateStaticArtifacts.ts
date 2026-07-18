@@ -3,6 +3,7 @@ import {
   createActivityArtifactCandidates,
   verifyActivityArtifact,
 } from "@kobi/activities/server";
+import { createActivitySetId } from "../activity-generation/openaiArtifactGenerator.js";
 import { staticActivityContext } from "./staticActivityContext.js";
 
 const sessionContext = buildActivitySessionContext([staticActivityContext.lessonState]);
@@ -10,6 +11,7 @@ const candidates = createActivityArtifactCandidates({
   lessonState: staticActivityContext.lessonState,
   sessionContext,
   curriculumMatches: staticActivityContext.curriculumMatches,
+  activitySetId: createActivitySetId(),
 });
 
 const summary = candidates.map((candidate) => {
