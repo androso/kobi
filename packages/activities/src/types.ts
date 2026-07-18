@@ -176,24 +176,59 @@ export const activityHintPayloadSchema = z.object({
 export const activityCompletePayloadSchema = z
   .object({
     assignment_id: z.string().min(1),
+    score_unit: z.enum(["count", "normalized"]).optional(),
     score: z.number().finite().min(0),
     total: z.number().finite().positive().optional(),
     completed_at: z.string().datetime().optional(),
   })
   .superRefine((payload, ctx) => {
-    if (payload.total === undefined && payload.score > 1) {
+    const scoreUnit = payload.score_unit ?? (payload.total === undefined ? "normalized" : "count");
+
+    if (scoreUnit === "normalized" && payload.total !== undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["score"],
-        message: "score must be normalized to 0-1 when total is omitted",
+        path: ["total"],
+        message: "total must be omitted for normalized scores",
       });
     }
 
-    if (payload.total !== undefined && payload.score > payload.total) {
+    if (scoreUnit === "normalized" && payload.score > 1) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["score"],
-        message: "score cannot exceed total",
+        message: "normalized score must be between 0 and 1",
+      });
+    }
+
+    if (scoreUnit === "count" && payload.total === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["total"],
+        message: "total is required for count scores",
+      });
+    }
+
+    if (scoreUnit === "count" && !Number.isInteger(payload.score)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["score"],
+        message: "count score must be an integer",
+      });
+    }
+
+    if (scoreUnit === "count" && payload.total !== undefined && !Number.isInteger(payload.total)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["total"],
+        message: "count total must be an integer",
+      });
+    }
+
+    if (scoreUnit === "count" && payload.total !== undefined && payload.score > payload.total) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["score"],
+        message: "count score cannot exceed total",
       });
     }
   });

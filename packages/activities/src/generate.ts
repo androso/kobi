@@ -221,6 +221,7 @@ function renderActivityHtml(manifest: ActivityManifest): string {
     let responseText = "";
     let justificationText = "";
     let hintIndex = 0;
+    let completed = false;
     const requiresJustification = manifest.difficulty_band === "challenge" && interactionMode !== "guided_practice";
 
     function emit(method, payload) {
@@ -324,12 +325,16 @@ function renderActivityHtml(manifest: ActivityManifest): string {
       hintIndex += 1;
     });
 
-    document.getElementById("complete").addEventListener("click", () => {
+    const completeButton = document.getElementById("complete");
+    completeButton.addEventListener("click", () => {
+      if (completed) return;
       if (requiresJustification && justificationText.trim().length < 8) {
         document.getElementById("feedback").textContent = "Explica brevemente tu decision antes de completar.";
         return;
       }
-      reportComplete({ score: computeScore(), total: answers.length, completed_at: new Date().toISOString() });
+      completed = true;
+      completeButton.disabled = true;
+      reportComplete({ score_unit: "count", score: computeScore(), total: answers.length, completed_at: new Date().toISOString() });
       document.getElementById("feedback").textContent = "Actividad completada. Gracias.";
     });
   </script>

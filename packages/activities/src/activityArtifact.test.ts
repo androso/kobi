@@ -70,7 +70,9 @@ describe("activity artifact contracts", () => {
       expect(result.artifact.status).toBe("verified");
       expect(result.artifact.evidence[0].objective_code).toBe("L7.4.2");
       expect(candidate.bundle_html).toContain('<textarea id="response"');
-      expect(candidate.bundle_html).toContain("score: computeScore(), total: answers.length");
+      expect(candidate.bundle_html).toContain('score_unit: "count", score: computeScore(), total: answers.length');
+      expect(candidate.bundle_html).toContain("if (completed) return");
+      expect(candidate.bundle_html).toContain("completeButton.disabled = true");
       expect(candidate.bundle_html).not.toContain("const correct = selected.size > 0");
       expect(candidate.bundle_html).not.toContain("preview-assignment");
       expect(candidate.bundle_html).not.toContain("assignment_id:");
@@ -124,6 +126,24 @@ describe("activity artifact contracts", () => {
     expect(plan.mechanic).toBe("source_check_desk");
     expect(plan.band_requirements.support).toContain("Menos opciones");
     expect(plan.band_requirements.challenge).toContain("Justificacion");
+  });
+
+  it("rejects newly generated bundles that omit explicit completion score units", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+      activitySetId: "set-score-contract",
+    });
+
+    const result = verifyActivityArtifact({
+      ...candidate,
+      bundle_html: candidate.bundle_html.replaceAll("score_unit", "scoreUnit"),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("bundle is missing SDK hook: score_unit");
   });
 
   it("keeps legacy manifests readable while rejecting invalid family/mechanic combinations", () => {
@@ -253,10 +273,12 @@ describe("activity artifact contracts", () => {
       );
 
     expect(authorizeComplete({ score: 2 }).ok).toBe(false);
-    expect(authorizeComplete({ score: 2, total: 1 }).ok).toBe(false);
-    expect(authorizeComplete({ score: 0, total: 0 }).ok).toBe(false);
-    expect(authorizeComplete({ score: 0.75 }).ok).toBe(true);
-    expect(authorizeComplete({ score: 2, total: 4 }).ok).toBe(true);
+    expect(authorizeComplete({ score_unit: "count", score: 2, total: 1 }).ok).toBe(false);
+    expect(authorizeComplete({ score_unit: "count", score: 0, total: 0 }).ok).toBe(false);
+    expect(authorizeComplete({ score_unit: "count", score: 0.75, total: 4 }).ok).toBe(false);
+    expect(authorizeComplete({ score_unit: "normalized", score: 0.75, total: 4 }).ok).toBe(false);
+    expect(authorizeComplete({ score_unit: "normalized", score: 0.75 }).ok).toBe(true);
+    expect(authorizeComplete({ score_unit: "count", score: 2, total: 4 }).ok).toBe(true);
   });
 
   it("rejects telemetry with spoofed assignment ids or rate-limit violations", () => {
@@ -267,6 +289,7 @@ describe("activity artifact contracts", () => {
         method: "reportComplete",
         payload: {
           assignment_id: "other-assignment",
+          score_unit: "count",
           score: 1,
           total: 1,
         },

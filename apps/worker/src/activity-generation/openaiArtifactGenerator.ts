@@ -648,6 +648,11 @@ export function buildActivityGenerationPrompt(input: BuildPromptInput): string {
           "reportHint",
           "reportComplete",
         ],
+        completion_score_contract: {
+          count: "Send score_unit=count with an integer correct-count score and a positive integer total.",
+          normalized: "Send score_unit=normalized with a 0-1 score and omit total.",
+          submit_once: "Disable or guard the completion control after the first valid reportComplete call.",
+        },
       },
       lesson_state: minimizeLessonState(input.lessonState),
       session_context: minimizeSessionContext(input.sessionContext),
@@ -681,6 +686,7 @@ export function buildActivityReviewPrompt(
         "Support, core, and challenge preserve one mechanic while increasing cognitive demand.",
         "Hints scaffold without revealing answers.",
         "The interaction is usable, self-contained, and does not request sensitive information.",
+        "reportComplete declares score_unit, follows the count-or-normalized score contract, and cannot be submitted twice.",
       ],
       lesson_state: minimizeLessonState(input.lessonState),
       curriculum_matches: input.curriculumMatches.map((match) => ({

@@ -134,6 +134,7 @@ function checkSdkTelemetry(bundleHtml: string): string[] {
     "reportAttempt",
     "reportHint",
     "reportComplete",
+    "score_unit",
   ];
 
   return requiredStrings

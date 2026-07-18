@@ -188,6 +188,7 @@ export async function handleStudentActivityMessage(input: {
     await input.store.markAssignmentComplete({
       assignmentId: authorized.event.assignment_id,
       score: normalizeCompletionScore(
+        authorized.event.payload.score_unit,
         authorized.event.payload.score,
         authorized.event.payload.total,
       ),
@@ -198,23 +199,33 @@ export async function handleStudentActivityMessage(input: {
   return authorized;
 }
 
-export function normalizeCompletionScore(score: unknown, total: unknown): number {
+export function normalizeCompletionScore(scoreUnit: unknown, score: unknown, total: unknown): number {
+  if (scoreUnit !== undefined && scoreUnit !== "count" && scoreUnit !== "normalized") {
+    throw new Error("Completion score unit must be count or normalized.");
+  }
+  const resolvedScoreUnit = scoreUnit ?? (total === undefined ? "normalized" : "count");
   if (typeof score !== "number" || !Number.isFinite(score) || score < 0) {
     throw new Error("Completion score must be a non-negative finite number.");
   }
 
-  if (total === undefined) {
+  if (resolvedScoreUnit === "normalized") {
+    if (total !== undefined) {
+      throw new Error("Completion total must be omitted for normalized scores.");
+    }
     if (score > 1) {
-      throw new Error("Completion score must be normalized when total is omitted.");
+      throw new Error("Normalized completion score must be between 0 and 1.");
     }
     return score;
   }
 
-  if (typeof total !== "number" || !Number.isFinite(total) || total <= 0) {
-    throw new Error("Completion total must be a positive finite number.");
+  if (!Number.isInteger(score)) {
+    throw new Error("Count completion score must be an integer.");
+  }
+  if (typeof total !== "number" || !Number.isInteger(total) || total <= 0) {
+    throw new Error("Count completion total must be a positive integer.");
   }
   if (score > total) {
-    throw new Error("Completion score cannot exceed total.");
+    throw new Error("Count completion score cannot exceed total.");
   }
 
   return score / total;

@@ -300,6 +300,7 @@ describe("artifact delivery bridge", () => {
         type: "event",
         method: "reportComplete",
         payload: {
+          score_unit: "count",
           score: 2,
           total: 4,
           completed_at: "2026-07-15T12:00:00.000Z",
@@ -315,17 +316,21 @@ describe("artifact delivery bridge", () => {
     });
   });
 
-  it("accepts total-less normalized scores and rejects ambiguous raw counts", () => {
-    expect(normalizeCompletionScore(0.75, undefined)).toBe(0.75);
-    expect(normalizeCompletionScore(2, 4)).toBe(0.5);
-    expect(() => normalizeCompletionScore(2, undefined)).toThrow(
-      "Completion score must be normalized when total is omitted.",
+  it("normalizes explicitly declared count and normalized score units", () => {
+    expect(normalizeCompletionScore("normalized", 0.75, undefined)).toBe(0.75);
+    expect(normalizeCompletionScore("count", 2, 4)).toBe(0.5);
+    expect(normalizeCompletionScore(undefined, 2, 4)).toBe(0.5);
+    expect(() => normalizeCompletionScore("normalized", 0.75, 4)).toThrow(
+      "Completion total must be omitted for normalized scores.",
     );
-    expect(() => normalizeCompletionScore(2, 1)).toThrow(
-      "Completion score cannot exceed total.",
+    expect(() => normalizeCompletionScore("count", 0.75, 4)).toThrow(
+      "Count completion score must be an integer.",
     );
-    expect(() => normalizeCompletionScore(0, 0)).toThrow(
-      "Completion total must be a positive finite number.",
+    expect(() => normalizeCompletionScore("count", 2, 1)).toThrow(
+      "Count completion score cannot exceed total.",
+    );
+    expect(() => normalizeCompletionScore("count", 0, 0)).toThrow(
+      "Count completion total must be a positive integer.",
     );
   });
 });

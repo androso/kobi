@@ -305,6 +305,9 @@ describe("OpenAI activity artifact generator", () => {
     expect(parsed.creativity_brief.avoid).toContain(
       "generic multiple-choice unless it is clearly the strongest fit",
     );
+    expect(parsed.sdk.completion_score_contract.count).toContain("score_unit=count");
+    expect(parsed.sdk.completion_score_contract.normalized).toContain("score_unit=normalized");
+    expect(parsed.sdk.completion_score_contract.submit_once).toContain("first valid reportComplete");
   });
 
   it("uses the supplied adapted game plan in the generation prompt", () => {
@@ -391,7 +394,7 @@ function validHtml(title: string, prompt: string) {
     function reportComplete(payload) { emit("reportComplete", payload); }
     document.getElementById("attempt").addEventListener("click", () => reportAttempt({ assignment_id: "assignment-1", item_index: 0, correct: true }));
     document.getElementById("hint").addEventListener("click", () => reportHint({ assignment_id: "assignment-1", item_index: 0, hint_index: 0 }));
-    document.getElementById("complete").addEventListener("click", () => reportComplete({ assignment_id: "assignment-1", score: 1, total: 1 }));
+    document.getElementById("complete").addEventListener("click", () => reportComplete({ assignment_id: "assignment-1", score_unit: "count", score: 1, total: 1 }));
   </script>
 </body>
 </html>`;
