@@ -93,7 +93,10 @@ begin
     or new.score is distinct from old.score
     or new.completed_at is distinct from old.completed_at
   ) then
-    raise check_violation using message = 'Completed assignments are immutable';
+    -- Republishing uses an upsert that proposes status = 'assigned' for every
+    -- student. Preserve the completed row atomically instead of aborting the
+    -- entire roster update; returning OLD also prevents activity/band changes.
+    return old;
   end if;
 
   if new.status = 'completed' and old.status is distinct from 'completed' then
