@@ -1,0 +1,36 @@
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+const migration = readFileSync(new URL("../migrations/0011_session_reports.sql", import.meta.url), "utf8");
+const normalized = migration.replace(/\s+/g, " ").toLowerCase();
+
+test("repository and report stats use the canonical assignment score", () => {
+  assert.match(normalized, /avg\(normalized_score\) filter \(where status = 'completed'\)/);
+  assert.match(normalized, /least\(greatest\(a\.score, 0\), 1\)/);
+  assert.doesNotMatch(normalized, /e\.type = 'complete'/);
+  assert.doesNotMatch(normalized, /payload->'total'/);
+});
+
+test("session close uses the database clock and reports only ended sessions", () => {
+  assert.match(normalized, /set status = 'ended', ended_at = now\(\)/);
+  assert.match(normalized, /and s\.status = 'ended' and s\.ended_at is not null/);
+});
+
+test("report telemetry casts are guarded by JSON types", () => {
+  assert.match(normalized, /jsonb_typeof\(e\.payload->'correct'\) = 'boolean'.*\(e\.payload->>'correct'\)::boolean = false/);
+  assert.match(normalized, /jsonb_typeof\(e\.payload->'item_index'\) = 'number'.*\(e\.payload->>'item_index'\)::integer/);
+  assert.doesNotMatch(normalized, /coalesce\(\(e\.payload->>'correct'\)::boolean/);
+});
+
+test("difficult items stay scoped to the delivered activity variant", () => {
+  assert.match(normalized, /select a\.session_id, a\.activity_id, a\.candidate_id, a\.variant, attempt\.item_index/);
+  assert.match(normalized, /group by a\.session_id, a\.activity_id, a\.candidate_id, a\.variant, attempt\.item_index/);
+  assert.match(normalized, /'activity_id', d\.activity_id, 'candidate_id', d\.candidate_id, 'variant', d\.variant, 'item_index', d\.item_index/);
+});
+
+test("report realtime sources are readable only by the owning teacher", () => {
+  assert.match(normalized, /alter table segments enable row level security/);
+  assert.match(normalized, /create policy segments_teacher_select on segments for select to authenticated using \( exists \( select 1 from sessions join classes on classes\.id = sessions\.class_id where sessions\.id = segments\.session_id and classes\.teacher_id = auth\.uid\(\)/);
+  assert.match(normalized, /create policy events_teacher_select on events for select to authenticated using \( exists \( select 1 from assignments join sessions on sessions\.id = assignments\.session_id join classes on classes\.id = sessions\.class_id where assignments\.id = events\.assignment_id and classes\.teacher_id = auth\.uid\(\)/);
+});
