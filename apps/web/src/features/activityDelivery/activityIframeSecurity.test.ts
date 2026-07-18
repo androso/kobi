@@ -15,8 +15,10 @@ describe("activity iframe security policy", () => {
 
   it("injects a restrictive CSP into the delivered document head", () => {
     const secured = secureActivitySrcDoc("<!doctype html><html><head></head><body></body></html>");
+    const parsed = new DOMParser().parseFromString(secured, "text/html");
 
-    expect(secured).toContain(`<head><meta http-equiv="Content-Security-Policy"`);
+    expect(secured).toMatch(/^<meta http-equiv="Content-Security-Policy"/);
+    expect(parsed.head.querySelector('meta[http-equiv="Content-Security-Policy"]')).not.toBeNull();
     expect(activityIframeCsp).toContain("default-src 'none'");
     expect(activityIframeCsp).toContain("connect-src 'none'");
     expect(activityIframeCsp).toContain("form-action 'none'");
@@ -34,5 +36,14 @@ describe("activity iframe security policy", () => {
     expect(parsed.head.querySelector('meta[http-equiv="Content-Security-Policy"]')).not.toBeNull();
     expect(parsed.head.querySelector("title")?.textContent).toBe("Actividad");
     expect(parsed.body.textContent).toContain('<head>');
+  });
+
+  it("does not parse untrusted resources in the parent document", () => {
+    const bundle = '<!doctype html><html><head></head><body><img src="https://evil.test/pixel"></body></html>';
+    const secured = secureActivitySrcDoc(bundle);
+
+    expect(secured).toBe(
+      `<meta http-equiv="Content-Security-Policy" content="${activityIframeCsp}">${bundle}`,
+    );
   });
 });

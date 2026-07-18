@@ -57,6 +57,17 @@ const forbiddenElements = new Map([
 ]);
 
 const urlAttributes = new Set(["action", "data", "formaction", "href", "poster", "src", "srcset"]);
+const svgUrlPresentationAttributes = new Set([
+  "clip-path",
+  "fill",
+  "filter",
+  "marker",
+  "marker-end",
+  "marker-mid",
+  "marker-start",
+  "mask",
+  "stroke",
+]);
 
 interface HtmlNode {
   nodeName: string;
@@ -185,6 +196,9 @@ function inspectHtmlNodeTree(root: HtmlNode, inspectScriptMarkup: boolean): stri
       if (name === "style" && /(?:@import|url\s*\()/i.test(attribute.value)) {
         errors.push("CSS URL references are forbidden");
       }
+      if (svgUrlPresentationAttributes.has(name) && isUnsafeSvgPresentationUrl(attribute.value)) {
+        errors.push("SVG URL references are forbidden");
+      }
     }
 
     if (tagName === "style" && /(?:@import|url\s*\()/i.test(textContent(node))) {
@@ -197,6 +211,11 @@ function inspectHtmlNodeTree(root: HtmlNode, inspectScriptMarkup: boolean): stri
   });
 
   return errors;
+}
+
+function isUnsafeSvgPresentationUrl(value: string): boolean {
+  if (!/url\s*\(/i.test(value)) return false;
+  return !/^url\s*\(\s*(["']?)#[A-Za-z_][\w:.-]*\1\s*\)$/i.test(value.trim());
 }
 
 function checkScriptMarkup(scriptNode: HtmlNode): string[] {

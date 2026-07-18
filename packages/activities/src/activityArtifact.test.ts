@@ -105,6 +105,7 @@ describe("activity artifact contracts", () => {
     ["relative srcset candidate", "<img srcset='asset.png 1x'>", "external or executable URL references are forbidden"],
     ["style import", "<style>@import './theme.css';</style>", "CSS URL references are forbidden"],
     ["style URL", "<style>body { background: url(asset.png); }</style>", "CSS URL references are forbidden"],
+    ["SVG filter URL", "<svg><rect filter='url(./filters.svg#blur)'></rect></svg>", "SVG URL references are forbidden"],
     ["eval", "<script>eval('reportComplete()')</script>", "eval is forbidden"],
     ["Function constructor", "<script>new Function('reportComplete()')()</script>", "Function constructor is forbidden"],
     ["artifact CSP", "<meta http-equiv='Content-Security-Policy' content=\"script-src 'none'\">", "artifact-controlled CSP meta tags are forbidden"],
@@ -145,6 +146,22 @@ describe("activity artifact contracts", () => {
     candidate.bundle_html = candidate.bundle_html.replace(
       "</body>",
       '<img src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" srcset="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs= 1x" alt="Punto"> </body>',
+    );
+
+    expect(verifyActivityArtifact(candidate).ok).toBe(true);
+  });
+
+  it("allows local SVG presentation references", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+      activitySetId: "set-svg-fragment",
+    });
+    candidate.bundle_html = candidate.bundle_html.replace(
+      "</body>",
+      '<svg><defs><filter id="blur"></filter></defs><rect filter="url(#blur)"></rect></svg></body>',
     );
 
     expect(verifyActivityArtifact(candidate).ok).toBe(true);
