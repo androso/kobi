@@ -39,8 +39,12 @@ export const activities = pgTable(
     timesUsed: integer("times_used").notNull().default(0),
     avgScore: real("avg_score"),
     parentId: uuid("parent_id").references((): AnyPgColumn => activities.id),
+    activitySetId: text("activity_set_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("activities_status_idx").on(table.status)],
+  (table) => [
+    index("activities_status_idx").on(table.status),
+    index("activities_activity_set_idx").on(table.activitySetId),
+  ],
 );

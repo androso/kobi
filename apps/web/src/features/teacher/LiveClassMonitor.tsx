@@ -17,6 +17,10 @@ import {
   type StudentForAssignment,
 } from "../activityDelivery/artifactDelivery";
 import {
+  activityIframeSecurityAttributes,
+  secureActivitySrcDoc,
+} from "../activityDelivery/activityIframeSecurity";
+import {
   createBackendSession,
   getPrerecordedAudioPath,
   getRecordingSource,
@@ -28,6 +32,7 @@ import {
   uploadAudioChunk,
 } from "../../lib/audioApi";
 import { decodePrerecordedAudio } from "../../lib/prerecordedAudio";
+import { closeTeacherSession } from "./sessionReports";
 
 const AUDIO_CHUNK_MS = 15_000;
 const PRERECORDED_UPLOAD_INTERVAL_MS = 2_100;
@@ -109,6 +114,7 @@ function formatTime(seconds: number) {
 function TranscriptPlayerCard({
   elapsed,
   isRecording,
+  isStopping,
   onToggleRecording,
   uploadStatus,
   recordingError,
@@ -116,6 +122,7 @@ function TranscriptPlayerCard({
 }: {
   elapsed: number;
   isRecording: boolean;
+  isStopping: boolean;
   onToggleRecording: () => void;
   uploadStatus: string | null;
   recordingError: string | null;
@@ -194,8 +201,9 @@ function TranscriptPlayerCard({
 
         {isRecording ? (
           <button
+            disabled={isStopping}
             onClick={onToggleRecording}
-            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-3 font-bold text-sm transition-all hover:shadow-lg active:scale-95"
+            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-3 font-bold text-sm transition-all hover:shadow-lg active:scale-95 disabled:cursor-wait disabled:opacity-70"
             type="button"
           >
             <StopCircle className="h-5 w-5" />
@@ -203,12 +211,13 @@ function TranscriptPlayerCard({
           </button>
         ) : (
           <button
+            disabled={isStopping}
             onClick={onToggleRecording}
-            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-2.5 font-bold text-sm transition-all hover:shadow-lg active:scale-95"
+            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-2.5 font-bold text-sm transition-all hover:shadow-lg active:scale-95 disabled:cursor-wait disabled:opacity-70"
             type="button"
           >
             <Circle className="h-4 w-4 fill-white" />
-            Iniciar grabación
+            {isStopping ? "Finalizando sesión..." : "Iniciar grabación"}
           </button>
         )}
       </div>
@@ -590,9 +599,9 @@ function ActivityCandidatePanel({
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
             {selectedCandidate ? (
               <iframe
+                {...activityIframeSecurityAttributes}
                 className="h-[560px] w-full bg-white"
-                sandbox="allow-scripts"
-                srcDoc={selectedCandidate.bundleHtml}
+                srcDoc={secureActivitySrcDoc(selectedCandidate.bundleHtml)}
                 title={`Previsualizacion ${selectedCandidate.manifest.title}`}
               />
             ) : (
@@ -733,6 +742,7 @@ export function LiveClassMonitor() {
   const recordingSource = getRecordingSource();
   const [elapsed, setElapsed] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
+  const [isStoppingSession, setIsStoppingSession] = useState(false);
   const [completedSessionClassId, setCompletedSessionClassId] = useState<string | null>(null);
   const [activitySessionId, setActivitySessionId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<DeliveryCandidate[]>([]);
@@ -773,11 +783,13 @@ export function LiveClassMonitor() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const apiSessionIdRef = useRef<string | null>(null);
+  const completedSessionIdRef = useRef<string | null>(null);
+  const activityContextVersionRef = useRef(0);
+  const pendingAudioUploadsRef = useRef<Set<Promise<void>>>(new Set());
   const chunkIndexRef = useRef(0);
   const recordingStartedAtRef = useRef<number | null>(null);
   const rotationTimerRef = useRef<number | null>(null);
   const isStoppingRef = useRef(false);
-  const pendingAudioUploadsRef = useRef<Set<Promise<void>>>(new Set());
   const prerecordedAbortRef = useRef<AbortController | null>(null);
   const prerecordedTranscriptionWaitRef = useRef<Promise<void> | null>(null);
   const prerecordedStartingRef = useRef(false);
@@ -883,10 +895,8 @@ export function LiveClassMonitor() {
     return sessionId;
   }
 
-  async function processPrerecordedAudio() {
-    setElapsed(0);
-    setUploadedChunkCount(0);
-    setRecordingError(null);
+  function resetActivityStateForNewRecording() {
+    activityContextVersionRef.current += 1;
     setActivitySessionId(null);
     setCandidates([]);
     setSelectedCandidateId(null);
@@ -898,6 +908,13 @@ export function LiveClassMonitor() {
     setPublishStatus(null);
     setLatestLessonState(null);
     latestLessonStateRef.current = null;
+  }
+
+  async function processPrerecordedAudio() {
+    resetActivityStateForNewRecording();
+    setElapsed(0);
+    setUploadedChunkCount(0);
+    setRecordingError(null);
     prerecordedAcceptedChunksRef.current = 0;
     prerecordedDurationSecondsRef.current = 0;
     finalizingSessionRef.current = false;
@@ -1015,9 +1032,14 @@ export function LiveClassMonitor() {
     throw new Error("La transcripcion no termino dentro del tiempo esperado.");
   }
 
-  async function handleAudioChunk(audio: Blob) {
-    const sessionId = apiSessionIdRef.current;
-    const startedAt = recordingStartedAtRef.current;
+  async function handleAudioChunk(
+    audio: Blob,
+    recordingContext: { sessionId: string | null; startedAt: number | null } = {
+      sessionId: apiSessionIdRef.current,
+      startedAt: recordingStartedAtRef.current,
+    },
+  ) {
+    const { sessionId, startedAt } = recordingContext;
     if (audio.size === 0) return;
 
     if (!sessionId || !startedAt) {
@@ -1062,8 +1084,12 @@ export function LiveClassMonitor() {
   // detenerse (sin timeslice). Encadenamos instancias para poder subir
   // fragmentos periodicos que sean decodificables de forma independiente.
   function attachRecorderHandlers(recorder: MediaRecorder) {
+    const recordingContext = {
+      sessionId: apiSessionIdRef.current,
+      startedAt: recordingStartedAtRef.current,
+    };
     recorder.ondataavailable = (event) => {
-      const upload = handleAudioChunk(event.data);
+      const upload = handleAudioChunk(event.data, recordingContext);
       pendingAudioUploadsRef.current.add(upload);
       void upload.finally(() => pendingAudioUploadsRef.current.delete(upload));
     };
@@ -1098,7 +1124,7 @@ export function LiveClassMonitor() {
   async function startRecording() {
     finalizingSessionRef.current = false;
     if (recordingSource === "prerecorded") {
-      if (prerecordedStartingRef.current || isRecording) return;
+      if (prerecordedStartingRef.current || isRecording || isStoppingSession) return;
       prerecordedStartingRef.current = true;
       try {
         await processPrerecordedAudio();
@@ -1108,6 +1134,7 @@ export function LiveClassMonitor() {
       return;
     }
 
+    resetActivityStateForNewRecording();
     setElapsed(0);
     setUploadedChunkCount(0);
     setRecordingError(null);
@@ -1167,19 +1194,40 @@ export function LiveClassMonitor() {
   async function finalizeSession(durationSeconds: number, generateActivity: boolean) {
     if (finalizingSessionRef.current) return;
     finalizingSessionRef.current = true;
-    setIsRecording(false);
-    await stopBrowserRecording();
-    setUploadStatus(apiSessionIdRef.current ? "Sesion enviada al worker" : uploadStatus);
+    setIsStoppingSession(true);
+    const closedSessionId = apiSessionIdRef.current;
+    try {
+      await stopBrowserRecording();
+      setIsRecording(false);
+      setUploadStatus(closedSessionId ? "Sesion enviada al worker" : uploadStatus);
 
-    if (activeClass) {
-      const session = buildSession(activeClass, durationSeconds, latestLessonStateRef.current);
-      setCompletedSessionClassId(activeClass.id);
-      endSession(session); // guarda en historial + limpia el monitor activo
-      if (generateActivity) void handleGenerateActivity();
+      if (activeClass) {
+        let sessionClosed = false;
+        if (closedSessionId && supabase) {
+          try {
+            await closeTeacherSession(supabase, closedSessionId);
+            sessionClosed = true;
+          } catch (error) {
+            setRecordingError(error instanceof Error ? error.message : "No se pudo cerrar la sesion.");
+          }
+        }
+        const session = buildSession(activeClass, durationSeconds, latestLessonStateRef.current);
+        setCompletedSessionClassId(activeClass.id);
+        endSession(session); // guarda en historial + limpia el monitor activo
+        if (generateActivity) void handleGenerateActivity(closedSessionId);
+        if (sessionClosed) {
+          completedSessionIdRef.current = closedSessionId;
+          apiSessionIdRef.current = null;
+          setApiSessionId(null);
+        }
+      }
+    } finally {
+      setIsStoppingSession(false);
     }
   }
 
   async function stopRecording() {
+    if (finalizingSessionRef.current) return;
     if (recordingSource === "prerecorded") {
       const activeTranscriptionWait = prerecordedTranscriptionWaitRef.current;
       if (!activeTranscriptionWait) {
@@ -1227,6 +1275,7 @@ export function LiveClassMonitor() {
   }
 
   function toggleRecording() {
+    if (isStoppingSession) return;
     if (isRecording) {
       void stopRecording();
       return;
@@ -1237,7 +1286,9 @@ export function LiveClassMonitor() {
   async function handleManualLessonState(input: { topic: string; objective?: string }) {
     setRecordingError(null);
     try {
-      const sessionId = await ensureBackendSession();
+      const sessionId = apiSessionIdRef.current
+        ?? completedSessionIdRef.current
+        ?? await ensureBackendSession();
       await submitManualLessonState({ sessionId, ...input });
       setActivityBlockedReason(null);
       setUploadStatus("Tema manual guardado como lesson_state");
@@ -1250,6 +1301,7 @@ export function LiveClassMonitor() {
   async function loadCandidatesForSession(
     sessionId: string,
     options: { allowEmpty: boolean } = { allowEmpty: false },
+    contextVersion = activityContextVersionRef.current,
   ) {
     if (!activeClass || !deliveryStore) {
       if (!options.allowEmpty) {
@@ -1260,11 +1312,14 @@ export function LiveClassMonitor() {
 
     const readyCandidates = await deliveryStore.listCandidates(sessionId);
     if (readyCandidates.length === 0) {
-      if (!options.allowEmpty) setActivityError("Todavia no hay actividades listas para esta sesion.");
+      if (contextVersion === activityContextVersionRef.current && !options.allowEmpty) {
+        setActivityError("Todavia no hay actividades listas para esta sesion.");
+      }
       return false;
     }
 
     const loadedStudents = await deliveryStore.listStudents(activeClass.id);
+    if (contextVersion !== activityContextVersionRef.current) return false;
     setActivitySessionId(sessionId);
     setCandidates(readyCandidates);
     setStudents(loadedStudents);
@@ -1277,7 +1332,7 @@ export function LiveClassMonitor() {
     return true;
   }
 
-  async function handleGenerateActivity() {
+  async function handleGenerateActivity(sessionIdOverride?: string | null) {
     if (activityBlockedReason) {
       setActivityError(activityBlockedReason);
       return;
@@ -1291,22 +1346,31 @@ export function LiveClassMonitor() {
     setActivityLoading(true);
     setActivityError(null);
     setPublishStatus(null);
+    const contextVersion = activityContextVersionRef.current;
 
     try {
-      if (apiSessionIdRef.current && await loadCandidatesForSession(apiSessionIdRef.current, { allowEmpty: true })) {
+      const sessionId = sessionIdOverride ?? apiSessionIdRef.current ?? completedSessionIdRef.current;
+      if (sessionId && await loadCandidatesForSession(sessionId, { allowEmpty: true }, contextVersion)) {
         return;
       }
 
-      const sessionId = apiSessionIdRef.current ?? (await ensureBackendSession());
-      await requestActivityCandidates({ sessionId });
+      if (contextVersion !== activityContextVersionRef.current) return;
 
-      if (!await loadCandidatesForSession(sessionId)) {
+      const ensuredSessionId = sessionId ?? (await ensureBackendSession());
+      await requestActivityCandidates({ sessionId: ensuredSessionId });
+
+      if (!await loadCandidatesForSession(ensuredSessionId, { allowEmpty: false }, contextVersion)
+        && contextVersion === activityContextVersionRef.current) {
         setActivityError("La generacion termino, pero aun no hay actividades listas para esta sesion.");
       }
     } catch (error) {
-      setActivityError(error instanceof Error ? error.message : "No se pudo generar la actividad.");
+      if (contextVersion === activityContextVersionRef.current) {
+        setActivityError(error instanceof Error ? error.message : "No se pudo generar la actividad.");
+      }
     } finally {
-      setActivityLoading(false);
+      if (contextVersion === activityContextVersionRef.current) {
+        setActivityLoading(false);
+      }
     }
   }
 
@@ -1389,6 +1453,7 @@ export function LiveClassMonitor() {
                   <TranscriptPlayerCard
                     elapsed={elapsed}
                     isRecording={isRecording}
+                    isStopping={isStoppingSession}
                     onToggleRecording={toggleRecording}
                     uploadStatus={uploadStatus}
                     recordingError={recordingError}
@@ -1436,7 +1501,7 @@ export function LiveClassMonitor() {
       <SuggestedActivityFAB
         disabled={Boolean(activityBlockedReason)}
         loading={activityLoading}
-        onGenerate={handleGenerateActivity}
+        onGenerate={() => void handleGenerateActivity()}
       />
     </main>
   );

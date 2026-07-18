@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type PgBoss from "pg-boss";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildLessonState } from "@kobi/ai-core";
-import { registerBuildLessonStateJob } from "./buildLessonState.job.js";
+import { registerBuildLessonStateJob, resolveLessonStateClassContext } from "./buildLessonState.job.js";
 
 vi.mock("@kobi/ai-core", () => ({
   buildLessonState: vi.fn(),
@@ -41,6 +41,7 @@ describe("buildLessonState job", () => {
     });
     expect(buildLessonState).toHaveBeenCalledWith({
       transcriptText: "Primer fragmento nuevo\nSegundo fragmento nuevo",
+      classContext: { grade: 2, subject: "matemática" },
       previousLessonState: { topic: "Introduccion" },
     });
   });
@@ -112,6 +113,7 @@ describe("buildLessonState job", () => {
 
     expect(buildLessonState).toHaveBeenCalledWith({
       transcriptText: "Contenido recuperado",
+      classContext: { grade: 2, subject: "matemática" },
       previousLessonState: null,
     });
     expect(insertedSegments[0]).toMatchObject({
@@ -141,7 +143,10 @@ describe("buildLessonState job", () => {
 function fakeBoss() {
   return {
     work: vi.fn(async (_name, _options, handler) => {
-      await handler([{ id: "job-1", data: { sessionId: "session-1" } }]);
+      await handler([{
+        id: "job-1",
+        data: { sessionId: "session-1", grade: 2, subject: "matemática" },
+      }]);
       return "worker-1";
     }),
   } as unknown as PgBoss;
@@ -226,3 +231,23 @@ function fakeSupabase({
     },
   } as unknown as SupabaseClient;
 }
+
+describe("resolveLessonStateClassContext", () => {
+  it("uses explicit class context without querying Supabase", async () => {
+    const from = () => {
+      throw new Error("should not query");
+    };
+    await expect(resolveLessonStateClassContext({ from } as never, { sessionId: "session-1", grade: 2, subject: "matemática" }))
+      .resolves.toEqual({ grade: 2, subject: "matemática" });
+  });
+
+  it("resolves missing context from the session class", async () => {
+    const query = {
+      select: () => query,
+      eq: () => query,
+      maybeSingle: async () => ({ data: { classes: { grade: 2, subject: "matemática" } }, error: null }),
+    };
+    await expect(resolveLessonStateClassContext({ from: () => query } as never, { sessionId: "session-1" }))
+      .resolves.toEqual({ grade: 2, subject: "matemática" });
+  });
+});

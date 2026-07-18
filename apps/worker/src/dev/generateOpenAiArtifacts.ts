@@ -4,6 +4,7 @@ import { config } from "dotenv";
 import { buildActivitySessionContext, verifyActivityArtifact } from "@kobi/activities/server";
 import {
   createOpenAiActivityDraftClient,
+  createActivitySetId,
   generateOpenAiActivityCandidates,
 } from "../activity-generation/openaiArtifactGenerator.js";
 import { staticActivityContext } from "./staticActivityContext.js";
@@ -41,6 +42,7 @@ async function main() {
       sessionContext,
       curriculumMatches: staticActivityContext.curriculumMatches,
       bands: ["support", "core", "challenge"],
+      activitySetId: createActivitySetId(),
     },
     {
       client: createOpenAiActivityDraftClient(apiKey),

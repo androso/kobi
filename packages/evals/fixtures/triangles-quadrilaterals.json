@@ -1,0 +1,23 @@
+{
+  "id": "grade-2-triangles-quadrilaterals-001",
+  "classContext": { "grade": 2, "subject": "matemática", "unit": "U3" },
+  "sanitizedTranscript": "Docente: Hoy trabajaremos triángulos y cuadriláteros. Un triángulo tiene tres segmentos y un cuadrilátero tiene cuatro. [estudiante]: El triángulo tiene tres lados. Docente: Ahora identificamos lados, vértices y ángulos; los lados se colorean de celeste y los vértices de rojo.",
+  "expectedConcepts": ["triángulos", "cuadriláteros", "tres segmentos", "cuatro segmentos", "lados", "vértices", "ángulos"],
+  "relevantPages": [
+    { "page": 90, "relevance": "primary" },
+    { "page": 92, "relevance": "primary" },
+    { "page": 91, "relevance": "supporting" },
+    { "page": 93, "relevance": "supporting" }
+  ],
+  "goldLessonState": {
+    "topic": "Triángulos y cuadriláteros",
+    "objective_guess": "Identificar triángulos y cuadriláteros y reconocer sus lados, vértices y ángulos.",
+    "key_terms": ["triángulo", "cuadrilátero", "segmentos", "lados", "vértices", "ángulos"],
+    "transcript_summary": "La docente explica que los triángulos tienen tres segmentos y los cuadriláteros cuatro; después identifica lados, vértices y ángulos mediante colores.",
+    "confidence": 0.96,
+    "evidence": {
+      "quoted_phrases": ["Un triángulo tiene tres segmentos", "identificamos lados, vértices y ángulos"],
+      "reason": "El contenido y las actividades mencionan explícitamente ambas figuras y sus elementos."
+    }
+  }
+}

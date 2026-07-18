@@ -4,9 +4,14 @@ import {
   activityManifestSchema,
   activityVerifierScoresSchema,
   buildActivitySessionContext,
+  createAdaptedGamePlan,
   createActivityArtifactCandidates,
+  createUnguessableBundleRef,
+  createGamePlan,
   hasMaterialContextChange,
-  pickReusableActivitiesByBand,
+  pickAdaptationSource,
+  pickCoherentActivitySet,
+  pickLegacyActivitySet,
   rankActivityRepositoryRows,
   verifyActivityArtifact,
   type ActivityArtifact,
@@ -18,11 +23,15 @@ import {
   type SessionContext,
 } from "@kobi/activities/server";
 import { lessonStateSchema, type LessonState } from "@kobi/ai-core";
-import type { CurriculumMatch } from "@kobi/curriculum";
+import {
+  buildCurriculumQueryText,
+  retrieveCurriculumMatches,
+  type CurriculumMatch,
+} from "@kobi/curriculum";
 import type PgBoss from "pg-boss";
 import {
   createOpenAiActivityGeneratorFromEnv,
-  createUnguessableBundleRef,
+  createActivitySetId,
   type GenerateOpenAiActivityCandidatesInput,
   type OpenAiActivityGenerationResult,
 } from "../activity-generation/openaiArtifactGenerator.js";
@@ -31,6 +40,13 @@ export interface GenerateActivityArtifactsJobData {
   sessionId: string;
   lessonState: LessonState;
   curriculumMatches: CurriculumMatch[];
+  curriculumFallback?: {
+    classId?: string;
+    grade: number;
+    subject: string;
+    unit?: string;
+    sourceIds?: string[];
+  };
 }
 
 const activityBands: DifficultyBand[] = ["support", "core", "challenge"];
@@ -42,7 +58,13 @@ export type OpenAiActivityCandidateGenerator = (
 export interface GenerateActivityArtifactsJobOptions {
   openAiGenerator?: OpenAiActivityCandidateGenerator | null;
   maxOpenAiGenerationsPerSession?: number;
+  curriculumRetriever?: CurriculumRetriever;
 }
+
+export type CurriculumRetriever = (
+  supabase: SupabaseClient,
+  input: { queryText: string; grade: number; subject: string; unit?: string; sourceIds?: string[] },
+) => Promise<CurriculumMatch[]>;
 
 export interface GenerateActivityArtifactsJobResult {
   inserted: number;
@@ -91,7 +113,12 @@ export function registerGenerateActivityArtifactsJob(
         jobId: job.id,
       });
       try {
-        const result = await runGenerateActivityArtifactsJob(supabase, job.data, {
+        const currentData = await refreshGenerateActivityArtifactsJobData(
+          supabase,
+          job.data,
+          options.curriculumRetriever,
+        );
+        const result = await runGenerateActivityArtifactsJob(supabase, currentData, {
           openAiGenerator,
           maxOpenAiGenerationsPerSession,
         });
@@ -114,16 +141,60 @@ export function registerGenerateActivityArtifactsJob(
   );
 }
 
+/**
+ * Queue singleton policies serialize jobs but do not replace an older created
+ * job. Refresh the lesson and curriculum at execution time so a delayed job
+ * cannot publish candidates for a stale checkpoint payload.
+ */
+export async function refreshGenerateActivityArtifactsJobData(
+  supabase: SupabaseClient,
+  data: GenerateActivityArtifactsJobData,
+  curriculumRetriever: CurriculumRetriever = retrieveCurriculumMatches,
+): Promise<GenerateActivityArtifactsJobData> {
+  const lessonStates = await loadLessonStates(supabase, data.sessionId, data.lessonState);
+  const lessonState = lessonStates.at(-1) ?? data.lessonState;
+  const retrievalContext = data.curriculumFallback ?? contextFromCurriculumMatches(data.curriculumMatches);
+
+  if (!retrievalContext) {
+    return { ...data, lessonState };
+  }
+
+  const curriculumMatches = await curriculumRetriever(supabase, {
+    queryText: buildCurriculumQueryText(lessonState),
+    grade: retrievalContext.grade,
+    subject: retrievalContext.subject,
+    unit: retrievalContext.unit,
+    sourceIds: retrievalContext.sourceIds,
+  });
+
+  return { ...data, lessonState, curriculumMatches };
+}
+
+function contextFromCurriculumMatches(
+  matches: CurriculumMatch[],
+): GenerateActivityArtifactsJobData["curriculumFallback"] | undefined {
+  const first = matches[0];
+  return first
+    ? { grade: first.grade, subject: first.subject, unit: first.unit }
+    : undefined;
+}
+
 export async function runGenerateActivityArtifactsJob(
   supabase: SupabaseClient,
   data: GenerateActivityArtifactsJobData,
   options: GenerateActivityArtifactsJobOptions = {},
 ): Promise<GenerateActivityArtifactsJobResult> {
   const { sessionId, lessonState } = data;
-  const curriculumMatches = data.curriculumMatches;
+  const curriculumMatches =
+    data.curriculumMatches.length > 0
+      ? data.curriculumMatches
+      : data.curriculumFallback
+        ? [buildFallbackCurriculumMatch(lessonState, data.curriculumFallback)]
+        : [];
   console.info("[activityGenerator] planning candidates", {
     sessionId,
     curriculumMatchCount: curriculumMatches.length,
+    usingLessonStateFallback: data.curriculumMatches.length === 0 && curriculumMatches.length > 0,
   });
   if (curriculumMatches.length === 0) {
     console.warn("[activityGenerator] skipped because no curriculum matches were found", { sessionId });
@@ -140,26 +211,41 @@ export async function runGenerateActivityArtifactsJob(
 
   const repositoryRows = await loadRepositoryRows(supabase, curriculumMatches);
   const rankedRows = rankActivityRepositoryRows(repositoryRows, curriculumMatches, sessionContext);
-  const reusableByBand = pickReusableActivitiesByBand(rankedRows);
-  const parentIdByBand = parentIdsByBand(rankedRows);
-  const missingBands = activityBands.filter((band) => !reusableByBand[band]);
+  const coherentSet = pickCoherentActivitySet(rankedRows);
+  const legacySet = coherentSet.length === 0 ? pickLegacyActivitySet(rankedRows) : [];
+  const reusableSet = coherentSet.length === 3 ? coherentSet : legacySet;
+  const adaptationSource = reusableSet.length === 0 ? pickAdaptationSource(rankedRows) : [];
+  const adapting = adaptationSource.length > 0;
+  const parentIdByBand = adapting ? parentIdsByBand(adaptationSource) : {};
+  const missingBands = reusableSet.length === 3 ? [] : activityBands;
+  const activitySetId = createActivitySetId();
+  const gamePlan = adapting
+    ? createAdaptedGamePlan(sessionContext, curriculumMatches, adaptationSource[0].manifest)
+    : createGamePlan(sessionContext, curriculumMatches);
+  const generatedSource: "adapted" | "new" = adapting ? "adapted" : "new";
   const staticCandidates = createActivityArtifactCandidates({
     lessonState,
     sessionContext,
     curriculumMatches,
+    activitySetId,
+    gamePlan,
   }).map((candidate) => withServerDerivedCandidateFields(candidate, parentIdByBand));
 
   let openAiCandidates: ActivityArtifactCandidate[] = [];
   if (missingBands.length > 0 && options.openAiGenerator) {
-    const generatedCount = await countGeneratedSessionCandidates(supabase, sessionId);
     const maxOpenAiGenerationsPerSession = options.maxOpenAiGenerationsPerSession ?? 3;
+    const generationAttemptClaimed = await claimOpenAiGenerationAttempt(
+      supabase,
+      sessionId,
+      activitySetId,
+      maxOpenAiGenerationsPerSession,
+    );
 
-    if (generatedCount < maxOpenAiGenerationsPerSession) {
+    if (generationAttemptClaimed) {
       try {
         console.info("[activityGenerator] requesting OpenAI candidates", {
           sessionId,
           bands: missingBands,
-          generatedCount,
           generationLimit: maxOpenAiGenerationsPerSession,
         });
         const result = await options.openAiGenerator({
@@ -168,6 +254,8 @@ export async function runGenerateActivityArtifactsJob(
           curriculumMatches,
           bands: missingBands,
           parentIdByBand,
+          activitySetId,
+          gamePlan,
         });
         openAiCandidates = result.candidates;
         console.info("[activityGenerator] OpenAI candidates received", {
@@ -186,7 +274,7 @@ export async function runGenerateActivityArtifactsJob(
   }
 
   const planned = planSessionArtifacts({
-    reusableByBand,
+    reusableSet,
     openAiCandidates,
     staticCandidates,
   });
@@ -211,7 +299,7 @@ export async function runGenerateActivityArtifactsJob(
     }
 
     if (!artifact.candidate) continue;
-    const persisted = await persistGeneratedArtifact(supabase, artifact.candidate);
+    const persisted = await persistGeneratedArtifact(supabase, artifact.candidate, generatedSource);
 
     candidatesToInsert.push({
       sessionId,
@@ -228,11 +316,7 @@ export async function runGenerateActivityArtifactsJob(
     return { inserted: 0, reused: 0, generated: 0, skippedReason: "no persisted candidates" };
   }
 
-  await markSessionCandidatesSuperseded(supabase, sessionId);
-
-  for (const candidate of candidatesToInsert) {
-    await insertSessionCandidate(supabase, candidate);
-  }
+  await replaceSessionCandidates(supabase, sessionId, candidatesToInsert);
 
   const result = {
     inserted: candidatesToInsert.length,
@@ -244,39 +328,46 @@ export async function runGenerateActivityArtifactsJob(
   return result;
 }
 
+function buildFallbackCurriculumMatch(
+  lessonState: LessonState,
+  context: NonNullable<GenerateActivityArtifactsJobData["curriculumFallback"]>,
+): CurriculumMatch {
+  return {
+    objective_code: "UNMAPPED_LESSON_STATE",
+    unit: context.unit ?? "unmapped",
+    grade: context.grade,
+    subject: context.subject,
+    text: [
+      "No curriculum objective matched this lesson.",
+      `Live lesson topic: ${lessonState.topic}.`,
+      lessonState.objective_guess ? `Inferred objective: ${lessonState.objective_guess}.` : null,
+      `Lesson summary: ${lessonState.transcript_summary}`,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    similarity: 0,
+  };
+}
 
 export function planSessionArtifacts(input: {
-  reusableByBand: Partial<Record<DifficultyBand, RankedActivityRepositoryRow>>;
+  reusableSet: RankedActivityRepositoryRow[];
   openAiCandidates: ActivityArtifactCandidate[];
   staticCandidates: ActivityArtifactCandidate[];
 }): PlannedSessionArtifact[] {
-  const planned: PlannedSessionArtifact[] = [];
-
-  for (const band of activityBands) {
-    const reusable = input.reusableByBand[band];
-    if (reusable) {
-      planned.push({ band, reusable });
-      continue;
-    }
-
-    const openAiCandidate = input.openAiCandidates.find(
-      (artifact) => artifact.manifest.difficulty_band === band,
-    );
-    if (openAiCandidate) {
-      planned.push({ band, candidate: openAiCandidate, origin: "openai" });
-      continue;
-    }
-
-    const candidate = input.staticCandidates.find(
-      (artifact) => artifact.manifest.difficulty_band === band,
-    );
-
-    if (candidate) {
-      planned.push({ band, candidate, origin: "static" });
-    }
+  const reusable = completeRepositorySet(input.reusableSet);
+  if (reusable) {
+    return activityBands.map((band) => ({ band, reusable: reusable.get(band) }));
   }
 
-  return planned;
+  const openAi = completeCandidateSet(input.openAiCandidates);
+  if (openAi) {
+    return activityBands.map((band) => ({ band, candidate: openAi.get(band), origin: "openai" }));
+  }
+
+  const fallback = completeCandidateSet(input.staticCandidates);
+  return fallback
+    ? activityBands.map((band) => ({ band, candidate: fallback.get(band), origin: "static" }))
+    : [];
 }
 
 async function loadLessonStates(
@@ -316,7 +407,7 @@ async function loadRepositoryRows(
   const { data, error } = await supabase
     .from("activities")
     .select(
-      "id, contract_version, manifest, bundle_ref, evidence, parent_id, status, source, verifier_scores, times_used, avg_score",
+      "id, contract_version, manifest, bundle_ref, evidence, parent_id, activity_set_id, status, source, verifier_scores, times_used, avg_score",
     )
     .eq("status", "verified")
     .overlaps("curriculum_tags", objectiveCodes)
@@ -357,22 +448,23 @@ async function hasCurrentReadyCandidates(
   return previousContext ? !hasMaterialContextChange(previousContext, nextContext) : false;
 }
 
-async function countGeneratedSessionCandidates(
+async function claimOpenAiGenerationAttempt(
   supabase: SupabaseClient,
   sessionId: string,
-): Promise<number> {
-  const { data, error } = await supabase
-    .from("session_activity_candidates")
-    .select("id, activities!inner(bundle_ref)")
-    .eq("session_id", sessionId)
-    .eq("source", "new")
-    .like("activities.bundle_ref", "artifact-bundles/openai/%");
+  activitySetId: string,
+  limit: number,
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc("claim_openai_activity_generation_attempt", {
+    input_session_id: sessionId,
+    input_activity_set_id: activitySetId,
+    input_limit: limit,
+  });
 
   if (error) {
-    throw new Error(`generateActivityArtifacts job: failed to count generated candidates: ${error.message}`);
+    throw new Error(`generateActivityArtifacts job: failed to claim OpenAI attempt: ${error.message}`);
   }
 
-  return data?.length ?? 0;
+  return data === true;
 }
 
 function parseSessionContext(value: unknown): SessionContext | null {
@@ -410,10 +502,11 @@ function parentIdsByBand(
   rankedRows: RankedActivityRepositoryRow[],
 ): Partial<Record<DifficultyBand, string | null>> {
   const parents: Partial<Record<DifficultyBand, string | null>> = {};
+  const fallbackParent = rankedRows[0]?.id ?? null;
 
   for (const band of activityBands) {
     const nearestParent = rankedRows.find((row) => row.manifest.difficulty_band === band);
-    parents[band] = nearestParent && nearestParent.rank_score >= 0.45 ? nearestParent.id : null;
+    parents[band] = nearestParent?.id ?? fallbackParent;
   }
 
   return parents;
@@ -427,29 +520,19 @@ function withServerDerivedCandidateFields(
     ...candidate,
     bundle_ref: createUnguessableBundleRef("static"),
     parent_id: parentIdByBand[candidate.manifest.difficulty_band] ?? null,
+    activity_set_id: candidate.activity_set_id ?? `set-${createUnguessableBundleRef("static").split("/")[1]}`,
     status: "candidate",
   };
-}
-
-async function markSessionCandidatesSuperseded(supabase: SupabaseClient, sessionId: string) {
-  const { error } = await supabase
-    .from("session_activity_candidates")
-    .update({ status: "superseded" })
-    .eq("session_id", sessionId)
-    .eq("status", "ready");
-
-  if (error) {
-    throw new Error(`generateActivityArtifacts job: failed to supersede candidates: ${error.message}`);
-  }
 }
 
 async function persistGeneratedArtifact(
   supabase: SupabaseClient,
   candidate: ActivityArtifactCandidate,
+  source: "adapted" | "new",
 ): Promise<{
   id: string;
   artifact: ActivityArtifact;
-  source: "new";
+  source: "adapted" | "new";
 }> {
   const result = verifyActivityArtifact(candidate);
   if (!result.ok) {
@@ -480,8 +563,9 @@ async function persistGeneratedArtifact(
         bundle_ref: result.artifact.bundle_ref,
         evidence: result.artifact.evidence,
         parent_id: result.artifact.parent_id,
+        activity_set_id: result.artifact.activity_set_id,
         status: result.artifact.status,
-        source: "new",
+        source,
         verifier_scores: result.artifact.verifier_scores,
         curriculum_tags: result.artifact.evidence.map((evidence) => evidence.objective_code),
       },
@@ -497,27 +581,70 @@ async function persistGeneratedArtifact(
   return {
     id: String(data.id),
     artifact: result.artifact,
-    source: "new",
+    source,
   };
 }
 
-async function insertSessionCandidate(
+function completeRepositorySet(
+  rows: RankedActivityRepositoryRow[],
+): Map<DifficultyBand, RankedActivityRepositoryRow> | null {
+  if (rows.length === 0) return null;
+  const activitySetIds = rows.map((row) => row.activity_set_id);
+  const namedSetIds = activitySetIds.filter((activitySetId): activitySetId is string => Boolean(activitySetId));
+  const isNamedSet = namedSetIds.length === rows.length && new Set(namedSetIds).size === 1;
+  const isLegacySet = namedSetIds.length === 0 && new Set(rows.map(repositoryLegacyCoherenceKey)).size === 1;
+  if (!isNamedSet && !isLegacySet) return null;
+
+  const byBand = new Map(rows.map((row) => [row.manifest.difficulty_band, row] as const));
+  return activityBands.every((band) => byBand.has(band)) ? byBand : null;
+}
+
+function repositoryLegacyCoherenceKey(row: RankedActivityRepositoryRow): string {
+  const { grade, subject, unit, objective } = row.manifest.curriculum;
+  return JSON.stringify([
+    grade,
+    subject,
+    unit,
+    objective,
+    row.manifest.family,
+    row.manifest.mechanic ?? null,
+  ]);
+}
+
+function completeCandidateSet(
+  candidates: ActivityArtifactCandidate[],
+): Map<DifficultyBand, ActivityArtifactCandidate> | null {
+  if (candidates.length === 0) return null;
+  const activitySetIds = candidates.map((candidate) => candidate.activity_set_id);
+  if (activitySetIds.some((activitySetId) => !activitySetId)) return null;
+  const setIds = new Set(activitySetIds);
+  if (setIds.size !== 1) return null;
+
+  const byBand = new Map(
+    candidates.map((candidate) => [candidate.manifest.difficulty_band, candidate] as const),
+  );
+  return activityBands.every((band) => byBand.has(band)) ? byBand : null;
+}
+
+async function replaceSessionCandidates(
   supabase: SupabaseClient,
-  input: SessionCandidateToInsert,
+  sessionId: string,
+  candidates: SessionCandidateToInsert[],
 ) {
-  const { error } = await supabase.from("session_activity_candidates").insert({
-    session_id: input.sessionId,
-    activity_id: input.activityId,
-    difficulty_band: input.band,
-    status: "ready",
-    source: input.source,
-    context_snapshot: input.sessionContext,
-    evidence: input.artifact.evidence,
-    verifier_scores: input.artifact.verifier_scores,
+  const { error } = await supabase.rpc("replace_session_activity_candidates", {
+    input_session_id: sessionId,
+    input_candidates: candidates.map((candidate) => ({
+      activity_id: candidate.activityId,
+      difficulty_band: candidate.band,
+      source: candidate.source,
+      context_snapshot: candidate.sessionContext,
+      evidence: candidate.artifact.evidence,
+      verifier_scores: candidate.artifact.verifier_scores,
+    })),
   });
 
   if (error) {
-    throw new Error(`generateActivityArtifacts job: failed to store session candidate: ${error.message}`);
+    throw new Error(`generateActivityArtifacts job: failed to replace session candidates: ${error.message}`);
   }
 }
 
@@ -531,7 +658,7 @@ function parseRepositoryRow(row: Record<string, unknown>): ActivityRepositoryRow
   if (row.status !== "verified") return null;
 
   const source =
-    row.source === "seeded" || row.source === "reused" || row.source === "new"
+    row.source === "seeded" || row.source === "reused" || row.source === "adapted" || row.source === "new"
       ? row.source
       : "new";
 
@@ -542,6 +669,7 @@ function parseRepositoryRow(row: Record<string, unknown>): ActivityRepositoryRow
     bundle_ref: String(row.bundle_ref),
     evidence: evidence.data,
     parent_id: typeof row.parent_id === "string" ? row.parent_id : null,
+    activity_set_id: typeof row.activity_set_id === "string" ? row.activity_set_id : null,
     status: "verified",
     source,
     verifier_scores: verifierScores.data,

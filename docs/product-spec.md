@@ -79,7 +79,7 @@ Teachers create, reset, deactivate, and reactivate durable student accounts from
 
 - A teacher creates a class and runs a session on real audio with no developer help
 - Support/core/challenge curriculum-grounded artifacts appear ≤ 60s after "Hora de actividad"
-- Each artifact shows evidence: objective + textbook section + reused/new
+- Each artifact shows concise evidence: objective + textbook section
 - 3+ student devices receive approved banded artifacts and complete them
 - The session report reflects real telemetry, not seeds
 - Kill the wifi mid-session → manual fallback still completes the loop
@@ -93,4 +93,6 @@ The v0 families are:
 1. **Match/classify** — vocabulary or concept grouping.
 2. **Sequence/order** — process, story, or argument steps.
 3. **Guided practice/checkpoint** — short applied questions with hints and feedback.
+
+Newly generated or adapted artifacts are planned as one coherent support/core/challenge game set before HTML generation. The manifest records a concrete mechanic plus learning-design and visual-theme metadata while legacy v1 artifacts without those optional fields remain readable.
 Seeded runnable artifacts use the same contract and verifier path as generated artifacts. If generation or verification fails, the D6 fallback is a pre-seeded verified artifact, not a manifest-only renderer.

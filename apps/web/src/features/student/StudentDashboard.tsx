@@ -14,6 +14,10 @@ import {
   SupabaseActivityDeliveryStore,
   type StudentAssignment,
 } from "../activityDelivery/artifactDelivery";
+import {
+  activityIframeSecurityAttributes,
+  secureActivitySrcDoc,
+} from "../activityDelivery/activityIframeSecurity";
 import { StudentSidebar, type StudentSidebarNavItem } from "./components/StudentSidebar";
 import { LessonList } from "./components/LessonList";
 import { ProgressDashboard } from "./components/ProgressDashboard";
@@ -339,11 +343,10 @@ export function StudentDashboard() {
                         </div>
                         <div className="bg-slate-50 p-3 sm:p-5">
                           <iframe
+                            {...activityIframeSecurityAttributes}
                             className="h-[70vh] min-h-[520px] w-full rounded-2xl border border-slate-200 bg-white"
                             ref={iframeRef}
-                            referrerPolicy="no-referrer"
-                            sandbox="allow-scripts"
-                            srcDoc={assignment.bundleHtml}
+                            srcDoc={secureActivitySrcDoc(assignment.bundleHtml)}
                             title={assignment.manifest.title}
                           />
                         </div>

@@ -19,5 +19,5 @@ apps/web/public/local-audio/**
 # Raw curriculum PDFs and extraction scratch files are large local inputs.
 evals/tmp/curriculum/**
 content/tmp/curriculum/**
-packages/evals/tmp/curriculum/**
+packages/evals/tmp/**
 *.pdf

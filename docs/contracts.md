@@ -44,6 +44,8 @@ Produced by the planner/generator, checked by the verifier, stored in `activitie
 
 For the teacher approval flow, Area C writes support/core/challenge rows to `session_activity_candidates`. The teacher may assign selected students to support or challenge; every unselected student receives the approved core candidate by default. Area E records the final per-student delivery in `assignments.variant`.
 
+Repository reuse prefers complete strong sets sharing one `activity_set_id`. Pre-set-id verified rows remain eligible only when a complete support/core/challenge trio clears the strong-reuse threshold and shares the exact grade, subject, unit, objective, family, and mechanic signature; unrelated legacy interactions are never combined into a fallback set.
+
 Assignment rows are only valid for approved candidates from the same session: `assignments.candidate_id`, `activity_id`, and `variant` must match the selected `session_activity_candidates` row, and the assigned student must belong to the session's class.
 
 ```json
@@ -86,26 +88,33 @@ Assignment rows are only valid for approved candidates from the same session: `a
     }
   ],
   "parent_id": null,
+  "activity_set_id": "set-...",
   "status": "verified"
 }
 ```
 
 ### Artifact bundle rules
 
-- Bundle format is one self-contained `index.html` with inline CSS/JS.
+- Bundle format is one self-contained `index.html` with inline CSS/JS; URL-bearing subresource attributes must not point to relative paths or external schemes, while `data:` URLs remain available for inline assets such as images.
 - No external imports, assets, network calls, credentialed requests, storage APIs, top navigation, popups, or same-origin assumptions.
-- Allowed families are `match_classify`, `sequence_order`, and `guided_practice`.
+- Allowed families are `match_classify`, `sequence_order`, and `guided_practice`; newly generated/adapted manifests also include a valid `mechanic`, `learning_design`, and `visual_theme`.
 - `content.items[]` is required and must include prompts plus answer keys; hints default to an empty list when omitted.
 - `bundle_ref` must be unguessable and authorized by assignment/class before iframe delivery.
+- Bundle references are generated from cryptographically random UUIDs; they are opaque locators, not bearer credentials, and possession never bypasses assignment/class authorization.
 - Students authenticate with teacher-managed username/password accounts. Delivery derives the student mapping from `auth.uid()`; assignment reads, dismissals, telemetry, and completion are restricted to that mapping by RLS. `join_class_by_code` and browser-held student bearer tokens are not part of the active contract.
+- Authenticated teachers can read candidates, artifacts, bundles, assignments, and telemetry only through sessions in classes they own. They may approve candidates and publish assignments, while candidate/artifact/bundle creation and telemetry insertion remain worker/service-role or student-owned operations.
 - The parent injects only manifest, assignment id, and difficulty band. It must not inject Supabase credentials, student PII, raw transcript, or broader class/session context.
 - The iframe communicates only through the Activity SDK over `postMessage`: `getManifest()`, `getBand()`, `reportAttempt()`, `reportHint()`, and `reportComplete()`.
 - The parent validates message source, schema, assignment authorization, method allowlist, payload size, and telemetry rate limits.
+- The host injects a restrictive CSP and renders both teacher previews and student delivery with `sandbox="allow-scripts"` and `referrerPolicy="no-referrer"`; the artifact receives no same-origin, form, navigation, popup, frame, or network capability.
 - Teacher edits are manifest-only and must pass schema validation, escaped rendering, forbidden field checks, and manifest/code consistency smoke validation.
+
+The structural verifier and its JavaScript source checks are generation-time defense-in-depth. They reject known unsafe artifact shapes and improve diagnostics, but parser acceptance is not a security boundary by itself; runtime isolation comes from the host sandbox/CSP plus assignment-scoped delivery authorization.
 
 ## 4. Telemetry event
 
 Written to the `events` table on every student interaction; read back for the live monitor and session report.
+Completion events declare `score_unit` as either `count` or `normalized`, while `assignments.score` stores the normalized 0–1 outcome used for repository ranking. Count scores require integer `score` and `total` values and cannot exceed `total`; normalized scores require a 0–1 `score` and omit `total`. Existing `activity-sdk/v1` bundles without `score_unit` retain the legacy convention where the presence of `total` means count, but every newly verified bundle must declare the unit. Once an assignment reaches `completed`, its status, score, and completion timestamp are immutable so repository outcome aggregation runs exactly once; later roster republishes preserve that completed row rather than resetting or rejecting it. Generated activity UIs must disable completion after their first valid submission so duplicate clicks do not attempt a second immutable update.
 
 ```json
 {
@@ -114,6 +123,8 @@ Written to the `events` table on every student interaction; read back for the li
   "ts": "2026-07-04T20:00:00Z"
 }
 ```
+
+Session reports are database-derived through `list_teacher_session_reports`: the RPC checks teacher/class ownership and combines sessions, lesson-state segments, assignments, and events into bounded, paginated results. Assignments are the canonical completion/score record, so late corrections replace the stored outcome; event rows supply hints and difficult-item counts. Each difficult-item entry is scoped by `candidate_id`, `activity_id`, `variant`, and `item_index`, so support/core/challenge prompts never collapse into one count. Realtime report refreshes observe `segments` and `events` through teacher-owned SELECT policies, so changed rows are delivered only for the authenticated teacher's classes. Activity `times_used` and `avg_score` are recomputed idempotently from current, non-dismissed assignments.
 
 ## 5. `curriculum_match` (Area B -> Area C)
 

@@ -444,7 +444,7 @@ describe("App", () => {
     expect(screen.queryByText(/próxima sesión/i)).not.toBeInTheDocument();
   });
 
-  it("navigates to the previous classes section and opens the summary modal", async () => {
+  it("navigates to persisted previous classes without rendering demo history", async () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={["/"]}>
@@ -463,25 +463,13 @@ describe("App", () => {
     await user.click(sidebarLink);
 
     // Verify we are on the Historial de Clases page
-    expect(screen.getByText("Historial de Sesiones")).toBeInTheDocument();
-    expect(screen.getAllByText("Ciencias 4to Grado - Sección A")[0]).toBeInTheDocument();
+    expect(screen.getByText(/Historial de sesiones/i)).toBeInTheDocument();
+    expect(screen.queryByText("Ciencias 4to Grado - Sección A")).not.toBeInTheDocument();
     expect(screen.queryByText(/participación promedio/i)).not.toBeInTheDocument();
     expect(screen.queryByText("64%")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /filtrar por fecha/i })).not.toBeInTheDocument();
 
-    // Click on "Ver detalles" button of the first session
-    const detailsButtons = screen.getAllByRole("button", { name: /ver detalles/i });
-    await user.click(detailsButtons[0]);
-
-    // Verify unified details modal opens with its contents
-    expect(screen.getByText("Detalles de la Clase")).toBeInTheDocument();
-    expect(screen.getByText(/Se discutieron los niveles tróficos/i)).toBeInTheDocument();
-    expect(screen.getAllByText("Carlos M.:")[0]).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /reproducir/i })).not.toBeInTheDocument();
-
-    // Close modal
-    await user.click(screen.getByRole("button", { name: /entendido/i }));
-    expect(screen.queryByText("Detalles de la Clase")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /ver detalles/i })).not.toBeInTheDocument();
   });
 
   it("opens the teacher help center from the sidebar", async () => {

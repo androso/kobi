@@ -1,14 +1,49 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { buildLessonState, type LessonState } from "@kobi/ai-core";
+import { buildLessonState, type LessonState, type LessonStateClassContext } from "@kobi/ai-core";
 import type PgBoss from "pg-boss";
 import { silentLessonState } from "../silentLessonState.js";
 
 export interface BuildLessonStateJobData {
   sessionId: string;
-  /** TODO(Area D): pull these from the session's class record once that table exists. */
   grade?: number;
   subject?: string;
   unit?: string;
+}
+
+export async function resolveLessonStateClassContext(
+  supabase: SupabaseClient,
+  data: BuildLessonStateJobData,
+): Promise<LessonStateClassContext> {
+  const explicitGrade = data.grade;
+  const explicitSubject = data.subject?.trim();
+  if (explicitGrade != null && (!Number.isInteger(explicitGrade) || explicitGrade <= 0)) {
+    throw new Error("buildLessonState job: grade must be a positive integer");
+  }
+  if (data.subject != null && !explicitSubject) {
+    throw new Error("buildLessonState job: subject must not be empty");
+  }
+  if (explicitGrade != null && explicitSubject) return { grade: explicitGrade, subject: explicitSubject };
+
+  const { data: session, error } = await supabase
+    .from("sessions")
+    .select("classes(grade,subject)")
+    .eq("id", data.sessionId)
+    .maybeSingle();
+  if (error) throw new Error(`buildLessonState job: failed to load class context: ${error.message}`);
+
+  const rawClass = Array.isArray(session?.classes) ? session.classes[0] : session?.classes;
+  if (!rawClass || typeof rawClass !== "object") {
+    throw new Error("buildLessonState job: session has no class context");
+  }
+  const classContext = rawClass as Record<string, unknown>;
+  const classGrade = Number(classContext.grade);
+  const classSubject = typeof classContext.subject === "string" ? classContext.subject.trim() : "";
+  const grade = explicitGrade ?? classGrade;
+  const subject = explicitSubject ?? classSubject;
+  if (!Number.isInteger(grade) || grade <= 0 || !subject) {
+    throw new Error("buildLessonState job: class grade and subject are required");
+  }
+  return { grade, subject };
 }
 
 /**
@@ -46,12 +81,12 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
           .order("created_at", { ascending: false })
           .limit(1)
           .maybeSingle();
-
         if (previousSegmentError) {
-          throw new Error(
-            `buildLessonState job: failed to load previous segment: ${previousSegmentError.message}`,
-          );
+          throw new Error(`buildLessonState job: failed to load previous segment: ${previousSegmentError.message}`);
         }
+
+        stage = "loading class context";
+        const classContext = await resolveLessonStateClassContext(supabase, job.data);
 
         stage = "loading lesson-state progress";
         const { data: progressSegment, error: progressSegmentError } = await supabase
@@ -142,6 +177,7 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
             });
             lessonState = await buildLessonState({
               transcriptText,
+              classContext,
               previousLessonState: currentLessonState,
             });
           } else {

@@ -194,7 +194,49 @@ describe("worker API", () => {
         sessionId: SESSION_ID,
         lessonState,
         curriculumMatches: [curriculumMatch],
+        curriculumFallback: {
+          classId: CLASS_ID,
+          grade: 7,
+          subject: "lenguaje",
+          unit: "U4",
+          sourceIds: [],
+        },
       },
+      { openAiGenerator: expect.any(Function) },
+    );
+  });
+
+  it("passes class fallback context when manual curriculum retrieval is empty", async () => {
+    process.env.OPENAI_API_KEY = "sk-test";
+    process.env.OPENAI_ACTIVITY_MODEL = "gpt-activity-test";
+    const supabase = fakeSupabase();
+    supabase.segments.push({
+      session_id: SESSION_ID,
+      lesson_state: lessonState,
+      created_at: "2026-07-07T10:00:00.000Z",
+    });
+
+    const response = await callRoute(
+      `/api/sessions/${SESSION_ID}/activity-candidates`,
+      supabase,
+      fakeBoss(),
+      {},
+    );
+
+    expect(response.statusCode).toBe(201);
+    expect(runGenerateActivityArtifactsJob).toHaveBeenCalledWith(
+      supabase.client,
+      expect.objectContaining({
+        sessionId: SESSION_ID,
+        curriculumMatches: [],
+        curriculumFallback: {
+          classId: CLASS_ID,
+          grade: 7,
+          subject: "lenguaje",
+          unit: "U4",
+          sourceIds: [],
+        },
+      }),
       { openAiGenerator: expect.any(Function) },
     );
   });
@@ -310,6 +352,7 @@ function fakeSupabase() {
   const sessions: Array<Record<string, unknown>> = [
     {
       id: SESSION_ID,
+      class_id: CLASS_ID,
       classes: { teacher_id: TEACHER_ID, grade: 7, subject: "lenguaje", unit: "U4" },
     },
   ];

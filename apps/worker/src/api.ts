@@ -637,6 +637,7 @@ async function createActivityCandidates(
       sessionId,
       lessonState,
       curriculumMatches,
+      curriculumFallback: { ...classContext, sourceIds },
     }, {
       openAiGenerator,
     });
@@ -715,7 +716,7 @@ function normalizeClassContext(value: unknown): { grade: number; subject: string
 }
 /**
  * Sanitizes a curriculum filename to be safe for storage keys.
- *  
+ *
  * @param filename - Raw filename or path (e.g. "Libro de texto 7.° grado-0.pdf")
  * @returns Sanitized filename safe for storage keys
  * @example
