@@ -2,9 +2,11 @@ import {
   LayoutGrid,
   TrendingUp,
   FolderOpen,
+  Library,
   Plus,
   CircleHelp,
   LogOut,
+  Users,
   type LucideIcon
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -18,6 +20,7 @@ interface SidebarProps {
 
 const teacherNavItems: Array<{ label: string; icon: LucideIcon; path: string }> = [
   { label: "Panel", icon: LayoutGrid, path: "/teacher" },
+  { label: "Biblioteca", icon: Library, path: "/teacher/materials" },
   { label: "Monitoreo en vivo", icon: TrendingUp, path: "/teacher/monitor" },
   { label: "Clases anteriores", icon: FolderOpen, path: "/teacher/repositories" },
 ];
@@ -29,6 +32,8 @@ export function Sidebar({ onOpenCreateClass, onOpenHelp }: SidebarProps) {
   const monitoringClassId = useClassStore((state) => state.monitoringClassId);
   const classes = useClassStore((state) => state.classes);
   const monitoringClass = classes.find((c) => c.id === monitoringClassId) ?? null;
+  const rosterClassId = location.pathname.match(/^\/teacher\/classes\/([^/]+)\/students$/)?.[1];
+  const classroomId = rosterClassId ?? monitoringClassId;
 
   function handleLogout() {
     logout();
@@ -91,6 +96,14 @@ export function Sidebar({ onOpenCreateClass, onOpenHelp }: SidebarProps) {
               />
             );
           })}
+          {classroomId ? (
+            <PortalNavButton
+              active={location.pathname === `/teacher/classes/${classroomId}/students`}
+              icon={Users}
+              label="Estudiantes"
+              onClick={() => navigate(`/teacher/classes/${classroomId}/students`)}
+            />
+          ) : null}
         </nav>
       </div>
 

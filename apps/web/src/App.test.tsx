@@ -6,6 +6,38 @@ import { MemoryRouter } from "react-router-dom";
 import { vi } from "vitest";
 
 vi.mock("./lib/supabase", () => ({ supabase: null }));
+vi.mock("./lib/curriculumApi", () => ({
+  curriculumApi: {
+    library: vi.fn(async (classId: string) => ({
+      classContext: { id: classId, grade: 7, subject: "lenguaje", unit: "U4" },
+      selectedSourceIds: ["source-1"],
+      sources: [
+        {
+          id: "source-1",
+          originalFilename: "Comprension-lectora.pdf",
+          sizeBytes: 2048,
+          status: "ready",
+          errorMessage: null,
+          grade: 7,
+          subject: "lenguaje",
+          unit: "U4",
+          pageCount: 8,
+          chunksBuilt: 12,
+          storageDeletedAt: "2026-07-15T10:00:00.000Z",
+          createdAt: "2026-07-15T10:00:00.000Z",
+          updatedAt: "2026-07-15T10:00:00.000Z",
+          isOwner: false,
+          selected: true,
+        },
+      ],
+    })),
+    replaceSelections: vi.fn(async (classId: string, sourceIds: string[]) => ({
+      classId,
+      selectedSourceIds: sourceIds,
+    })),
+    uploadPdf: vi.fn(async () => "source-new"),
+  },
+}));
 
 describe("App", () => {
   beforeEach(() => {
@@ -20,15 +52,14 @@ describe("App", () => {
         useAuthStore.setState({ status: "authenticated", user: { role: "teacher", email, id: "teacher-1", displayName: "Sra. Henderson" } });
         return {};
       },
-      loginStudent: async (code, studentName) => {
-        if (code !== "KOBI7") return { error: "No encontramos una clase con ese codigo." };
+      loginStudent: async (username, password) => {
+        if (username !== "ana-abc123" || password !== "clave123") return { error: "Usuario o contraseña incorrectos." };
         useAuthStore.setState({
           status: "authenticated",
           user: {
             role: "student",
-            studentName,
+            studentName: "Ana",
             studentId: "student-1",
-            studentAccessToken: "student-token-1",
             classId: "class-1",
             className: "Ciencia 4to - Sección A",
             joinCode: "KOBI7",
@@ -81,6 +112,20 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: /olvidaste tu contrase/i })).not.toBeInTheDocument();
   });
 
+  it("renders the shared materials library for teachers", async () => {
+    useAuthStore.setState({
+      status: "authenticated",
+      user: { role: "teacher", id: "teacher-1", displayName: "Sra. Henderson" },
+    });
+
+    renderApp("/teacher/materials");
+
+    expect(await screen.findByRole("heading", { name: /biblioteca de materiales/i })).toBeInTheDocument();
+    expect(await screen.findByText("Comprension-lectora.pdf")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /agregar material/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /guardar seleccion/i })).toBeDisabled();
+  });
+
   it("keeps focused login fields on a dark surface in dark mode", async () => {
     const user = userEvent.setup();
     renderApp();
@@ -126,9 +171,9 @@ describe("App", () => {
     renderApp();
     await user.click(screen.getByRole("button", { name: /estudiante/i }));
 
-    expect(screen.getByPlaceholderText(/c[oó]digo de clase/i)).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/nombre/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /entrar a clase/i })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/tu usuario/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/tu contrase[nñ]a/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^entrar$/i })).toBeInTheDocument();
   });
 
   it("toggles password visibility", async () => {
@@ -260,9 +305,9 @@ describe("App", () => {
 
     renderApp();
     await user.click(screen.getByRole("button", { name: /estudiante/i }));
-    await user.type(screen.getByPlaceholderText(/c[oó]digo de clase/i), "KOBI7");
-    await user.type(screen.getByPlaceholderText(/nombre/i), "Ana");
-    await user.click(screen.getByRole("button", { name: /entrar a clase/i }));
+    await user.type(screen.getByPlaceholderText(/tu usuario/i), "ANA-ABC123");
+    await user.type(screen.getByPlaceholderText(/tu contrase[nñ]a/i), "clave123");
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
 
     expect(await screen.findByText(/no tienes actividades asignadas todav/i)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: /vocabulario en contexto: la noticia/i })).not.toBeInTheDocument();
@@ -272,16 +317,16 @@ describe("App", () => {
     expect(screen.getByText(/aún no hay actividades para mostrar/i)).toBeInTheDocument();
   });
 
-  it("shows an error when a student uses an invalid classroom code", async () => {
+  it("shows a generic error for invalid student credentials", async () => {
     const user = userEvent.setup();
 
     renderApp();
     await user.click(screen.getByRole("button", { name: /estudiante/i }));
-    await user.type(screen.getByPlaceholderText(/c[oó]digo de clase/i), "MALO1");
-    await user.type(screen.getByPlaceholderText(/nombre/i), "Ana");
-    await user.click(screen.getByRole("button", { name: /entrar a clase/i }));
+    await user.type(screen.getByPlaceholderText(/tu usuario/i), "malo-1");
+    await user.type(screen.getByPlaceholderText(/tu contrase[nñ]a/i), "incorrecta");
+    await user.click(screen.getByRole("button", { name: /^entrar$/i }));
 
-    expect(screen.getByText(/no encontramos una clase con ese codigo/i)).toBeInTheDocument();
+    expect(screen.getByText(/usuario o contrase[nñ]a incorrectos/i)).toBeInTheDocument();
   });
 
   it("clears login fields after logout", async () => {

@@ -39,11 +39,23 @@ describe("evaluateCheckpoint job", () => {
         sessionId: "session-1",
         lessonState,
         curriculumMatches,
+        curriculumFallback: {
+          classId: "class-1",
+          grade: 7,
+          subject: "lenguaje",
+          sourceIds: ["source-selected"],
+        },
       }),
     ).toEqual({
       sessionId: "session-1",
       lessonState,
       curriculumMatches,
+      curriculumFallback: {
+        classId: "class-1",
+        grade: 7,
+        subject: "lenguaje",
+        sourceIds: ["source-selected"],
+      },
     });
   });
 
@@ -132,7 +144,9 @@ describe("evaluateCheckpoint job", () => {
       sessionId: "session-1",
       lessonState,
       curriculumMatches,
+      curriculumFallback: expect.objectContaining({ sourceIds: [] }),
     });
+    expect(boss.sent[0].options).toEqual({ singletonKey: "session-1" });
   });
 
   it("uses session class metadata for curriculum retrieval when job data omits it", async () => {

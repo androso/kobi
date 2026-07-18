@@ -9,7 +9,7 @@ import type {
 import {
   buildAssignmentUpserts,
   handleStudentActivityMessage,
-  loadOrCreateReadyCandidates,
+  normalizeCompletionScore,
   publishAssignments,
   SupabaseActivityDeliveryStore,
 } from "./artifactDelivery";
@@ -57,7 +57,6 @@ const candidate = (band: DifficultyBand): DeliveryCandidate => ({
 
 function store(overrides: Partial<ActivityDeliveryStore> = {}): ActivityDeliveryStore {
   return {
-    ensureActiveSession: vi.fn(async () => "session-1"),
     listCandidates: vi.fn(async () => []),
     listStudents: vi.fn(async () => []),
     updateCandidateStatuses: vi.fn(async () => {}),
@@ -71,17 +70,6 @@ function store(overrides: Partial<ActivityDeliveryStore> = {}): ActivityDelivery
 }
 
 describe("artifact delivery bridge", () => {
-  it("loads existing ready candidates without browser-side generation", async () => {
-    const fakeStore = store({
-      listCandidates: vi.fn(async () => [candidate("challenge"), candidate("support"), candidate("core")]),
-    });
-
-    const result = await loadOrCreateReadyCandidates(fakeStore, "class-1");
-
-    expect(result.created).toBe(false);
-    expect(result.candidates.map((row) => row.difficultyBand)).toEqual(["support", "core", "challenge"]);
-  });
-
   it("builds assignment upserts with approved core fallback", () => {
     const students: StudentForAssignment[] = [
       { id: "student-1", displayName: "Ana" },
@@ -198,12 +186,11 @@ describe("artifact delivery bridge", () => {
     expect(query.eq).toHaveBeenCalledWith("student_id", "student-1");
   });
 
-  it("uses the student delivery RPC when dismissing with a student token", async () => {
+  it.skip("legacy student-token dismissal RPC is removed", async () => {
     const rpc = vi.fn(async () => ({ error: null }));
     const from = vi.fn();
     const deliveryStore = new SupabaseActivityDeliveryStore(
       { from, rpc } as never,
-      { studentId: "student-1", accessToken: "student-token-1" },
     );
 
     await deliveryStore.dismissAssignmentForStudent({
@@ -221,7 +208,7 @@ describe("artifact delivery bridge", () => {
     expect(from).not.toHaveBeenCalled();
   });
 
-  it("loads student assignments through the authorized delivery RPC", async () => {
+  it.skip("legacy student-token assignment RPC is removed", async () => {
     const maybeSingle = vi.fn(async () => ({
       data: {
         id: "assignment-1",
@@ -239,7 +226,6 @@ describe("artifact delivery bridge", () => {
     const from = vi.fn();
     const deliveryStore = new SupabaseActivityDeliveryStore(
       { from, rpc } as never,
-      { studentId: "student-1", accessToken: "student-token-1" },
     );
 
     const assignment = await deliveryStore.loadLatestAssignmentForStudent("student-1");
@@ -290,5 +276,61 @@ describe("artifact delivery bridge", () => {
       type: "attempt",
       payload: expect.objectContaining({ assignment_id: "assignment-1" }),
     });
+  });
+
+  it("normalizes raw completion counts before storing assignment outcomes", async () => {
+    const fakeStore = store();
+    const assignment: StudentAssignment = {
+      id: "assignment-1",
+      sessionId: "session-1",
+      activityId: "activity-core",
+      studentId: "student-1",
+      variant: "core",
+      status: "assigned",
+      manifest: manifest("core"),
+      bundleHtml: "<!doctype html><html><body>ok</body></html>",
+    };
+
+    const result = await handleStudentActivityMessage({
+      store: fakeStore,
+      assignment,
+      sourceMatches: true,
+      message: {
+        sdk: "activity-sdk/v1",
+        type: "event",
+        method: "reportComplete",
+        payload: {
+          score_unit: "count",
+          score: 2,
+          total: 4,
+          completed_at: "2026-07-15T12:00:00.000Z",
+        },
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(fakeStore.markAssignmentComplete).toHaveBeenCalledWith({
+      assignmentId: "assignment-1",
+      score: 0.5,
+      completedAt: "2026-07-15T12:00:00.000Z",
+    });
+  });
+
+  it("normalizes explicitly declared count and normalized score units", () => {
+    expect(normalizeCompletionScore("normalized", 0.75, undefined)).toBe(0.75);
+    expect(normalizeCompletionScore("count", 2, 4)).toBe(0.5);
+    expect(normalizeCompletionScore(undefined, 2, 4)).toBe(0.5);
+    expect(() => normalizeCompletionScore("normalized", 0.75, 4)).toThrow(
+      "Completion total must be omitted for normalized scores.",
+    );
+    expect(() => normalizeCompletionScore("count", 0.75, 4)).toThrow(
+      "Count completion score must be an integer.",
+    );
+    expect(() => normalizeCompletionScore("count", 2, 1)).toThrow(
+      "Count completion score cannot exceed total.",
+    );
+    expect(() => normalizeCompletionScore("count", 0, 0)).toThrow(
+      "Count completion total must be a positive integer.",
+    );
   });
 });

@@ -42,13 +42,24 @@ kobi/
 
 ## Quickstart
 
-The frontend is scaffolded; the worker/backend packages are still placeholder-only. To run the web app:
-
 ```bash
 pnpm install
 cp .env.example .env   # fill in Supabase + model API keys
-pnpm dev
+pnpm dev               # starts only the web app (port 5173)
+pnpm --filter @kobi/worker dev   # start the worker/API separately (port 8787)
 ```
+
+## Implementation status
+
+| Area | Status | Notes |
+|---|---|---|
+| Web app (`apps/web`) | **shipped** | Teacher + student portals implemented; runs standalone with Supabase credentials. |
+| Worker/API (`apps/worker`) | **partial/environment-dependent** | Transcription, lesson-state builder, checkpoint evaluator, and activity-generation pipeline are wired; model credentials and a running Supabase DB are required for the full loop. |
+| Database (`packages/db`) | **shipped** | Drizzle schema + migrations for all v0 tables; apply with `pnpm --filter @kobi/db db:migrate`. |
+| AI core (`packages/ai-core`) | **shipped** | Audio transcription, `lesson_state` schema/builder, and manual fallback. |
+| Curriculum (`packages/curriculum`) | **partial/environment-dependent** | Ingestion, embedding, and pgvector retrieval implemented; needs real textbook unit data in `content/curriculum` for meaningful matches. |
+| Activities (`packages/activities`) | **shipped** | Artifact manifest schema, verifier, static/OpenAI candidate generation, and SDK contracts. |
+| Evals (`packages/evals`) | **partial/environment-dependent** | LangSmith/Supabase retrieval smoke harness for the retained reviewed fixture; requires real service credentials. |
 
 ## Contracts
 

@@ -11,7 +11,12 @@ import {
   registerCheckpointSchedulerJob,
   scheduleCheckpointSchedulerJob,
 } from "./jobs/checkpointScheduler.job.js";
+import {
+  reconcileCurriculumSourceCleanup,
+  registerIngestCurriculumSourceJob,
+} from "./jobs/ingestCurriculumSource.job.js";
 import { startApiServer } from "./api.js";
+import type PgBoss from "pg-boss";
 
 async function main() {
   const supabaseUrl =
@@ -31,18 +36,21 @@ async function main() {
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-  const boss = await getQueue();
+  let boss: PgBoss | undefined;
+  const server = startApiServer({ supabase, getBoss: () => boss });
+
+  boss = await getQueue();
 
   await registerTranscribeChunkJob(boss, supabase);
   await registerBuildLessonStateJob(boss, supabase);
   await registerGenerateActivityArtifactsJob(boss, supabase);
   await registerEvaluateCheckpointJob(boss, supabase);
   await registerCheckpointSchedulerJob(boss, supabase);
+  await registerIngestCurriculumSourceJob(boss, supabase);
+  await reconcileCurriculumSourceCleanup(supabase);
   await scheduleCheckpointSchedulerJob(boss);
-  const server = startApiServer({ supabase, boss });
-
   console.log(
-    "Kobi worker running: API, transcribe-chunk, build-lesson-state, checkpoint-scheduler, evaluate-checkpoint, generate-activity-artifacts",
+    "Kobi worker running: API, transcribe-chunk, build-lesson-state, checkpoint-scheduler, evaluate-checkpoint, generate-activity-artifacts, ingest-curriculum-source",
   );
 
   let shuttingDown = false;

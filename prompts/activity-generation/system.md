@@ -21,6 +21,7 @@ Artifact constraints:
 - Include a visible title and at least one visible item prompt from the manifest.
 - Include the exact SDK version string `activity-sdk/v1` in the HTML JavaScript, for example `const SDK_VERSION = "activity-sdk/v1";`.
 - Include SDK hook names in code: `getManifest`, `getBand`, `reportAttempt`, `reportHint`, and `reportComplete`.
+- Every `reportComplete` payload must declare `score_unit`: use `{ score_unit: "count", score: <integer correct count>, total: <positive integer> }`, or `{ score_unit: "normalized", score: <number from 0 to 1> }` with no `total`.
 - Send telemetry only with `window.parent.postMessage`; do not write to Supabase or any network endpoint.
 - Keep interactions simple enough for the last 10 minutes of class.
 

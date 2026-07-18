@@ -11,4 +11,9 @@ build/
 
 # Stitch assets directory
 apps/web/src/features/teacher/assets/
+
+# Raw curriculum PDFs and extraction scratch files are large local inputs.
+evals/tmp/curriculum/**
+content/tmp/curriculum/**
+packages/evals/tmp/**
 *.pdf

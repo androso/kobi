@@ -12,7 +12,7 @@ Gate 0 decision on 2026-07-04: v0 uses self-contained HTML/CSS/JS mini-app artif
 - `CurriculumMatch[]` (from `@kobi/curriculum`'s `retrieveCurriculumMatches()`) — top-3 curriculum chunks grounding the current lesson segment.
 - The activity repository (`activities` table) — for the reuse-vs-generate decision.
 
-**Expected usage flow:** ground a planner call in `lesson_state` + `CurriculumMatch[]`, check the repository for a reusable match first, generate new candidates only when nothing fits, verify each candidate, and produce 3 ranked candidates for the teacher shortlist. The teacher can assign selected students to support/challenge; unselected students receive core by default.
+**Expected usage flow:** ground a planner call in `lesson_state` + `CurriculumMatch[]`, create a shared `GamePlan`, check the repository for a complete reusable set first, adapt medium matches with parent lineage, and generate new candidates only when nothing fits, verify each candidate, and produce 3 ranked candidates for the teacher shortlist. The teacher can assign selected students to support/challenge; unselected students receive core by default.
 
 Three artifact families ship in v0:
 
@@ -27,6 +27,7 @@ Each artifact is a single self-contained `index.html` bundle plus a manifest:
   "contract_version": "activity-artifact/v1",
   "manifest": {
     "family": "guided_practice",
+    "mechanic": "source_check_desk",
     "title": "Practica: La noticia y sus partes",
     "difficulty_band": "core",
     "curriculum": { "grade": 7, "subject": "lenguaje", "unit": "U4", "objective": "L7.4.2" },
@@ -34,6 +35,12 @@ Each artifact is a single self-contained `index.html` bundle plus a manifest:
     "entry": "index.html",
     "sdk_version": "activity-sdk/v1",
     "allowed_capabilities": ["dom", "css"],
+    "learning_design": {
+      "learning_goal": "Practicar la estructura de la noticia.",
+      "interaction_summary": "Mesa de verificacion de fuentes con feedback inmediato.",
+      "success_criteria": ["Completa la interaccion", "Usa evidencia del objetivo"]
+    },
+    "visual_theme": { "scene": "mesa de verificacion", "accent": "azul Kobi" },
     "content": {
       "items": [
         {
@@ -48,6 +55,7 @@ Each artifact is a single self-contained `index.html` bundle plus a manifest:
   "bundle_ref": "artifact-bundles/.../index.html",
   "verifier_scores": {},
   "evidence": [],
+  "activity_set_id": "set-...",
   "status": "verified"
 }
 ```
@@ -60,6 +68,6 @@ Implemented exports:
 - `verifyActivityArtifact()` for schema, structural HTML, forbidden API, SDK hook, and manifest/code consistency checks
 - `createUnguessableBundleRef()` for cryptographically random, opaque bundle locators
 - `authorizeActivityTelemetryMessage()` for parent-owned assignment telemetry validation
-- repository ranking helpers that bias objective match, verifier score, usage, outcomes, and topic overlap
+- repository ranking helpers that bias objective match, current lesson context, verifier score, usage, outcomes, and set-level coherence
 
-The verifier performs structural and deterministic checks plus local rubric scoring as generation-time defense-in-depth. It is not the runtime security boundary: the web host still enforces the shared iframe sandbox/CSP policy, and bundle delivery still requires assignment/class authorization.
+The verifier performs structural and deterministic checks plus local rubric scoring, and the worker's OpenAI path adds a structured AI review before persistence. These are generation-time defenses; the web host still enforces the shared iframe sandbox/CSP policy, and bundle delivery still requires assignment/class authorization.

@@ -44,6 +44,8 @@ Produced by the planner/generator, checked by the verifier, stored in `activitie
 
 For the teacher approval flow, Area C writes support/core/challenge rows to `session_activity_candidates`. The teacher may assign selected students to support or challenge; every unselected student receives the approved core candidate by default. Area E records the final per-student delivery in `assignments.variant`.
 
+Repository reuse prefers complete strong sets sharing one `activity_set_id`. Pre-set-id verified rows remain eligible only when a complete support/core/challenge trio clears the strong-reuse threshold and shares the exact grade, subject, unit, objective, family, and mechanic signature; unrelated legacy interactions are never combined into a fallback set.
+
 Assignment rows are only valid for approved candidates from the same session: `assignments.candidate_id`, `activity_id`, and `variant` must match the selected `session_activity_candidates` row, and the assigned student must belong to the session's class.
 
 ```json
@@ -86,6 +88,7 @@ Assignment rows are only valid for approved candidates from the same session: `a
     }
   ],
   "parent_id": null,
+  "activity_set_id": "set-...",
   "status": "verified"
 }
 ```
@@ -94,12 +97,12 @@ Assignment rows are only valid for approved candidates from the same session: `a
 
 - Bundle format is one self-contained `index.html` with inline CSS/JS; URL-bearing subresource attributes must not point to relative paths or external schemes, while `data:` URLs remain available for inline assets such as images.
 - No external imports, assets, network calls, credentialed requests, storage APIs, top navigation, popups, or same-origin assumptions.
-- Allowed families are `match_classify`, `sequence_order`, and `guided_practice`.
+- Allowed families are `match_classify`, `sequence_order`, and `guided_practice`; newly generated/adapted manifests also include a valid `mechanic`, `learning_design`, and `visual_theme`.
 - `content.items[]` is required and must include prompts plus answer keys; hints default to an empty list when omitted.
 - `bundle_ref` must be unguessable and authorized by assignment/class before iframe delivery.
 - Bundle references are generated from cryptographically random UUIDs; they are opaque locators, not bearer credentials, and possession never bypasses assignment/class authorization.
-- Auth-lite students receive a per-student `access_token` from `join_class_by_code`; student assignment reads, dismissals, telemetry, and completion go through checked delivery RPCs using that token, not broad anonymous table access.
-- Rejoining with the same class code and display name reuses the existing student identity and rotates its `access_token`; this recovers a lost or legacy browser session without creating a duplicate student row.
+- Students authenticate with teacher-managed username/password accounts. Delivery derives the student mapping from `auth.uid()`; assignment reads, dismissals, telemetry, and completion are restricted to that mapping by RLS. `join_class_by_code` and browser-held student bearer tokens are not part of the active contract.
+- Authenticated teachers can read candidates, artifacts, bundles, assignments, and telemetry only through sessions in classes they own. They may approve candidates and publish assignments, while candidate/artifact/bundle creation and telemetry insertion remain worker/service-role or student-owned operations.
 - The parent injects only manifest, assignment id, and difficulty band. It must not inject Supabase credentials, student PII, raw transcript, or broader class/session context.
 - The iframe communicates only through the Activity SDK over `postMessage`: `getManifest()`, `getBand()`, `reportAttempt()`, `reportHint()`, and `reportComplete()`.
 - The parent validates message source, schema, assignment authorization, method allowlist, payload size, and telemetry rate limits.
@@ -111,6 +114,7 @@ The structural verifier and its JavaScript source checks are generation-time def
 ## 4. Telemetry event
 
 Written to the `events` table on every student interaction; read back for the live monitor and session report.
+Completion events declare `score_unit` as either `count` or `normalized`, while `assignments.score` stores the normalized 0–1 outcome used for repository ranking. Count scores require integer `score` and `total` values and cannot exceed `total`; normalized scores require a 0–1 `score` and omit `total`. Existing `activity-sdk/v1` bundles without `score_unit` retain the legacy convention where the presence of `total` means count, but every newly verified bundle must declare the unit. Once an assignment reaches `completed`, its status, score, and completion timestamp are immutable so repository outcome aggregation runs exactly once; later roster republishes preserve that completed row rather than resetting or rejecting it. Generated activity UIs must disable completion after their first valid submission so duplicate clicks do not attempt a second immutable update.
 
 ```json
 {
@@ -124,4 +128,6 @@ Written to the `events` table on every student interaction; read back for the li
 
 See [`docs/area-bc-contract.md`](area-bc-contract.md) for the full write-up shared with Androso. Returned by `retrieveCurriculumMatches()` in `packages/curriculum`.
 
-Status: `lesson_state` and `curriculum_match` are implemented (see `packages/ai-core`, `packages/curriculum`) — these are the two contracts Isaac (Areas A/B) is responsible for. Gate 0 for `ActivityArtifact` is recorded here. Area C/E/F should freeze the exact TypeScript schemas, fixtures, telemetry shape, and sandbox contract before parallel implementation starts.
+`CurriculumMatch.source_id` identifies shared teacher-fed evidence. Automatic retrieval uses the ready source IDs selected for the session's class; an empty selection uses compatible curated defaults. Activity evidence remains a generation-time snapshot if selections later change.
+
+Status: `lesson_state` and `curriculum_match` are **shipped** (see `packages/ai-core`, `packages/curriculum`). `ActivityArtifact`, telemetry, and sandbox contracts are **shipped** in `packages/activities` and consumed by `apps/web` and `apps/worker`; Gate 0 for the artifact contract is recorded here.
