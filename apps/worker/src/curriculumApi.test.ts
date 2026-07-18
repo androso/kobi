@@ -35,6 +35,7 @@ describe("curriculum upload and retrieve API", () => {
         filename: "Unidad 4.pdf",
         contentType: "application/pdf",
         sizeBytes: 12_345,
+        pageCount: 12,
       },
     );
 
@@ -50,7 +51,11 @@ describe("curriculum upload and retrieve API", () => {
     expect(supabase.curriculumSources).toHaveLength(1);
     const source = supabase.curriculumSources[0]!;
     expect(supabase.curriculumSources[0]).toMatchObject({
-      class_id: CLASS_ID,
+      origin_class_id: CLASS_ID,
+      uploaded_by: TEACHER_ID,
+      grade: 7,
+      subject: "lenguaje",
+      unit: "U4",
       status: "pending_upload",
       original_filename: "Unidad-4.pdf",
       size_bytes: 12_345,
@@ -71,6 +76,7 @@ describe("curriculum upload and retrieve API", () => {
           filename,
           contentType: "application/pdf",
           sizeBytes: 12_345,
+          pageCount: 12,
         },
       );
       expect(response.statusCode).toBe(201);
@@ -94,11 +100,30 @@ describe("curriculum upload and retrieve API", () => {
         filename: "notes.txt",
         contentType: "text/plain",
         sizeBytes: 100,
+        pageCount: 1,
       },
     );
 
     expect(response.statusCode).toBe(422);
     expect(response.body).toEqual({ error: { code: "invalid_content_type" } });
+    expect(supabase.curriculumSources).toHaveLength(0);
+  });
+
+  it("rejects PDFs over 400 pages before creating a source row", async () => {
+    const supabase = fakeSupabase();
+    const response = await callRoute(
+      "/api/classes/" + CLASS_ID + "/curriculum/uploads",
+      supabase,
+      fakeBoss(),
+      {
+        filename: "long.pdf",
+        contentType: "application/pdf",
+        sizeBytes: 12_345,
+        pageCount: 401,
+      },
+    );
+
+    expect(response.statusCode).toBe(422);
     expect(supabase.curriculumSources).toHaveLength(0);
   });
 
@@ -108,7 +133,7 @@ describe("curriculum upload and retrieve API", () => {
     const sourceId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     supabase.curriculumSources.push({
       id: sourceId,
-      class_id: CLASS_ID,
+      origin_class_id: CLASS_ID,
       status: "pending_upload",
       storage_path: `${CLASS_ID}/${sourceId}/unidad-4.pdf`,
       size_bytes: 100,
@@ -158,7 +183,7 @@ describe("curriculum upload and retrieve API", () => {
         grade: 7,
         subject: "lenguaje",
         unit: "U4",
-        classId: CLASS_ID,
+        sourceIds: [],
       }),
     );
     expect(response.body).toMatchObject({
@@ -180,11 +205,73 @@ describe("curriculum upload and retrieve API", () => {
         filename: "unidad.pdf",
         contentType: "application/pdf",
         sizeBytes: 100,
+        pageCount: 1,
       },
     );
 
     expect(response.statusCode).toBe(403);
     expect(response.body).toEqual({ error: { code: "forbidden" } });
+  });
+
+  it("lists compatible ready sources from the shared library", async () => {
+    const supabase = fakeSupabase();
+    supabase.curriculumSources.push({
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      origin_class_id: null,
+      uploaded_by: "44444444-4444-4444-8444-444444444444",
+      original_filename: "Comprension-lectora.pdf",
+      size_bytes: 2048,
+      status: "ready",
+      grade: 7,
+      subject: "lenguaje",
+      unit: "U3",
+      page_count: 8,
+      chunks_built: 12,
+      storage_deleted_at: "2026-07-15T10:00:00.000Z",
+      created_at: "2026-07-15T10:00:00.000Z",
+      updated_at: "2026-07-15T10:00:00.000Z",
+    });
+
+    const response = await callRoute(
+      `/api/classes/${CLASS_ID}/curriculum/library`,
+      supabase,
+      fakeBoss(),
+      {},
+      undefined,
+      "GET",
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({
+      classContext: { id: CLASS_ID, grade: 7, subject: "lenguaje", unit: "U4" },
+      sources: [
+        expect.objectContaining({
+          originalFilename: "Comprension-lectora.pdf",
+          isOwner: false,
+          status: "ready",
+        }),
+      ],
+    });
+  });
+
+  it("replaces the class source selection atomically", async () => {
+    const supabase = fakeSupabase();
+    const sourceIds = ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"];
+    const response = await callRoute(
+      `/api/classes/${CLASS_ID}/curriculum/selections`,
+      supabase,
+      fakeBoss(),
+      { sourceIds },
+      undefined,
+      "PUT",
+    );
+
+    expect(response.statusCode).toBe(200);
+    expect(supabase.rpc).toHaveBeenCalledWith("replace_class_curriculum_selections", {
+      p_class_id: CLASS_ID,
+      p_selected_by: TEACHER_ID,
+      p_source_ids: sourceIds,
+    });
   });
 });
 
@@ -209,6 +296,7 @@ interface FakeSupabaseState {
   client: SupabaseClient;
   curriculumSources: Array<Record<string, unknown>>;
   classes: Array<Record<string, unknown>>;
+  rpc: ReturnType<typeof vi.fn>;
 }
 
 interface ApiTestResponse extends ServerResponse {
@@ -222,18 +310,19 @@ async function callRoute(
   boss: FakeBoss,
   body: Record<string, unknown>,
   headers?: Record<string, string>,
+  method = "POST",
 ) {
-  const req = fakeRequest(body, headers);
+  const req = fakeRequest(body, headers, method);
   req.url = url;
   const res = fakeResponse();
   await routeRequest(req, res, supabase.client, boss.instance);
   return res;
 }
 
-function fakeRequest(body: Record<string, unknown>, headers?: Record<string, string>) {
+function fakeRequest(body: Record<string, unknown>, headers?: Record<string, string>, method = "POST") {
   const payload = Buffer.from(JSON.stringify(body));
   return {
-    method: "POST",
+    method,
     url: "/",
     headers: headers ?? {
       host: "localhost",
@@ -283,8 +372,10 @@ function fakeSupabase(): FakeSupabaseState {
       unit: "U4",
     },
   ];
+  const rpc = vi.fn(async () => ({ data: 1, error: null }));
 
   const client = {
+    rpc,
     auth: {
       getUser: vi.fn(async (token: string) =>
         token === "valid-token"
@@ -315,7 +406,7 @@ function fakeSupabase(): FakeSupabaseState {
     },
   } as unknown as SupabaseClient;
 
-  return { client, curriculumSources, classes };
+  return { client, curriculumSources, classes, rpc };
 }
 
 class FakeQuery {
@@ -341,6 +432,10 @@ class FakeQuery {
   }
 
   order() {
+    return this;
+  }
+
+  neq() {
     return this;
   }
 
@@ -372,7 +467,8 @@ class FakeQuery {
       const match = this.state.curriculumSources.find((row) => {
         const idOk = !this.filters.has("id") || row.id === this.filters.get("id");
         const classOk =
-          !this.filters.has("class_id") || row.class_id === this.filters.get("class_id");
+          !this.filters.has("origin_class_id") ||
+          row.origin_class_id === this.filters.get("origin_class_id");
         return idOk && classOk;
       });
       return Promise.resolve({ data: match ?? null, error: null });
@@ -407,7 +503,8 @@ class FakeQuery {
       const match = this.state.curriculumSources.find((row) => {
         const idOk = !this.filters.has("id") || row.id === this.filters.get("id");
         const classOk =
-          !this.filters.has("class_id") || row.class_id === this.filters.get("class_id");
+          !this.filters.has("origin_class_id") ||
+          row.origin_class_id === this.filters.get("origin_class_id");
         return idOk && classOk;
       });
       if (match) Object.assign(match, this.pendingUpdate);

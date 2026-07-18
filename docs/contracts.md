@@ -101,6 +101,7 @@ Assignment rows are only valid for approved candidates from the same session: `a
 - `content.items[]` is required and must include prompts plus answer keys; hints default to an empty list when omitted.
 - `bundle_ref` must be unguessable and authorized by assignment/class before iframe delivery.
 - Students authenticate with teacher-managed username/password accounts. Delivery derives the student mapping from `auth.uid()`; assignment reads, dismissals, telemetry, and completion are restricted to that mapping by RLS. `join_class_by_code` and browser-held student bearer tokens are not part of the active contract.
+- Authenticated teachers can read candidates, artifacts, bundles, assignments, and telemetry only through sessions in classes they own. They may approve candidates and publish assignments, while candidate/artifact/bundle creation and telemetry insertion remain worker/service-role or student-owned operations.
 - The parent injects only manifest, assignment id, and difficulty band. It must not inject Supabase credentials, student PII, raw transcript, or broader class/session context.
 - The iframe communicates only through the Activity SDK over `postMessage`: `getManifest()`, `getBand()`, `reportAttempt()`, `reportHint()`, and `reportComplete()`.
 - The parent validates message source, schema, assignment authorization, method allowlist, payload size, and telemetry rate limits.
@@ -122,5 +123,7 @@ Completion events retain `score` and optional `total` values, while `assignments
 ## 5. `curriculum_match` (Area B -> Area C)
 
 See [`docs/area-bc-contract.md`](area-bc-contract.md) for the full write-up shared with Androso. Returned by `retrieveCurriculumMatches()` in `packages/curriculum`.
+
+`CurriculumMatch.source_id` identifies shared teacher-fed evidence. Automatic retrieval uses the ready source IDs selected for the session's class; an empty selection uses compatible curated defaults. Activity evidence remains a generation-time snapshot if selections later change.
 
 Status: `lesson_state` and `curriculum_match` are **shipped** (see `packages/ai-core`, `packages/curriculum`). `ActivityArtifact`, telemetry, and sandbox contracts are **shipped** in `packages/activities` and consumed by `apps/web` and `apps/worker`; Gate 0 for the artifact contract is recorded here.

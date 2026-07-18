@@ -1,7 +1,7 @@
 -- Teacher-fed curriculum sources + class-scoped chunk metadata for RAG ingest.
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('curriculum-sources', 'curriculum-sources', false, 26214400, array['application/pdf'])
+values ('curriculum-sources', 'curriculum-sources', false, 52428800, array['application/pdf'])
 on conflict (id) do update set
   public = excluded.public,
   file_size_limit = excluded.file_size_limit,

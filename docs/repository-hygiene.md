@@ -22,10 +22,9 @@ Intentional generated assets must stay documented and reproducible:
 
 Do not commit ad hoc terminal captures, branch lists, downloaded classroom data, or generated files whose source and command are unknown.
 
-## Demo And Sample Data
+## Sample Data
 
-Demo/sample paths must be explicit:
+Sample paths must be explicit:
 
-- Demo transcript ingestion is available only when `KOBI_PROJECT_MODE=demo`.
-- Seeded teacher history and sample classes must stay visibly demo-labeled and out of production data paths.
+- Seeded teacher history and sample classes must stay visibly labeled and out of production data paths.
 - Fixtures must use synthetic classroom content only. Do not include real student names, real classroom audio/text, access tokens, API keys, database URLs, or Supabase service-role keys.

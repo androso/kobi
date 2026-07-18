@@ -13,6 +13,7 @@ import {
   type EvaluateCheckpointInput,
 } from "../checkpoint/evaluateCheckpoint.js";
 import { JOB_GENERATE_ACTIVITY_ARTIFACTS } from "../queue.js";
+import { loadSelectedCurriculumSourceIds } from "../curriculumSelections.js";
 
 export interface EvaluateCheckpointJobData {
   sessionId: string;
@@ -26,7 +27,7 @@ export type CheckpointEvaluator = (input: EvaluateCheckpointInput) => Promise<Ch
 
 export type CurriculumRetriever = (
   supabase: SupabaseClient,
-  input: { queryText: string; grade: number; subject: string; unit?: string; classId?: string },
+  input: { queryText: string; grade: number; subject: string; unit?: string; sourceIds?: string[] },
 ) => Promise<CurriculumMatch[]>;
 
 export interface EvaluateCheckpointJobOptions {
@@ -123,12 +124,13 @@ export async function runEvaluateCheckpointJob(
   const latestLessonState = lessonStates.at(-1)!;
   const queryText = buildCurriculumQueryText(latestLessonState);
   const retrievalContext = await resolveRetrievalContext(supabase, data);
+  const sourceIds = await loadSelectedCurriculumSourceIds(supabase, retrievalContext.classId);
   const curriculumMatches = await curriculumRetriever(supabase, {
     queryText,
     grade: retrievalContext.grade,
     subject: retrievalContext.subject,
     unit: retrievalContext.unit,
-    classId: retrievalContext.classId,
+    sourceIds,
   });
 
   await boss.send(

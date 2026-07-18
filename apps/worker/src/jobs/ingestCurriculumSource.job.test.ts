@@ -33,6 +33,7 @@ describe("ingestCurriculumSource job", () => {
       data: new Blob([new Uint8Array([0x25, 0x50, 0x44, 0x46])]),
       error: null,
     }));
+    const remove = vi.fn(async () => ({ data: [], error: null }));
 
     const supabase = {
       from(table: string) {
@@ -47,12 +48,15 @@ describe("ingestCurriculumSource job", () => {
           maybeSingle: async () => ({
             data: {
               id: "source-1",
-              class_id: "class-1",
+              origin_class_id: "class-1",
               source_document: "source-1",
               storage_path: "class-1/source-1/file.pdf",
               status: "uploaded",
               size_bytes: 4,
-              classes: { grade: 7, subject: "lenguaje", unit: "U4" },
+              grade: 7,
+              subject: "lenguaje",
+              unit: "U4",
+              chunks_built: null,
             },
             error: null,
           }),
@@ -72,7 +76,7 @@ describe("ingestCurriculumSource job", () => {
       },
       storage: {
         from() {
-          return { download };
+          return { download, remove };
         },
       },
     };
@@ -87,21 +91,21 @@ describe("ingestCurriculumSource job", () => {
     expect(digestTextbookPdf).toHaveBeenCalledWith(
       supabase,
       expect.objectContaining({
-        classId: "class-1",
+        sourceId: "source-1",
         grade: 7,
         subject: "lenguaje",
         unit: "U4",
         sourceDocument: "source-1",
         replaceSource: true,
+        maxPages: 400,
       }),
     );
-    expect(updates).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ status: "processing" }),
-        expect.objectContaining({ status: "ready", chunks_built: 3, page_count: 4 }),
-        expect.objectContaining({ status: "superseded" }),
-      ]),
-    );
+    expect(remove).toHaveBeenCalledWith(["class-1/source-1/file.pdf"]);
+    expect(updates).toEqual([
+      expect.objectContaining({ status: "processing" }),
+      expect.objectContaining({ status: "cleanup_pending", page_count: 4, chunks_built: 3 }),
+      expect.objectContaining({ status: "ready", storage_deleted_at: expect.any(String) }),
+    ]);
   });
 
   it("marks the source failed when digest throws", async () => {
@@ -120,12 +124,15 @@ describe("ingestCurriculumSource job", () => {
           maybeSingle: async () => ({
             data: {
               id: "source-1",
-              class_id: "class-1",
+              origin_class_id: "class-1",
               source_document: "source-1",
               storage_path: "class-1/source-1/file.pdf",
               status: "uploaded",
               size_bytes: 4,
-              classes: { grade: 7, subject: "lenguaje", unit: "U4" },
+              grade: 7,
+              subject: "lenguaje",
+              unit: "U4",
+              chunks_built: null,
             },
             error: null,
           }),

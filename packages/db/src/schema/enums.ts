@@ -31,6 +31,7 @@ export const curriculumSourceStatusEnum = pgEnum("curriculum_source_status", [
   "pending_upload",
   "uploaded",
   "processing",
+  "cleanup_pending",
   "ready",
   "failed",
   "superseded",
