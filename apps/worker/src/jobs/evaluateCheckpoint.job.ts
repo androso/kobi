@@ -45,7 +45,7 @@ export function buildGenerateActivityArtifactsJobData(input: {
   sessionId: string;
   lessonState: LessonState;
   curriculumMatches: CurriculumMatch[];
-  curriculumFallback?: { grade: number; subject: string; unit?: string };
+  curriculumFallback?: { classId?: string; grade: number; subject: string; unit?: string };
 }) {
   return {
     sessionId: input.sessionId,

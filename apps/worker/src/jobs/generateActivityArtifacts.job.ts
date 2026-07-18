@@ -22,7 +22,11 @@ import {
   type SessionContext,
 } from "@kobi/activities/server";
 import { lessonStateSchema, type LessonState } from "@kobi/ai-core";
-import type { CurriculumMatch } from "@kobi/curriculum";
+import {
+  buildCurriculumQueryText,
+  retrieveCurriculumMatches,
+  type CurriculumMatch,
+} from "@kobi/curriculum";
 import type PgBoss from "pg-boss";
 import {
   createOpenAiActivityGeneratorFromEnv,
@@ -37,6 +41,7 @@ export interface GenerateActivityArtifactsJobData {
   lessonState: LessonState;
   curriculumMatches: CurriculumMatch[];
   curriculumFallback?: {
+    classId?: string;
     grade: number;
     subject: string;
     unit?: string;
@@ -52,7 +57,13 @@ export type OpenAiActivityCandidateGenerator = (
 export interface GenerateActivityArtifactsJobOptions {
   openAiGenerator?: OpenAiActivityCandidateGenerator | null;
   maxOpenAiGenerationsPerSession?: number;
+  curriculumRetriever?: CurriculumRetriever;
 }
+
+export type CurriculumRetriever = (
+  supabase: SupabaseClient,
+  input: { queryText: string; grade: number; subject: string; unit?: string; classId?: string },
+) => Promise<CurriculumMatch[]>;
 
 export interface GenerateActivityArtifactsJobResult {
   inserted: number;
@@ -101,7 +112,12 @@ export function registerGenerateActivityArtifactsJob(
         jobId: job.id,
       });
       try {
-        const result = await runGenerateActivityArtifactsJob(supabase, job.data, {
+        const currentData = await refreshGenerateActivityArtifactsJobData(
+          supabase,
+          job.data,
+          options.curriculumRetriever,
+        );
+        const result = await runGenerateActivityArtifactsJob(supabase, currentData, {
           openAiGenerator,
           maxOpenAiGenerationsPerSession,
         });
@@ -122,6 +138,44 @@ export function registerGenerateActivityArtifactsJob(
       }
     },
   );
+}
+
+/**
+ * Queue singleton policies serialize jobs but do not replace an older created
+ * job. Refresh the lesson and curriculum at execution time so a delayed job
+ * cannot publish candidates for a stale checkpoint payload.
+ */
+export async function refreshGenerateActivityArtifactsJobData(
+  supabase: SupabaseClient,
+  data: GenerateActivityArtifactsJobData,
+  curriculumRetriever: CurriculumRetriever = retrieveCurriculumMatches,
+): Promise<GenerateActivityArtifactsJobData> {
+  const lessonStates = await loadLessonStates(supabase, data.sessionId, data.lessonState);
+  const lessonState = lessonStates.at(-1) ?? data.lessonState;
+  const retrievalContext = data.curriculumFallback ?? contextFromCurriculumMatches(data.curriculumMatches);
+
+  if (!retrievalContext) {
+    return { ...data, lessonState };
+  }
+
+  const curriculumMatches = await curriculumRetriever(supabase, {
+    queryText: buildCurriculumQueryText(lessonState),
+    grade: retrievalContext.grade,
+    subject: retrievalContext.subject,
+    unit: retrievalContext.unit,
+    classId: retrievalContext.classId,
+  });
+
+  return { ...data, lessonState, curriculumMatches };
+}
+
+function contextFromCurriculumMatches(
+  matches: CurriculumMatch[],
+): GenerateActivityArtifactsJobData["curriculumFallback"] | undefined {
+  const first = matches[0];
+  return first
+    ? { grade: first.grade, subject: first.subject, unit: first.unit }
+    : undefined;
 }
 
 export async function runGenerateActivityArtifactsJob(

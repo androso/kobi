@@ -11,10 +11,52 @@ import {
 } from "@kobi/activities/server";
 import {
   planSessionArtifacts,
+  refreshGenerateActivityArtifactsJobData,
   runGenerateActivityArtifactsJob,
 } from "./generateActivityArtifacts.job.js";
 
 describe("generateActivityArtifacts job planning", () => {
+  it("refreshes stale queued lesson and curriculum data before generation", async () => {
+    const latestLessonState: LessonState = {
+      ...lessonState,
+      topic: "Fracciones equivalentes",
+      objective_guess: "Comparar fracciones equivalentes",
+      transcript_summary: "La docente comparo medios, cuartos y octavos.",
+      key_terms: ["fraccion", "equivalente", "cuartos"],
+    };
+    const supabase = fakeSupabase({ segments: [lessonState, latestLessonState] });
+    const refreshedMatches: CurriculumMatch[] = [
+      {
+        objective_code: "M7.2.1",
+        unit: "fracciones",
+        grade: 7,
+        subject: "matematicas",
+        text: "Compara fracciones equivalentes.",
+        similarity: 0.93,
+      },
+    ];
+    let receivedQuery = "";
+
+    const result = await refreshGenerateActivityArtifactsJobData(
+      supabase.client,
+      {
+        sessionId: "session-1",
+        lessonState,
+        curriculumMatches,
+        curriculumFallback: { classId: "class-1", grade: 7, subject: "matematicas", unit: "fracciones" },
+      },
+      async (_supabase, input) => {
+        receivedQuery = input.queryText;
+        expect(input).toMatchObject({ classId: "class-1", grade: 7, subject: "matematicas", unit: "fracciones" });
+        return refreshedMatches;
+      },
+    );
+
+    expect(receivedQuery).toContain("Fracciones equivalentes");
+    expect(result.lessonState).toEqual(latestLessonState);
+    expect(result.curriculumMatches).toEqual(refreshedMatches);
+  });
+
   it("generates from lesson_state when retrieval returns no curriculum matches", async () => {
     const supabase = fakeSupabase();
     let receivedMatches: CurriculumMatch[] = [];
