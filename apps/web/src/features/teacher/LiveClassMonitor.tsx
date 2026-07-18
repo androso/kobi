@@ -771,6 +771,7 @@ export function LiveClassMonitor() {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const apiSessionIdRef = useRef<string | null>(null);
   const completedSessionIdRef = useRef<string | null>(null);
+  const activityContextVersionRef = useRef(0);
   const pendingAudioUploadsRef = useRef<Set<Promise<void>>>(new Set());
   const chunkIndexRef = useRef(0);
   const recordingStartedAtRef = useRef<number | null>(null);
@@ -912,6 +913,19 @@ export function LiveClassMonitor() {
     }
   }
 
+  function resetActivityStateForNewRecording() {
+    activityContextVersionRef.current += 1;
+    setActivitySessionId(null);
+    setCandidates([]);
+    setSelectedCandidateId(null);
+    setStudents([]);
+    setOverridesByBand({});
+    setActivityLoading(false);
+    setActivityError(null);
+    setPublishStatus(null);
+    setLatestLessonState(null);
+  }
+
   async function handleAudioChunk(
     audio: Blob,
     recordingContext: { sessionId: string | null; startedAt: number | null } = {
@@ -1002,6 +1016,7 @@ export function LiveClassMonitor() {
   }
 
   async function startRecording() {
+    resetActivityStateForNewRecording();
     if (isDemoMode) {
       await processDemoTranscript();
       return;
@@ -1109,7 +1124,9 @@ export function LiveClassMonitor() {
   async function handleManualLessonState(input: { topic: string; objective?: string }) {
     setRecordingError(null);
     try {
-      const sessionId = await ensureBackendSession();
+      const sessionId = apiSessionIdRef.current
+        ?? completedSessionIdRef.current
+        ?? await ensureBackendSession();
       await submitManualLessonState({ sessionId, ...input });
       setUploadStatus("Tema manual guardado como lesson_state");
     } catch (error) {
@@ -1121,6 +1138,7 @@ export function LiveClassMonitor() {
   async function loadCandidatesForSession(
     sessionId: string,
     options: { allowEmpty: boolean } = { allowEmpty: false },
+    contextVersion = activityContextVersionRef.current,
   ) {
     if (!activeClass || !deliveryStore) {
       if (!options.allowEmpty) {
@@ -1131,11 +1149,14 @@ export function LiveClassMonitor() {
 
     const readyCandidates = await deliveryStore.listCandidates(sessionId);
     if (readyCandidates.length === 0) {
-      if (!options.allowEmpty) setActivityError("Todavia no hay actividades listas para esta sesion.");
+      if (contextVersion === activityContextVersionRef.current && !options.allowEmpty) {
+        setActivityError("Todavia no hay actividades listas para esta sesion.");
+      }
       return false;
     }
 
     const loadedStudents = await deliveryStore.listStudents(activeClass.id);
+    if (contextVersion !== activityContextVersionRef.current) return false;
     setActivitySessionId(sessionId);
     setCandidates(readyCandidates);
     setStudents(loadedStudents);
@@ -1157,23 +1178,31 @@ export function LiveClassMonitor() {
     setActivityLoading(true);
     setActivityError(null);
     setPublishStatus(null);
+    const contextVersion = activityContextVersionRef.current;
 
     try {
       const sessionId = sessionIdOverride ?? apiSessionIdRef.current ?? completedSessionIdRef.current;
-      if (sessionId && await loadCandidatesForSession(sessionId, { allowEmpty: true })) {
+      if (sessionId && await loadCandidatesForSession(sessionId, { allowEmpty: true }, contextVersion)) {
         return;
       }
+
+      if (contextVersion !== activityContextVersionRef.current) return;
 
       const ensuredSessionId = sessionId ?? (await ensureBackendSession());
       await requestActivityCandidates({ sessionId: ensuredSessionId });
 
-      if (!await loadCandidatesForSession(ensuredSessionId)) {
+      if (!await loadCandidatesForSession(ensuredSessionId, { allowEmpty: false }, contextVersion)
+        && contextVersion === activityContextVersionRef.current) {
         setActivityError("La generacion termino, pero aun no hay actividades listas para esta sesion.");
       }
     } catch (error) {
-      setActivityError(error instanceof Error ? error.message : "No se pudo generar la actividad.");
+      if (contextVersion === activityContextVersionRef.current) {
+        setActivityError(error instanceof Error ? error.message : "No se pudo generar la actividad.");
+      }
     } finally {
-      setActivityLoading(false);
+      if (contextVersion === activityContextVersionRef.current) {
+        setActivityLoading(false);
+      }
     }
   }
 

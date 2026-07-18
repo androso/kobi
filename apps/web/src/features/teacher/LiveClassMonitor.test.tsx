@@ -47,7 +47,7 @@ const mocks = vi.hoisted(() => {
   return {
     candidate,
     isDemoProjectMode: vi.fn(() => true),
-    listCandidates: vi.fn(async () => [candidate]),
+    listCandidates: vi.fn(async (_sessionId: string) => [candidate]),
     listStudents: vi.fn(async () => [{ id: "student-1", displayName: "Ana" }]),
     requestActivityCandidates: vi.fn(async () => ({ inserted: 1, reused: 0, generated: 0, skippedReason: null })),
     publishAssignments: vi.fn(async () => [
@@ -64,6 +64,7 @@ const mocks = vi.hoisted(() => {
       { audioChunkId: "chunk-0", chunkIndex: 0, totalChunks: 2, done: false },
       { audioChunkId: "chunk-1", chunkIndex: 1, totalChunks: 2, done: true },
     ]),
+    submitManualLessonState: vi.fn(async () => {}),
     uploadAudioChunk: vi.fn(async () => {}),
     supabaseRpc: vi.fn(async () => ({ data: [{ id: "session-1" }], error: null })),
     supabaseFrom: vi.fn(() => ({
@@ -86,7 +87,7 @@ vi.mock("../../lib/audioApi", () => ({
   requestActivityCandidates: mocks.requestActivityCandidates,
   resolveBackendClassId: (classId: string) => classId,
   submitDemoTranscript: mocks.submitDemoTranscript,
-  submitManualLessonState: vi.fn(),
+  submitManualLessonState: mocks.submitManualLessonState,
   uploadAudioChunk: mocks.uploadAudioChunk,
 }));
 
@@ -137,8 +138,10 @@ function installFakeBrowserRecorder() {
 
 beforeEach(() => {
   mocks.isDemoProjectMode.mockReturnValue(true);
+  mocks.createBackendSession.mockReset().mockResolvedValue({ sessionId: "session-1" });
   mocks.listCandidates.mockResolvedValue([mocks.candidate]);
   mocks.requestActivityCandidates.mockResolvedValue({ inserted: 1, reused: 0, generated: 0, skippedReason: null });
+  mocks.submitManualLessonState.mockResolvedValue(undefined);
   mocks.uploadAudioChunk.mockResolvedValue(undefined);
   mocks.supabaseRpc.mockResolvedValue({ data: [{ id: "session-1" }], error: null });
 });
@@ -380,5 +383,72 @@ describe("LiveClassMonitor activity delivery", () => {
       await Promise.resolve();
     });
     await waitFor(() => expect(screen.getByRole("button", { name: /iniciar grabación/i })).toBeEnabled());
+  });
+
+  it("clears the previous activity flow before starting a new recording", async () => {
+    mocks.createBackendSession
+      .mockResolvedValueOnce({ sessionId: "session-1" })
+      .mockResolvedValueOnce({ sessionId: "session-2" });
+    mocks.listCandidates.mockImplementation(async (sessionId: string) => (
+      sessionId === "session-1" ? [mocks.candidate] : []
+    ));
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /pausar/i }));
+    expect(await screen.findByRole("heading", { name: /aprobar y entregar actividad/i })).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(mocks.createBackendSession).toHaveBeenNthCalledWith(2, { classId: "class-1" });
+    expect(screen.queryByRole("heading", { name: /aprobar y entregar actividad/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /publicar a estudiantes/i })).not.toBeInTheDocument();
+  });
+
+  it("writes manual fallback lesson state to the completed recording session", async () => {
+    const user = userEvent.setup();
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /pausar/i }));
+    await screen.findByRole("heading", { name: /aprobar y entregar actividad/i });
+
+    await user.click(screen.getByRole("button", { name: /escribir tema manualmente/i }));
+    await user.type(screen.getByRole("textbox", { name: /tema que estas dando/i }), "La noticia");
+    await user.type(screen.getByRole("textbox", { name: /^objetivo$/i }), "Identificar sus partes");
+    await user.click(screen.getByRole("button", { name: /guardar tema/i }));
+
+    await waitFor(() => expect(mocks.submitManualLessonState).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      topic: "La noticia",
+      objective: "Identificar sus partes",
+    }));
+    expect(mocks.createBackendSession).toHaveBeenCalledTimes(1);
   });
 });
