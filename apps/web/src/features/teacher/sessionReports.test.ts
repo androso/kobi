@@ -7,9 +7,9 @@ describe("loadSessionReports", () => {
     const rpc = vi.fn(async () => ({ data: [{ report }], error: null }));
     const result = await loadSessionReports({ rpc } as never, 2, "class-1");
     expect(result).toEqual([report]);
-    expect(rpc).toHaveBeenCalledWith("list_teacher_session_reports", expect.objectContaining({
+    expect(rpc).toHaveBeenCalledWith("list_teacher_session_reports", {
       input_class_id: "class-1", input_limit: REPORT_PAGE_SIZE, input_offset: REPORT_PAGE_SIZE * 2,
-    }));
+    });
   });
 
   it("surfaces database ownership and range errors", async () => {

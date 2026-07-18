@@ -15,21 +15,9 @@ as $$
         select a.status, a.score,
                case
                  when a.status <> 'completed' or a.score is null then null::real
-                 when completion.total_score > 0 then least(greatest(a.score / completion.total_score, 0), 1)
                  else least(greatest(a.score, 0), 1)
                end normalized_score
           from assignments a
-          left join lateral (
-            select case
-                     when jsonb_typeof(e.payload->'total') = 'number'
-                      and (e.payload->>'total')::numeric > 0
-                     then (e.payload->>'total')::real
-                   end total_score
-              from events e
-             where e.assignment_id = a.id and e.type = 'complete'
-             order by e.ts desc, e.id desc
-             limit 1
-          ) completion on true
          where a.activity_id = input_activity_id
            and a.dismissed_at is null
       )
@@ -178,22 +166,10 @@ begin
     select a.id, a.session_id, a.variant, a.status, a.score,
            case
              when a.status <> 'completed' or a.score is null then null::real
-             when completion.total_score > 0 then least(greatest(a.score / completion.total_score, 0), 1)
              else least(greatest(a.score, 0), 1)
            end normalized_score
       from owned_sessions os
       join assignments a on a.session_id = os.id and a.dismissed_at is null
-      left join lateral (
-        select case
-                 when jsonb_typeof(e.payload->'total') = 'number'
-                  and (e.payload->>'total')::numeric > 0
-                 then (e.payload->>'total')::real
-               end total_score
-          from events e
-         where e.assignment_id = a.id and e.type = 'complete'
-         order by e.ts desc, e.id desc
-         limit 1
-      ) completion on true
   ), band_summary as (
     select session_id, variant,
            jsonb_build_object(

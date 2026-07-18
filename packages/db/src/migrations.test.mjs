@@ -5,9 +5,11 @@ import assert from "node:assert/strict";
 const migration = readFileSync(new URL("../migrations/0011_session_reports.sql", import.meta.url), "utf8");
 const normalized = migration.replace(/\s+/g, " ").toLowerCase();
 
-test("repository stats normalize multi-item completion scores", () => {
+test("repository and report stats use the canonical assignment score", () => {
   assert.match(normalized, /avg\(normalized_score\) filter \(where status = 'completed'\)/);
-  assert.match(normalized, /jsonb_typeof\(e\.payload->'total'\) = 'number'.*\(e\.payload->>'total'\)::real/);
+  assert.match(normalized, /least\(greatest\(a\.score, 0\), 1\)/);
+  assert.doesNotMatch(normalized, /e\.type = 'complete'/);
+  assert.doesNotMatch(normalized, /payload->'total'/);
 });
 
 test("session close uses the database clock and reports only ended sessions", () => {

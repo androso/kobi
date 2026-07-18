@@ -30,7 +30,6 @@ import {
 import { closeTeacherSession } from "./sessionReports";
 
 const AUDIO_CHUNK_MS = 15_000;
-const isDemoMode = isDemoProjectMode();
 
 interface LessonStateSnapshot {
   topic: string;
@@ -106,6 +105,7 @@ function formatTime(seconds: number) {
 
 function TranscriptPlayerCard({
   elapsed,
+  isDemoMode,
   isRecording,
   onToggleRecording,
   uploadStatus,
@@ -113,6 +113,7 @@ function TranscriptPlayerCard({
   uploadedChunkCount,
 }: {
   elapsed: number;
+  isDemoMode: boolean;
   isRecording: boolean;
   onToggleRecording: () => void;
   uploadStatus: string | null;
@@ -721,6 +722,7 @@ function normalizeLessonState(value: unknown): LessonStateSnapshot | null {
 // -- Página ------------------------------------------------------------------
 
 export function LiveClassMonitor() {
+  const isDemoMode = isDemoProjectMode();
   const [elapsed, setElapsed] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
   const [completedSessionClassId, setCompletedSessionClassId] = useState<string | null>(null);
@@ -762,6 +764,8 @@ export function LiveClassMonitor() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const apiSessionIdRef = useRef<string | null>(null);
+  const completedSessionIdRef = useRef<string | null>(null);
+  const pendingAudioUploadsRef = useRef<Set<Promise<void>>>(new Set());
   const chunkIndexRef = useRef(0);
   const recordingStartedAtRef = useRef<number | null>(null);
   const rotationTimerRef = useRef<number | null>(null);
@@ -829,7 +833,7 @@ export function LiveClassMonitor() {
     };
   }, [apiSessionId, activeClass, deliveryStore]);
 
-  function stopBrowserRecording() {
+  async function stopBrowserRecording() {
     isStoppingRef.current = true;
 
     if (rotationTimerRef.current !== null) {
@@ -838,8 +842,16 @@ export function LiveClassMonitor() {
     }
 
     const recorder = mediaRecorderRef.current;
+    let recorderStopped: Promise<void> | null = null;
     if (recorder && recorder.state !== "inactive") {
       logRecorder("stopping recorder", { state: recorder.state });
+      const previousOnStop = recorder.onstop;
+      recorderStopped = new Promise((resolve) => {
+        recorder.onstop = (event) => {
+          previousOnStop?.call(recorder, event);
+          resolve();
+        };
+      });
       recorder.stop();
     }
 
@@ -847,6 +859,11 @@ export function LiveClassMonitor() {
     logRecorder("microphone tracks stopped");
     mediaRecorderRef.current = null;
     mediaStreamRef.current = null;
+
+    if (recorderStopped) {
+      await recorderStopped;
+    }
+    await Promise.allSettled([...pendingAudioUploadsRef.current]);
   }
 
   async function ensureBackendSession() {
@@ -889,9 +906,14 @@ export function LiveClassMonitor() {
     }
   }
 
-  async function handleAudioChunk(audio: Blob) {
-    const sessionId = apiSessionIdRef.current;
-    const startedAt = recordingStartedAtRef.current;
+  async function handleAudioChunk(
+    audio: Blob,
+    recordingContext: { sessionId: string | null; startedAt: number | null } = {
+      sessionId: apiSessionIdRef.current,
+      startedAt: recordingStartedAtRef.current,
+    },
+  ) {
+    const { sessionId, startedAt } = recordingContext;
     if (audio.size === 0) return;
 
     if (!sessionId || !startedAt) {
@@ -936,8 +958,14 @@ export function LiveClassMonitor() {
   // detenerse (sin timeslice). Encadenamos instancias para poder subir
   // fragmentos periodicos que sean decodificables de forma independiente.
   function attachRecorderHandlers(recorder: MediaRecorder) {
+    const recordingContext = {
+      sessionId: apiSessionIdRef.current,
+      startedAt: recordingStartedAtRef.current,
+    };
     recorder.ondataavailable = (event) => {
-      void handleAudioChunk(event.data);
+      const upload = handleAudioChunk(event.data, recordingContext);
+      pendingAudioUploadsRef.current.add(upload);
+      void upload.finally(() => pendingAudioUploadsRef.current.delete(upload));
     };
     recorder.onerror = () => {
       setRecordingError("No se pudo grabar el audio del navegador.");
@@ -1030,12 +1058,12 @@ export function LiveClassMonitor() {
   }
 
   async function stopRecording() {
-    stopBrowserRecording();
+    const closedSessionId = apiSessionIdRef.current;
+    await stopBrowserRecording();
     setIsRecording(false);
-    setUploadStatus(apiSessionIdRef.current ? "Sesion enviada al worker" : uploadStatus);
+    setUploadStatus(closedSessionId ? "Sesion enviada al worker" : uploadStatus);
 
     if (activeClass) {
-      const closedSessionId = apiSessionIdRef.current;
       let sessionClosed = false;
       if (closedSessionId && supabase) {
         try {
@@ -1050,6 +1078,7 @@ export function LiveClassMonitor() {
       endSession(session); // guarda en historial + limpia el monitor activo
       void handleGenerateActivity(closedSessionId);
       if (sessionClosed) {
+        completedSessionIdRef.current = closedSessionId;
         apiSessionIdRef.current = null;
         setApiSessionId(null);
       }
@@ -1117,7 +1146,7 @@ export function LiveClassMonitor() {
     setPublishStatus(null);
 
     try {
-      const sessionId = sessionIdOverride ?? apiSessionIdRef.current;
+      const sessionId = sessionIdOverride ?? apiSessionIdRef.current ?? completedSessionIdRef.current;
       if (sessionId && await loadCandidatesForSession(sessionId, { allowEmpty: true })) {
         return;
       }
@@ -1213,6 +1242,7 @@ export function LiveClassMonitor() {
                 <div className="col-span-7 flex flex-col min-h-0">
                   <TranscriptPlayerCard
                     elapsed={elapsed}
+                    isDemoMode={isDemoMode}
                     isRecording={isRecording}
                     onToggleRecording={toggleRecording}
                     uploadStatus={uploadStatus}

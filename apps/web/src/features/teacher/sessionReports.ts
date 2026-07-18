@@ -25,11 +25,10 @@ export async function closeTeacherSession(client: SupabaseClient, sessionId: str
 }
 
 export async function loadSessionReports(client: SupabaseClient, page: number, classId?: string) {
-  const to = new Date();
-  const from = new Date(to); from.setDate(from.getDate() - 90);
   const { data, error } = await client.rpc("list_teacher_session_reports", {
-    input_class_id: classId ?? null, input_from: from.toISOString(), input_to: to.toISOString(),
-    input_limit: REPORT_PAGE_SIZE, input_offset: page * REPORT_PAGE_SIZE,
+    input_class_id: classId ?? null,
+    input_limit: REPORT_PAGE_SIZE,
+    input_offset: page * REPORT_PAGE_SIZE,
   });
   if (error) throw error;
   return (data ?? []).map((row: { report: SessionReport } | SessionReport) => "report" in row ? row.report : row);
