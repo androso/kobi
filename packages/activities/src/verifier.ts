@@ -28,6 +28,14 @@ const forbiddenPatterns: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\bindexedDB\b/i, reason: "indexedDB is forbidden" },
   { pattern: /\bdocument\.cookie\b/i, reason: "cookie access is forbidden" },
   { pattern: /\bwindow\.open\s*\(/i, reason: "popups are forbidden" },
+  {
+    pattern: /\b(?:window|document|self|globalThis)\s*(?:\.\s*location|\[\s*["']location["']\s*\])/i,
+    reason: "self-navigation is forbidden",
+  },
+  {
+    pattern: /(^|[^\w$.])location\s*(?:\.|\[|=)/i,
+    reason: "self-navigation is forbidden",
+  },
   { pattern: /\btop\.location\b/i, reason: "top-level navigation is forbidden" },
   { pattern: /\bwindow\.top\b/i, reason: "top-window access is forbidden" },
   { pattern: /\bparent\.location\b/i, reason: "parent navigation is forbidden" },
@@ -222,12 +230,9 @@ function isUnsafeUrl(
   value: string,
   attributeName?: string,
   tagName?: string,
-  isSrcsetCandidate = false,
 ): boolean {
-  if (attributeName === "srcset" && !isSrcsetCandidate) {
-    return extractSrcsetUrls(value).some((url) =>
-      isUnsafeUrl(url, attributeName, tagName, true),
-    );
+  if (attributeName === "srcset") {
+    return tagName !== "img" || !isSafeDataImageSrcset(value);
   }
 
   if (value === "" || value.startsWith("#")) return false;
@@ -241,29 +246,21 @@ function isUnsafeUrl(
   return true;
 }
 
-function extractSrcsetUrls(value: string): string[] {
-  const urls: string[] = [];
-  let index = 0;
+function isSafeDataImageSrcset(value: string): boolean {
+  let remaining = value.trim();
+  const candidatePattern = /^data:image\/[a-z0-9.+-]+(?:;[a-z0-9.+-]+(?:=[^,;\s]+)?)*,[^,\s]+(?:\s+(?:\d+(?:\.\d+)?x|\d+w))?/i;
 
-  while (index < value.length) {
-    while (index < value.length && (value[index] === "," || /\s/.test(value[index]))) index += 1;
-    if (index >= value.length) break;
+  while (remaining.length > 0) {
+    const candidate = remaining.match(candidatePattern)?.[0];
+    if (!candidate) return false;
 
-    const start = index;
-    const isDataUrl = /^data:/i.test(value.slice(start));
-    while (
-      index < value.length &&
-      (isDataUrl ? !/\s/.test(value[index]) : !/[\s,]/.test(value[index]))
-    ) {
-      index += 1;
-    }
-    urls.push(value.slice(start, index));
-
-    while (index < value.length && value[index] !== ",") index += 1;
-    if (index < value.length) index += 1;
+    remaining = remaining.slice(candidate.length).trimStart();
+    if (remaining.length === 0) return true;
+    if (!remaining.startsWith(",")) return false;
+    remaining = remaining.slice(1).trimStart();
   }
 
-  return urls;
+  return false;
 }
 
 function checkNewManifestFields(candidate: ActivityArtifactCandidate): string[] {
