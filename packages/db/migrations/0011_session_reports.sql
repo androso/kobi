@@ -209,7 +209,8 @@ begin
       join events e on e.assignment_id = a.id and e.type = 'hint'
      group by a.session_id
   ), difficult_item_summary as (
-    select a.session_id, attempt.item_index, count(*)::integer incorrect_attempts
+    select a.session_id, a.activity_id, a.candidate_id, a.variant,
+           attempt.item_index, count(*)::integer incorrect_attempts
       from owned_sessions os
       join assignments a on a.session_id = os.id and a.dismissed_at is null
       join events e on e.assignment_id = a.id and e.type = 'attempt'
@@ -224,11 +225,13 @@ begin
      where jsonb_typeof(e.payload->'correct') = 'boolean'
        and (e.payload->>'correct')::boolean = false
        and attempt.item_index is not null
-     group by a.session_id, attempt.item_index
+     group by a.session_id, a.activity_id, a.candidate_id, a.variant, attempt.item_index
   ), event_summary as (
     select os.id,
       coalesce(h.hints, 0) hints,
-      coalesce(jsonb_agg(jsonb_build_object('item_index', d.item_index, 'incorrect_attempts', d.incorrect_attempts)
+      coalesce(jsonb_agg(jsonb_build_object(
+        'activity_id', d.activity_id, 'candidate_id', d.candidate_id, 'variant', d.variant,
+        'item_index', d.item_index, 'incorrect_attempts', d.incorrect_attempts)
         order by d.incorrect_attempts desc) filter (where d.item_index is not null), '[]'::jsonb) difficult_items
     from owned_sessions os
     left join hint_summary h on h.session_id = os.id

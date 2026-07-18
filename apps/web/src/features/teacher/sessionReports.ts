@@ -6,7 +6,10 @@ export interface SessionReport {
   duration_seconds: number; topics: string[]; objective: string | null;
   assignment_count: number; completed_count: number; completion_rate: number;
   average_score: number; score_distribution: { low: number; middle: number; high: number };
-  hints: number; difficult_items: Array<{ item_index: number; incorrect_attempts: number }>;
+  hints: number; difficult_items: Array<{
+    activity_id: string; candidate_id: string; variant: "support" | "core" | "challenge";
+    item_index: number; incorrect_attempts: number;
+  }>;
   band_outcomes: Record<string, { assigned: number; completed: number; average_score: number }>;
   total_count: number;
 }

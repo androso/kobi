@@ -22,3 +22,9 @@ test("report telemetry casts are guarded by JSON types", () => {
   assert.match(normalized, /jsonb_typeof\(e\.payload->'item_index'\) = 'number'.*\(e\.payload->>'item_index'\)::integer/);
   assert.doesNotMatch(normalized, /coalesce\(\(e\.payload->>'correct'\)::boolean/);
 });
+
+test("difficult items stay scoped to the delivered activity variant", () => {
+  assert.match(normalized, /select a\.session_id, a\.activity_id, a\.candidate_id, a\.variant, attempt\.item_index/);
+  assert.match(normalized, /group by a\.session_id, a\.activity_id, a\.candidate_id, a\.variant, attempt\.item_index/);
+  assert.match(normalized, /'activity_id', d\.activity_id, 'candidate_id', d\.candidate_id, 'variant', d\.variant, 'item_index', d\.item_index/);
+});

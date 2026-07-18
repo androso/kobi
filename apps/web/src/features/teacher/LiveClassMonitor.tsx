@@ -107,6 +107,7 @@ function TranscriptPlayerCard({
   elapsed,
   isDemoMode,
   isRecording,
+  isStopping,
   onToggleRecording,
   uploadStatus,
   recordingError,
@@ -115,6 +116,7 @@ function TranscriptPlayerCard({
   elapsed: number;
   isDemoMode: boolean;
   isRecording: boolean;
+  isStopping: boolean;
   onToggleRecording: () => void;
   uploadStatus: string | null;
   recordingError: string | null;
@@ -193,8 +195,9 @@ function TranscriptPlayerCard({
 
         {isRecording && isDemoMode ? (
           <button
+            disabled={isStopping}
             onClick={onToggleRecording}
-            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-3 font-bold text-sm transition-all hover:shadow-lg active:scale-95"
+            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-3 font-bold text-sm transition-all hover:shadow-lg active:scale-95 disabled:cursor-wait disabled:opacity-70"
             type="button"
           >
             <Pause className="h-5 w-5" />
@@ -202,8 +205,9 @@ function TranscriptPlayerCard({
           </button>
         ) : isRecording ? (
           <button
+            disabled={isStopping}
             onClick={onToggleRecording}
-            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-3 font-bold text-sm transition-all hover:shadow-lg active:scale-95"
+            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-3 font-bold text-sm transition-all hover:shadow-lg active:scale-95 disabled:cursor-wait disabled:opacity-70"
             type="button"
           >
             <StopCircle className="h-5 w-5" />
@@ -211,12 +215,13 @@ function TranscriptPlayerCard({
           </button>
         ) : (
           <button
+            disabled={isStopping}
             onClick={onToggleRecording}
-            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-2.5 font-bold text-sm transition-all hover:shadow-lg active:scale-95"
+            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-2.5 font-bold text-sm transition-all hover:shadow-lg active:scale-95 disabled:cursor-wait disabled:opacity-70"
             type="button"
           >
             <Circle className="h-4 w-4 fill-white" />
-            Iniciar grabación
+            {isStopping ? "Finalizando sesión..." : "Iniciar grabación"}
           </button>
         )}
       </div>
@@ -725,6 +730,7 @@ export function LiveClassMonitor() {
   const isDemoMode = isDemoProjectMode();
   const [elapsed, setElapsed] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
+  const [isStoppingSession, setIsStoppingSession] = useState(false);
   const [completedSessionClassId, setCompletedSessionClassId] = useState<string | null>(null);
   const [activitySessionId, setActivitySessionId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<DeliveryCandidate[]>([]);
@@ -1058,34 +1064,41 @@ export function LiveClassMonitor() {
   }
 
   async function stopRecording() {
+    if (isStoppingRef.current) return;
+    setIsStoppingSession(true);
     const closedSessionId = apiSessionIdRef.current;
-    await stopBrowserRecording();
-    setIsRecording(false);
-    setUploadStatus(closedSessionId ? "Sesion enviada al worker" : uploadStatus);
+    try {
+      await stopBrowserRecording();
+      setIsRecording(false);
+      setUploadStatus(closedSessionId ? "Sesion enviada al worker" : uploadStatus);
 
-    if (activeClass) {
-      let sessionClosed = false;
-      if (closedSessionId && supabase) {
-        try {
-          await closeTeacherSession(supabase, closedSessionId);
-          sessionClosed = true;
-        } catch (error) {
-          setRecordingError(error instanceof Error ? error.message : "No se pudo cerrar la sesion.");
+      if (activeClass) {
+        let sessionClosed = false;
+        if (closedSessionId && supabase) {
+          try {
+            await closeTeacherSession(supabase, closedSessionId);
+            sessionClosed = true;
+          } catch (error) {
+            setRecordingError(error instanceof Error ? error.message : "No se pudo cerrar la sesion.");
+          }
+        }
+        const session = buildSession(activeClass, elapsed, latestLessonState);
+        setCompletedSessionClassId(activeClass.id);
+        endSession(session); // guarda en historial + limpia el monitor activo
+        void handleGenerateActivity(closedSessionId);
+        if (sessionClosed) {
+          completedSessionIdRef.current = closedSessionId;
+          apiSessionIdRef.current = null;
+          setApiSessionId(null);
         }
       }
-      const session = buildSession(activeClass, elapsed, latestLessonState);
-      setCompletedSessionClassId(activeClass.id);
-      endSession(session); // guarda en historial + limpia el monitor activo
-      void handleGenerateActivity(closedSessionId);
-      if (sessionClosed) {
-        completedSessionIdRef.current = closedSessionId;
-        apiSessionIdRef.current = null;
-        setApiSessionId(null);
-      }
+    } finally {
+      setIsStoppingSession(false);
     }
   }
 
   function toggleRecording() {
+    if (isStoppingSession) return;
     if (isRecording) {
       void stopRecording();
       return;
@@ -1244,6 +1257,7 @@ export function LiveClassMonitor() {
                     elapsed={elapsed}
                     isDemoMode={isDemoMode}
                     isRecording={isRecording}
+                    isStopping={isStoppingSession}
                     onToggleRecording={toggleRecording}
                     uploadStatus={uploadStatus}
                     recordingError={recordingError}

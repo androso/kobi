@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Calendar, ChevronLeft, ChevronRight, Clock, FolderOpen, X } from "lucide-react";
 import { Sidebar } from "./components/Sidebar";
 import { CreateClassModal } from "./components/CreateClassModal";
@@ -16,13 +16,33 @@ export function PreviousClasses() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<SessionReport | null>(null);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const latestPageRef = useRef(page);
+  const latestRequestRef = useRef(0);
+  latestPageRef.current = page;
 
   const load = useCallback(async () => {
+    const requestId = latestRequestRef.current + 1;
+    latestRequestRef.current = requestId;
+    const requestedPage = page;
     if (!supabase) { setError("Supabase no está configurado."); setLoading(false); return; }
     setLoading(true); setError(null);
-    try { setReports(await loadSessionReports(supabase, page)); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "No se pudo cargar el historial."); }
-    finally { setLoading(false); }
+    try {
+      const nextReports: SessionReport[] = await loadSessionReports(supabase, requestedPage);
+      if (requestId === latestRequestRef.current && requestedPage === latestPageRef.current) {
+        setReports(nextReports);
+        setSelected((current) => current
+          ? nextReports.find((report) => report.id === current.id) ?? current
+          : null);
+      }
+    } catch (cause) {
+      if (requestId === latestRequestRef.current && requestedPage === latestPageRef.current) {
+        setError(cause instanceof Error ? cause.message : "No se pudo cargar el historial.");
+      }
+    } finally {
+      if (requestId === latestRequestRef.current && requestedPage === latestPageRef.current) {
+        setLoading(false);
+      }
+    }
   }, [page]);
 
   useEffect(() => { void load(); }, [load]);
@@ -31,6 +51,7 @@ export function PreviousClasses() {
     const client = supabase;
     const channel = client.channel("teacher-session-reports")
       .on("postgres_changes", { event: "*", schema: "public", table: "sessions" }, () => void load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "segments" }, () => void load())
       .on("postgres_changes", { event: "*", schema: "public", table: "assignments" }, () => void load())
       .on("postgres_changes", { event: "*", schema: "public", table: "events" }, () => void load())
       .subscribe();
@@ -66,7 +87,7 @@ export function PreviousClasses() {
       <div className="mt-6 grid gap-3 sm:grid-cols-3"><Metric label="Puntaje promedio" value={percent(selected.average_score)}/><Metric label="Pistas usadas" value={String(selected.hints)}/><Metric label="Completadas" value={`${selected.completed_count}/${selected.assignment_count}`}/></div>
       <h3 className="mt-6 font-bold">Distribución de puntajes</h3><p className="text-sm text-slate-600">Bajo: {selected.score_distribution.low} · Medio: {selected.score_distribution.middle} · Alto: {selected.score_distribution.high}</p>
       <h3 className="mt-6 font-bold">Resultados por ruta</h3>{Object.entries(selected.band_outcomes).map(([band, outcome]) => <p className="text-sm text-slate-600" key={band}>{band}: {outcome.completed}/{outcome.assigned} · {percent(outcome.average_score)}</p>)}
-      <h3 className="mt-6 font-bold">Ítems difíciles</h3><p className="text-sm text-slate-600">{selected.difficult_items.length ? selected.difficult_items.map(item=>`#${item.item_index+1} (${item.incorrect_attempts})`).join(", ") : "Ninguno registrado"}</p>
+      <h3 className="mt-6 font-bold">Ítems difíciles</h3><p className="text-sm text-slate-600">{selected.difficult_items.length ? selected.difficult_items.map(item=>`${item.variant} #${item.item_index+1} (${item.incorrect_attempts})`).join(", ") : "Ninguno registrado"}</p>
     </div></div>}
   </main>;
 }

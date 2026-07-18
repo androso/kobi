@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -140,6 +140,7 @@ beforeEach(() => {
   mocks.listCandidates.mockResolvedValue([mocks.candidate]);
   mocks.requestActivityCandidates.mockResolvedValue({ inserted: 1, reused: 0, generated: 0, skippedReason: null });
   mocks.uploadAudioChunk.mockResolvedValue(undefined);
+  mocks.supabaseRpc.mockResolvedValue({ data: [{ id: "session-1" }], error: null });
 });
 
 afterEach(() => {
@@ -346,5 +347,38 @@ describe("LiveClassMonitor activity delivery", () => {
     expect(mocks.uploadAudioChunk.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.supabaseRpc.mock.invocationCallOrder[0]);
     expect(stopTrack).toHaveBeenCalled();
+  });
+
+  it("keeps recording restart disabled until the previous session close settles", async () => {
+    let resolveClose!: (value: { data: Array<{ id: string }>; error: null }) => void;
+    mocks.supabaseRpc.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveClose = resolve;
+    }));
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /pausar/i }));
+
+    const finalizingButton = await screen.findByRole("button", { name: /finalizando sesión/i });
+    expect(finalizingButton).toBeDisabled();
+    fireEvent.click(finalizingButton);
+    expect(mocks.createBackendSession).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveClose({ data: [{ id: "session-1" }], error: null });
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: /iniciar grabación/i })).toBeEnabled());
   });
 });
