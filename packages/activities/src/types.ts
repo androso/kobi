@@ -10,7 +10,35 @@ export const activityFamilySchema = z.enum([
 ]);
 
 export const difficultyBandSchema = z.enum(["support", "core", "challenge"]);
-export const activitySourceSchema = z.enum(["seeded", "reused", "new"]);
+export const activitySourceSchema = z.enum(["seeded", "reused", "adapted", "new"]);
+export const activityMechanicSchema = z.enum([
+  "sorting_board",
+  "matching_pairs",
+  "evidence_detective",
+  "vocabulary_lab",
+  "timeline_builder",
+  "story_path",
+  "source_check_desk",
+  "argument_builder",
+]);
+
+export const activityMechanicByFamily: Record<ActivityFamily, readonly ActivityMechanic[]> = {
+  match_classify: ["sorting_board", "matching_pairs", "evidence_detective", "vocabulary_lab"],
+  sequence_order: ["timeline_builder", "story_path"],
+  guided_practice: ["source_check_desk", "argument_builder", "vocabulary_lab"],
+};
+
+export const learningDesignSchema = z.object({
+  learning_goal: z.string().min(1),
+  interaction_summary: z.string().min(1),
+  success_criteria: z.array(z.string().min(1)).min(1).max(5),
+});
+
+export const visualThemeSchema = z.object({
+  scene: z.string().min(1),
+  accent: z.string().min(1),
+});
+
 export const activityCapabilitySchema = z.enum(["dom", "css", "svg", "canvas"]);
 export const activityTelemetryEventTypeSchema = z.enum(["attempt", "hint", "complete"]);
 
@@ -29,6 +57,7 @@ export const activityContentItemSchema = z.object({
 
 export const activityManifestSchema = z.object({
   family: activityFamilySchema,
+  mechanic: activityMechanicSchema.optional(),
   title: z.string().min(3),
   difficulty_band: difficultyBandSchema,
   curriculum: activityCurriculumSchema,
@@ -40,6 +69,17 @@ export const activityManifestSchema = z.object({
   entry: z.literal("index.html"),
   sdk_version: z.literal(ACTIVITY_SDK_VERSION),
   allowed_capabilities: z.array(activityCapabilitySchema).min(1),
+  learning_design: learningDesignSchema.optional(),
+  visual_theme: visualThemeSchema.optional(),
+}).superRefine((manifest, ctx) => {
+  if (!manifest.mechanic) return;
+  if (!activityMechanicByFamily[manifest.family].includes(manifest.mechanic)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["mechanic"],
+      message: `mechanic ${manifest.mechanic} is not valid for family ${manifest.family}`,
+    });
+  }
 });
 
 export const activityEvidenceSchema = z.object({
@@ -57,6 +97,11 @@ export const activityRubricScoresSchema = z.object({
   hint_leakage: z.number().min(0).max(1),
   duplicate_risk: z.number().min(0).max(1),
   spanish_suitability: z.number().min(0).max(1),
+  gamefulness: z.number().min(0).max(1).optional(),
+  interaction_quality: z.number().min(0).max(1).optional(),
+  visual_coherence: z.number().min(0).max(1).optional(),
+  accessibility: z.number().min(0).max(1).optional(),
+  band_coherence: z.number().min(0).max(1).optional(),
 });
 
 export const activityVerifierScoresSchema = z.object({
@@ -72,6 +117,7 @@ export const activityArtifactSchema = z.object({
   verifier_scores: activityVerifierScoresSchema,
   evidence: z.array(activityEvidenceSchema).min(1),
   parent_id: z.string().nullable().optional(),
+  activity_set_id: z.string().nullable().optional(),
   status: z.enum(["candidate", "verified", "rejected", "superseded"]),
 });
 
@@ -80,6 +126,9 @@ export const activityArtifactCandidateSchema = activityArtifactSchema.extend({
 });
 
 export type ActivityFamily = z.infer<typeof activityFamilySchema>;
+export type ActivityMechanic = z.infer<typeof activityMechanicSchema>;
+export type LearningDesign = z.infer<typeof learningDesignSchema>;
+export type VisualTheme = z.infer<typeof visualThemeSchema>;
 export type DifficultyBand = z.infer<typeof difficultyBandSchema>;
 export type ActivitySource = z.infer<typeof activitySourceSchema>;
 export type ActivityCapability = z.infer<typeof activityCapabilitySchema>;
@@ -124,12 +173,65 @@ export const activityHintPayloadSchema = z.object({
   hint_index: z.number().int().nonnegative(),
 });
 
-export const activityCompletePayloadSchema = z.object({
-  assignment_id: z.string().min(1),
-  score: z.number().min(0),
-  total: z.number().min(0).optional(),
-  completed_at: z.string().datetime().optional(),
-});
+export const activityCompletePayloadSchema = z
+  .object({
+    assignment_id: z.string().min(1),
+    score_unit: z.enum(["count", "normalized"]).optional(),
+    score: z.number().finite().min(0),
+    total: z.number().finite().positive().optional(),
+    completed_at: z.string().datetime().optional(),
+  })
+  .superRefine((payload, ctx) => {
+    const scoreUnit = payload.score_unit ?? (payload.total === undefined ? "normalized" : "count");
+
+    if (scoreUnit === "normalized" && payload.total !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["total"],
+        message: "total must be omitted for normalized scores",
+      });
+    }
+
+    if (scoreUnit === "normalized" && payload.score > 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["score"],
+        message: "normalized score must be between 0 and 1",
+      });
+    }
+
+    if (scoreUnit === "count" && payload.total === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["total"],
+        message: "total is required for count scores",
+      });
+    }
+
+    if (scoreUnit === "count" && !Number.isInteger(payload.score)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["score"],
+        message: "count score must be an integer",
+      });
+    }
+
+    if (scoreUnit === "count" && payload.total !== undefined && !Number.isInteger(payload.total)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["total"],
+        message: "count total must be an integer",
+      });
+    }
+
+    if (scoreUnit === "count" && payload.total !== undefined && payload.score > payload.total) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["score"],
+        message: "count score cannot exceed total",
+      });
+    }
+  });
 
 export const activitySdkEventSchema = z.discriminatedUnion("method", [
   z.object({
@@ -168,6 +270,7 @@ export interface ActivityRepositoryRow {
   bundle_ref: string;
   evidence: ActivityEvidence[];
   parent_id: string | null;
+  activity_set_id?: string | null;
   status: ActivityArtifact["status"];
   source: ActivitySource;
   verifier_scores: ActivityVerifierScores;

@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { LessonState } from "@kobi/ai-core";
 import type { CurriculumMatch } from "@kobi/curriculum";
 import {
+  activityManifestSchema,
   activitySdkMessageSchema,
+  createGamePlan,
   authorizeActivityTelemetryMessage,
   buildActivitySessionContext,
   createActivityArtifactCandidates,
@@ -49,6 +51,7 @@ describe("activity artifact contracts", () => {
       lessonState,
       sessionContext: context,
       curriculumMatches,
+      activitySetId: "set-test",
     });
 
     expect(candidates).toHaveLength(3);
@@ -58,14 +61,103 @@ describe("activity artifact contracts", () => {
       "challenge",
     ]);
 
+    expect(new Set(candidates.map((candidate) => candidate.activity_set_id)).size).toBe(1);
+    expect(new Set(candidates.map((candidate) => candidate.manifest.mechanic)).size).toBe(1);
+
     for (const candidate of candidates) {
       const result = verifyActivityArtifact(candidate);
       expect(result.ok).toBe(true);
       expect(result.artifact.status).toBe("verified");
       expect(result.artifact.evidence[0].objective_code).toBe("L7.4.2");
+      expect(candidate.bundle_html).toContain('<textarea id="response"');
+      expect(candidate.bundle_html).toContain('score_unit: "count", score: computeScore(), total: answers.length');
+      expect(candidate.bundle_html).toContain("if (completed) return");
+      expect(candidate.bundle_html).toContain("completeButton.disabled = true");
+      expect(candidate.bundle_html).not.toContain("const correct = selected.size > 0");
       expect(candidate.bundle_html).not.toContain("preview-assignment");
       expect(candidate.bundle_html).not.toContain("assignment_id:");
+      const inlineScript = candidate.bundle_html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+      expect(inlineScript).toBeDefined();
+      expect(() => new Function(inlineScript ?? "")).not.toThrow();
     }
+  });
+
+  it("renders an order interaction when the shared plan uses a sequence mechanic", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const candidates = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+      activitySetId: "set-sequence",
+      gamePlan: {
+        family: "sequence_order",
+        mechanic: "timeline_builder",
+        learning_goal: "Ordenar la estructura de una noticia.",
+        interaction_metaphor: "linea de tiempo",
+        kobi_visual_direction: "Azul Kobi",
+        rationale: "La secuencia aumenta en complejidad por banda.",
+        band_requirements: {
+          support: "Dos pasos guiados.",
+          core: "Tres pasos.",
+          challenge: "Cuatro pasos con evidencia.",
+        },
+      },
+    });
+
+    for (const candidate of candidates) {
+      expect(candidate.manifest.family).toBe("sequence_order");
+      expect(candidate.manifest.content.items[0].prompt).toContain("Ordena");
+      expect(candidate.bundle_html).toContain('id="order"');
+      expect(candidate.bundle_html).toContain('interactionMode === "sequence_order"');
+      if (candidate.manifest.difficulty_band === "challenge") {
+        expect(candidate.bundle_html).toContain('<textarea id="justification"');
+        expect(candidate.bundle_html).toContain("justificationText.trim().length < 8");
+      } else {
+        expect(candidate.bundle_html).not.toContain('<textarea id="justification"');
+      }
+      expect(verifyActivityArtifact(candidate).ok).toBe(true);
+    }
+  });
+
+  it("plans one coherent game concept with differentiated band requirements", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const plan = createGamePlan(context, curriculumMatches);
+
+    expect(plan.mechanic).toBe("source_check_desk");
+    expect(plan.band_requirements.support).toContain("Menos opciones");
+    expect(plan.band_requirements.challenge).toContain("Justificacion");
+  });
+
+  it("rejects newly generated bundles that omit explicit completion score units", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+      activitySetId: "set-score-contract",
+    });
+
+    const result = verifyActivityArtifact({
+      ...candidate,
+      bundle_html: candidate.bundle_html.replaceAll("score_unit", "scoreUnit"),
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.errors).toContain("bundle is missing SDK hook: score_unit");
+  });
+
+  it("keeps legacy manifests readable while rejecting invalid family/mechanic combinations", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+      activitySetId: "set-test",
+    });
+    const legacy = { ...candidate.manifest, mechanic: undefined, learning_design: undefined, visual_theme: undefined };
+
+    expect(activityManifestSchema.safeParse(legacy).success).toBe(true);
+    expect(activityManifestSchema.safeParse({ ...candidate.manifest, family: "sequence_order", mechanic: "source_check_desk" }).success).toBe(false);
   });
 
   it("validates SDK telemetry messages", () => {
@@ -168,6 +260,27 @@ describe("activity artifact contracts", () => {
     });
   });
 
+  it("rejects ambiguous or impossible completion scores", () => {
+    const authorizeComplete = (payload: Record<string, unknown>) =>
+      authorizeActivityTelemetryMessage(
+        {
+          sdk: "activity-sdk/v1",
+          type: "event",
+          method: "reportComplete",
+          payload,
+        },
+        { assignmentId: "assignment-1", sourceMatches: true },
+      );
+
+    expect(authorizeComplete({ score: 2 }).ok).toBe(false);
+    expect(authorizeComplete({ score_unit: "count", score: 2, total: 1 }).ok).toBe(false);
+    expect(authorizeComplete({ score_unit: "count", score: 0, total: 0 }).ok).toBe(false);
+    expect(authorizeComplete({ score_unit: "count", score: 0.75, total: 4 }).ok).toBe(false);
+    expect(authorizeComplete({ score_unit: "normalized", score: 0.75, total: 4 }).ok).toBe(false);
+    expect(authorizeComplete({ score_unit: "normalized", score: 0.75 }).ok).toBe(true);
+    expect(authorizeComplete({ score_unit: "count", score: 2, total: 4 }).ok).toBe(true);
+  });
+
   it("rejects telemetry with spoofed assignment ids or rate-limit violations", () => {
     const spoofed = authorizeActivityTelemetryMessage(
       {
@@ -176,6 +289,7 @@ describe("activity artifact contracts", () => {
         method: "reportComplete",
         payload: {
           assignment_id: "other-assignment",
+          score_unit: "count",
           score: 1,
           total: 1,
         },
@@ -214,6 +328,7 @@ describe("activity artifact contracts", () => {
       lessonState,
       sessionContext: context,
       curriculumMatches,
+      activitySetId: "set-test",
     });
     candidate.manifest.content.items[0].hints = ["La respuesta es titular"];
 

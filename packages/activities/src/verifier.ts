@@ -42,6 +42,11 @@ const minimumRubricScores: ActivityRubricScores = {
   hint_leakage: 0.8,
   duplicate_risk: 0.8,
   spanish_suitability: 0.8,
+  gamefulness: 0.75,
+  interaction_quality: 0.75,
+  visual_coherence: 0.75,
+  accessibility: 0.75,
+  band_coherence: 0.75,
 };
 
 export function verifyActivityArtifact(
@@ -55,6 +60,7 @@ export function verifyActivityArtifact(
   const bundleHtml = candidate.bundle_html ?? "";
   const staticErrors = [
     ...checkHtmlShape(bundleHtml),
+    ...checkNewManifestFields(candidate),
     ...checkForbiddenApis(bundleHtml),
     ...checkSdkTelemetry(bundleHtml),
     ...checkManifestCodeConsistency(candidate),
@@ -78,6 +84,7 @@ export function verifyActivityArtifact(
     verifier_scores,
     evidence: candidate.evidence,
     parent_id: candidate.parent_id ?? null,
+    activity_set_id: candidate.activity_set_id ?? null,
     status: errors.length === 0 ? "verified" : "rejected",
   };
 
@@ -93,7 +100,22 @@ function checkHtmlShape(bundleHtml: string): string[] {
   if (!/<!doctype html>/i.test(bundleHtml)) errors.push("bundle must declare <!doctype html>");
   if (!/<html\b/i.test(bundleHtml)) errors.push("bundle must include an <html> root");
   if (!/<script\b/i.test(bundleHtml)) errors.push("bundle must include inline JavaScript");
+  if (!/<meta[^>]+http-equiv=["\']Content-Security-Policy["\']/i.test(bundleHtml)) {
+    errors.push("bundle must include a restrictive Content-Security-Policy meta tag");
+  }
   if (/<iframe\b/i.test(bundleHtml)) errors.push("nested iframes are forbidden");
+  return errors;
+}
+
+function checkNewManifestFields(candidate: ActivityArtifactCandidate): string[] {
+  const manifest = candidate.manifest;
+  const errors: string[] = [];
+  if (!manifest.mechanic) errors.push("manifest.mechanic is required for new artifacts");
+  if (!manifest.learning_design?.learning_goal) errors.push("manifest.learning_design.learning_goal is required for new artifacts");
+  if (!manifest.learning_design?.interaction_summary) errors.push("manifest.learning_design.interaction_summary is required for new artifacts");
+  if (!manifest.learning_design?.success_criteria?.length) errors.push("manifest.learning_design.success_criteria is required for new artifacts");
+  if (!manifest.visual_theme?.scene) errors.push("manifest.visual_theme.scene is required for new artifacts");
+  if (!manifest.visual_theme?.accent) errors.push("manifest.visual_theme.accent is required for new artifacts");
   return errors;
 }
 
@@ -112,6 +134,7 @@ function checkSdkTelemetry(bundleHtml: string): string[] {
     "reportAttempt",
     "reportHint",
     "reportComplete",
+    "score_unit",
   ];
 
   return requiredStrings
@@ -157,6 +180,11 @@ function scoreRubric(candidate: ActivityArtifactCandidate): ActivityRubricScores
     hint_leakage: hintsLeakAnswers(allHints, allAnswers) ? 0.35 : 0.9,
     duplicate_risk: 0.86,
     spanish_suitability: looksSpanish(candidate.bundle_html) ? 0.9 : 0.62,
+    gamefulness: candidate.manifest.mechanic ? 0.88 : 0.5,
+    interaction_quality: /addEventListener|onclick|drag|key/i.test(candidate.bundle_html) ? 0.86 : 0.55,
+    visual_coherence: /#2563eb|#1d4ed8|azul|blue/i.test(candidate.bundle_html) ? 0.86 : 0.62,
+    accessibility: /:focus-visible|aria-|prefers-reduced-motion/i.test(candidate.bundle_html) ? 0.84 : 0.55,
+    band_coherence: candidate.activity_set_id ? 0.9 : 0.76,
   };
 }
 
@@ -164,10 +192,10 @@ function checkRubricThresholds(scores: ActivityRubricScores): string[] {
   return (Object.keys(minimumRubricScores) as Array<keyof ActivityRubricScores>).flatMap(
     (scoreName) => {
       const score = scores[scoreName];
-      const minimum = minimumRubricScores[scoreName];
-      return score >= minimum
+      const minimum = minimumRubricScores[scoreName] ?? 0;
+      return typeof score === "number" && score >= minimum
         ? []
-        : [`rubric: ${scoreName} ${score.toFixed(2)} is below ${minimum.toFixed(2)}`];
+        : [`rubric: ${scoreName} ${(score ?? 0).toFixed(2)} is below ${minimum.toFixed(2)}`];
     },
   );
 }

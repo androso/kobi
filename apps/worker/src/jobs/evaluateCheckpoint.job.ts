@@ -45,11 +45,19 @@ export function buildGenerateActivityArtifactsJobData(input: {
   sessionId: string;
   lessonState: LessonState;
   curriculumMatches: CurriculumMatch[];
+  curriculumFallback?: {
+    classId?: string;
+    grade: number;
+    subject: string;
+    unit?: string;
+    sourceIds?: string[];
+  };
 }) {
   return {
     sessionId: input.sessionId,
     lessonState: input.lessonState,
     curriculumMatches: input.curriculumMatches,
+    ...(input.curriculumFallback ? { curriculumFallback: input.curriculumFallback } : {}),
   };
 }
 
@@ -131,11 +139,16 @@ export async function runEvaluateCheckpointJob(
     sourceIds,
   });
 
-  await boss.send(JOB_GENERATE_ACTIVITY_ARTIFACTS, buildGenerateActivityArtifactsJobData({
-    sessionId,
-    lessonState: latestLessonState,
-    curriculumMatches,
-  }));
+  await boss.send(
+    JOB_GENERATE_ACTIVITY_ARTIFACTS,
+    buildGenerateActivityArtifactsJobData({
+      sessionId,
+      lessonState: latestLessonState,
+      curriculumMatches,
+      curriculumFallback: { ...retrievalContext, sourceIds },
+    }),
+    { singletonKey: sessionId },
+  );
 
   return { evaluated: true, ready: true, skippedReason: null };
 }

@@ -560,6 +560,7 @@ async function createActivityCandidates(
       sessionId,
       lessonState,
       curriculumMatches,
+      curriculumFallback: { ...classContext, sourceIds },
     }, {
       openAiGenerator,
     });

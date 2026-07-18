@@ -44,6 +44,8 @@ Produced by the planner/generator, checked by the verifier, stored in `activitie
 
 For the teacher approval flow, Area C writes support/core/challenge rows to `session_activity_candidates`. The teacher may assign selected students to support or challenge; every unselected student receives the approved core candidate by default. Area E records the final per-student delivery in `assignments.variant`.
 
+Repository reuse prefers complete strong sets sharing one `activity_set_id`. Pre-set-id verified rows remain eligible only when a complete support/core/challenge trio clears the strong-reuse threshold and shares the exact grade, subject, unit, objective, family, and mechanic signature; unrelated legacy interactions are never combined into a fallback set.
+
 Assignment rows are only valid for approved candidates from the same session: `assignments.candidate_id`, `activity_id`, and `variant` must match the selected `session_activity_candidates` row, and the assigned student must belong to the session's class.
 
 ```json
@@ -86,6 +88,7 @@ Assignment rows are only valid for approved candidates from the same session: `a
     }
   ],
   "parent_id": null,
+  "activity_set_id": "set-...",
   "status": "verified"
 }
 ```
@@ -94,7 +97,7 @@ Assignment rows are only valid for approved candidates from the same session: `a
 
 - Bundle format is one self-contained `index.html` with inline CSS/JS.
 - No external imports, assets, network calls, credentialed requests, storage APIs, top navigation, popups, or same-origin assumptions.
-- Allowed families are `match_classify`, `sequence_order`, and `guided_practice`.
+- Allowed families are `match_classify`, `sequence_order`, and `guided_practice`; newly generated/adapted manifests also include a valid `mechanic`, `learning_design`, and `visual_theme`.
 - `content.items[]` is required and must include prompts plus answer keys; hints default to an empty list when omitted.
 - `bundle_ref` must be unguessable and authorized by assignment/class before iframe delivery.
 - Students authenticate with teacher-managed username/password accounts. Delivery derives the student mapping from `auth.uid()`; assignment reads, dismissals, telemetry, and completion are restricted to that mapping by RLS. `join_class_by_code` and browser-held student bearer tokens are not part of the active contract.
@@ -107,6 +110,7 @@ Assignment rows are only valid for approved candidates from the same session: `a
 ## 4. Telemetry event
 
 Written to the `events` table on every student interaction; read back for the live monitor and session report.
+Completion events declare `score_unit` as either `count` or `normalized`, while `assignments.score` stores the normalized 0–1 outcome used for repository ranking. Count scores require integer `score` and `total` values and cannot exceed `total`; normalized scores require a 0–1 `score` and omit `total`. Existing `activity-sdk/v1` bundles without `score_unit` retain the legacy convention where the presence of `total` means count, but every newly verified bundle must declare the unit. Once an assignment reaches `completed`, its status, score, and completion timestamp are immutable so repository outcome aggregation runs exactly once; later roster republishes preserve that completed row rather than resetting or rejecting it. Generated activity UIs must disable completion after their first valid submission so duplicate clicks do not attempt a second immutable update.
 
 ```json
 {

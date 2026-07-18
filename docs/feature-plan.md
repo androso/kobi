@@ -39,21 +39,21 @@ Area C owns the job handler and generation pipeline behind this payload; the wor
   - Teacher manifest editing is optional for the demo loop. If implemented, teachers may edit manifest content only, not code; edits trigger manifest/schema validation plus a fast smoke check.
   - Approval is per band. Assignment creation resolves `student_profiles.band`; missing/unknown student bands default to core, and missing support/challenge approval falls back to the approved core activity.
 - Verifier is two-stage:
-  - Deterministic: manifest schema, forbidden API/static checks, sandbox boot, SDK telemetry assertions, and manifest/code consistency smoke test.
-  - Rubric model: curriculum alignment, age fit, duration, answer correctness, hint leakage, duplicate risk, and Spanish suitability.
+  - Deterministic: manifest schema, forbidden API/static checks, SDK telemetry assertions, and manifest/code consistency smoke test.
+  - Structured AI review: curriculum alignment, age fit, answer correctness, hint leakage, band coherence, safety, and usability. The set fails closed when review fails or returns a blocking finding.
 - Sandbox host is owned by Area E:
   - iframe with strict sandbox/CSP, no Supabase credentials inside generated code.
   - parent page injects manifest/assignment/band and binds telemetry writes to parent-owned assignment context.
   - parent-side telemetry handling validates iframe source, message schema, method allowlist, assignment authorization, payload size, and rate limits before writing events.
-  - crashes or missing telemetry reject the artifact before teacher display.
-- Repository ranking should bias toward objective match, embedding similarity over manifest plus code summary, verifier score, times_used, and avg_score.
+  - missing required telemetry hooks reject the artifact before teacher display.
+- Repository ranking should bias toward objective match, current lesson-context overlap, verifier score, times_used, and normalized avg_score. Activity embeddings remain optional future work rather than an unwired v0 dependency.
 
 ## Test Plan
 
 - Contract tests for manifest validation and SDK message shapes.
 - Worker tests proving RAG queries are built from `session_context`, not transcript, and `CurriculumMatch[]` fields are mapped into artifact evidence without inventing unavailable Area B fields.
 - Retrieval tests for reuse, generate-new, and stale-candidate invalidation.
-- Sandbox tests loading seeded and generated HTML, blocking network/storage, verifying boot plus attempt/hint/complete events.
+- Static sandbox-contract tests block network/storage APIs and require attempt/hint/complete hooks. Headless browser and viewport verification are deferred.
 - Telemetry/sandbox tests proving parent-side authorization, payload limits, rate limiting, and parent-owned assignment/student/session binding.
 - End-to-end smoke: seeded artifact -> teacher approval -> assignment by band -> student iframe plays -> telemetry row written.
 - Demo acceptance: three verified artifacts ready within 60s, at least one reused and one new, and pre-seeded code artifacts survive generation failure.
@@ -74,7 +74,7 @@ Add an OpenAI-backed activity artifact generator that consumes the same structur
 
 - Use the official OpenAI TypeScript SDK only behind a server-only worker boundary, not in shared browser-facing `packages/activities`.
 - Configure the generator model with `OPENAI_ACTIVITY_MODEL`; validate the configured model at startup/runtime when OpenAI generation is enabled.
-- Optional rubric model is configurable as `OPENAI_ACTIVITY_RUBRIC_MODEL`; do not make pricing claims or model-price comparisons part of acceptance criteria.
+- Generated artifacts pass through a separate structured AI review call using the configured activity model; do not make pricing claims or model-price comparisons part of acceptance criteria.
 - Keep `OPENAI_API_KEY` in env only; update `.env.example` with the variable name, not a real key.
 
 ### Data Flow
@@ -84,12 +84,13 @@ flowchart TD
   staticPayload["Static GenerateActivityArtifactsJobData fixture"] --> generatorInput["lessonState + sessionContext + CurriculumMatch[]"]
   workerJob["generate-activity-artifacts job"] --> generatorInput
   generatorInput --> repoRank["repository reuse ranking"]
-  repoRank --> missingBands["missing bands only"]
-  missingBands --> openAiGen["server-only OpenAI draft DTO generation"]
+  repoRank --> completeSet["reuse a complete coherent set or generate all three bands"]
+  completeSet --> openAiGen["server-only OpenAI draft DTO generation"]
   openAiGen --> normalize["worker derives trusted fields"]
   normalize --> verify["existing deterministic verifier"]
   verify --> retry["one repair attempt on verifier errors"]
-  retry --> persist["activity_bundles + activities + session candidates"]
+  retry --> aiReview["structured AI review gate"]
+  aiReview --> persist["activity_bundles + activities + session candidates"]
   verify --> fallback["static/pre-seeded fallback"]
   fallback --> persist
 ```
@@ -111,7 +112,7 @@ flowchart TD
   - Redact or minimize quoted classroom phrases that may contain student names/PII before OpenAI calls.
 - Refactor `apps/worker/src/jobs/generateActivityArtifacts.job.ts` to choose generation source.
   - Try repository reuse first, as today.
-  - For missing bands only, call OpenAI generator when `OPENAI_API_KEY` and model configuration are valid and generation caps allow it.
+  - Reuse only a complete coherent support/core/challenge repository set. Otherwise call the OpenAI generator once for all three bands when configuration and generation caps allow it.
   - Normalize raw DTOs into complete `ActivityArtifactCandidate`s in the worker: enforce `contract_version`, validate/complete manifest fields, create cryptographically unguessable `bundle_ref`s, derive evidence from `CurriculumMatch[]` only, set `parent_id` from repository nearest-parent context, initialize verifier scores, and leave status finalization to verifier results.
   - Run `verifyActivityArtifact()` on every generated candidate.
   - If verification fails, send one repair prompt with verifier errors.
@@ -131,7 +132,7 @@ flowchart TD
   - Keep live OpenAI calls out of default tests.
 - Add at least one worker-level unit/integration test around `generateActivityArtifacts.job.ts`.
   - Prove repository reuse happens first.
-  - Prove OpenAI is called only for missing bands.
+  - Prove OpenAI generates one coherent three-band set rather than mixing sources by band.
   - Prove repair then fallback behavior.
   - Prove retries do not duplicate persistence.
 - Add telemetry/sandbox tests proving parent-side source validation, schema/method allowlists, assignment authorization binding, payload-size limits, rate limiting, and event writes from parent-owned context.
@@ -146,4 +147,5 @@ flowchart TD
 - Use one repair retry per candidate at most.
 - Deduplicate pending jobs by session/context version.
 - Cap generation attempts per session/class before falling back to static/pre-seeded artifacts.
+- Record each OpenAI attempt before the call so failures and review rejections consume the same per-session quota, and publish replacement candidate trios atomically under a per-session lock.
 - Keep model choice configurable and validated; pricing is an operational assumption, not an implementation acceptance criterion.
