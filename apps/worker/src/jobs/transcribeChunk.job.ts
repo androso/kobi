@@ -18,7 +18,7 @@ export interface TranscribeChunkJobData {
 export function registerTranscribeChunkJob(boss: PgBoss, supabase: SupabaseClient) {
   return boss.work<TranscribeChunkJobData>(
     "transcribe-chunk",
-    { batchSize: 1 },
+    { batchSize: 1, includeMetadata: true },
     async (jobs) => {
       const job = jobs[0];
       if (!job) return;
@@ -41,18 +41,31 @@ export function registerTranscribeChunkJob(boss: PgBoss, supabase: SupabaseClien
         const result = await transcribeAudioChunk({ audioUrl, mimeType });
         transcriptText = result.transcriptText;
       } catch (error) {
-        safeLog("error", "transcription.chunk_failed", { audioChunkId, sessionId, outcome: classifySafeError(error) });
+        const isTerminalAttempt = job.retryCount >= job.retryLimit;
+        const status = isTerminalAttempt ? "failed" : "pending";
+        safeLog(isTerminalAttempt ? "error" : "warn", "transcription.chunk_failed", {
+          audioChunkId,
+          sessionId,
+          outcome: classifySafeError(error),
+          retryCount: job.retryCount,
+          retryLimit: job.retryLimit,
+          terminal: isTerminalAttempt,
+        });
 
         const { error: failedStatusError } = await supabase
           .from("audio_chunks")
-          .update({ status: "failed" })
+          .update({ status })
           .eq("id", audioChunkId);
 
         if (failedStatusError) {
           throw new Error(
-            `transcribeChunk job: transcription failed and failed status could not be saved: ${failedStatusError.message}`,
+            `transcribeChunk job: transcription failed and ${status} status could not be saved: ${failedStatusError.message}`,
             { cause: error },
           );
+        }
+
+        if (isTerminalAttempt) {
+          await boss.send(JOB_BUILD_LESSON_STATE, { sessionId });
         }
 
         throw error;

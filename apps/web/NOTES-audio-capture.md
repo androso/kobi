@@ -21,6 +21,8 @@ Use the browser-native `MediaRecorder` + `getUserMedia` APIs — no extra librar
 - Chunk length: ~15 seconds (`AUDIO_CHUNK_MS` in `LiveClassMonitor.tsx`).
 - Format: use a browser-native audio format accepted by the OpenAI transcription API (for example, `audio/webm`); no client-side transcoding is needed for supported formats.
 
+For local prerecorded demonstrations, set `VITE_KOBI_RECORDING_SOURCE=prerecorded` and place the classroom MP3 at `apps/web/public/local-audio/classroom.mp3` (or configure `VITE_KOBI_PRERECORDED_AUDIO_PATH`). The browser decodes the file without playing it, downmixes it to mono, creates standalone 15-second WAV chunks, and uploads one every 2.1 seconds through the same endpoint. MP3 fixtures in that directory are gitignored because classroom audio must not be committed.
+
 ## `POST /api/sessions/:id/audio-chunks`
 
 This route handler is implemented in `apps/worker/src/api.ts`. It:

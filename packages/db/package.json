@@ -6,6 +6,7 @@
   "types": "src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "db:test": "node --test src/migrations.test.mjs",
     "db:generate": "cross-env NODE_OPTIONS=--require=tsx/cjs drizzle-kit generate",
     "db:migrate": "tsx src/migrate.ts"
   },

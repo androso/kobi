@@ -22,14 +22,22 @@ import {
 } from "../activityDelivery/activityIframeSecurity";
 import {
   createBackendSession,
+  getPrerecordedAudioPath,
+  getRecordingSource,
+  getTranscriptionStatus,
   isAudioApiConfigured,
   requestActivityCandidates,
   resolveBackendClassId,
   submitManualLessonState,
   uploadAudioChunk,
 } from "../../lib/audioApi";
+import { decodePrerecordedAudio } from "../../lib/prerecordedAudio";
+import { closeTeacherSession } from "./sessionReports";
 
 const AUDIO_CHUNK_MS = 15_000;
+const PRERECORDED_UPLOAD_INTERVAL_MS = 2_100;
+const TRANSCRIPTION_STATUS_POLL_MS = 2_000;
+const TRANSCRIPTION_STATUS_TIMEOUT_MS = 20 * 60_000;
 
 interface LessonStateSnapshot {
   topic: string;
@@ -106,6 +114,7 @@ function formatTime(seconds: number) {
 function TranscriptPlayerCard({
   elapsed,
   isRecording,
+  isStopping,
   onToggleRecording,
   uploadStatus,
   recordingError,
@@ -113,6 +122,7 @@ function TranscriptPlayerCard({
 }: {
   elapsed: number;
   isRecording: boolean;
+  isStopping: boolean;
   onToggleRecording: () => void;
   uploadStatus: string | null;
   recordingError: string | null;
@@ -191,8 +201,9 @@ function TranscriptPlayerCard({
 
         {isRecording ? (
           <button
+            disabled={isStopping}
             onClick={onToggleRecording}
-            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-3 font-bold text-sm transition-all hover:shadow-lg active:scale-95"
+            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-3 font-bold text-sm transition-all hover:shadow-lg active:scale-95 disabled:cursor-wait disabled:opacity-70"
             type="button"
           >
             <StopCircle className="h-5 w-5" />
@@ -200,12 +211,13 @@ function TranscriptPlayerCard({
           </button>
         ) : (
           <button
+            disabled={isStopping}
             onClick={onToggleRecording}
-            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-2.5 font-bold text-sm transition-all hover:shadow-lg active:scale-95"
+            className="bg-red-600 hover:bg-red-700 text-white rounded-xl px-5 py-2.5 flex items-center gap-2.5 font-bold text-sm transition-all hover:shadow-lg active:scale-95 disabled:cursor-wait disabled:opacity-70"
             type="button"
           >
             <Circle className="h-4 w-4 fill-white" />
-            Iniciar grabación
+            {isStopping ? "Finalizando sesión..." : "Iniciar grabación"}
           </button>
         )}
       </div>
@@ -300,9 +312,11 @@ function InsightsPanel({ lessonState }: { lessonState: LessonStateSnapshot | nul
 }
 
 function SuggestedActivityFAB({
+  disabled,
   loading,
   onGenerate,
 }: {
+  disabled: boolean;
   loading: boolean;
   onGenerate: () => void;
 }) {
@@ -310,7 +324,7 @@ function SuggestedActivityFAB({
     <div className="fixed bottom-6 right-6 z-50">
       <button
         className="bg-violet-600 text-white px-5 py-3 rounded-full shadow-2xl flex items-center gap-2 hover:scale-105 transition-all active:scale-95 font-bold text-sm disabled:cursor-not-allowed disabled:opacity-70"
-        disabled={loading}
+        disabled={disabled || loading}
         onClick={onGenerate}
         type="button"
       >
@@ -708,11 +722,27 @@ function normalizeLessonState(value: unknown): LessonStateSnapshot | null {
   };
 }
 
+function abortableDelay(milliseconds: number, signal: AbortSignal) {
+  return new Promise<void>((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const timeoutId = window.setTimeout(resolve, milliseconds);
+    signal.addEventListener("abort", () => {
+      window.clearTimeout(timeoutId);
+      resolve();
+    }, { once: true });
+  });
+}
+
 // -- Página ------------------------------------------------------------------
 
 export function LiveClassMonitor() {
+  const recordingSource = getRecordingSource();
   const [elapsed, setElapsed] = useState(0);
   const [isRecording, setIsRecording] = useState(false);
+  const [isStoppingSession, setIsStoppingSession] = useState(false);
   const [completedSessionClassId, setCompletedSessionClassId] = useState<string | null>(null);
   const [activitySessionId, setActivitySessionId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<DeliveryCandidate[]>([]);
@@ -721,6 +751,7 @@ export function LiveClassMonitor() {
   const [overridesByBand, setOverridesByBand] = useState<Partial<Record<DifficultyBand, string[]>>>({});
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityError, setActivityError] = useState<string | null>(null);
+  const [activityBlockedReason, setActivityBlockedReason] = useState<string | null>(null);
   const [publishStatus, setPublishStatus] = useState<string | null>(null);
   const [recordingError, setRecordingError] = useState<string | null>(null);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
@@ -752,21 +783,47 @@ export function LiveClassMonitor() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const apiSessionIdRef = useRef<string | null>(null);
+  const completedSessionIdRef = useRef<string | null>(null);
+  const activityContextVersionRef = useRef(0);
+  const pendingAudioUploadsRef = useRef<Set<Promise<void>>>(new Set());
   const chunkIndexRef = useRef(0);
   const recordingStartedAtRef = useRef<number | null>(null);
   const rotationTimerRef = useRef<number | null>(null);
   const isStoppingRef = useRef(false);
-  const pendingAudioUploadsRef = useRef<Set<Promise<void>>>(new Set());
+  const prerecordedAbortRef = useRef<AbortController | null>(null);
+  const prerecordedTranscriptionWaitRef = useRef<Promise<void> | null>(null);
+  const prerecordedStartingRef = useRef(false);
+  const prerecordedAcceptedChunksRef = useRef(0);
+  const prerecordedDurationSecondsRef = useRef(0);
+  const finalizingSessionRef = useRef(false);
+  const latestLessonStateRef = useRef<LessonStateSnapshot | null>(null);
+
+  async function refreshLatestLessonState(sessionId: string, shouldApply = () => true) {
+    if (!supabase) return;
+    const { data, error } = await supabase
+      .from("segments")
+      .select("lesson_state")
+      .eq("session_id", sessionId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!shouldApply() || error || !data?.lesson_state) return;
+    const normalized = normalizeLessonState(data.lesson_state);
+    latestLessonStateRef.current = normalized;
+    setLatestLessonState(normalized);
+  }
 
   // Timer runs only while recording
   useEffect(() => {
-    if (!isRecording) return;
+    if (!isRecording || recordingSource !== "microphone") return;
     const id = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(id);
   }, [isRecording]);
 
   useEffect(() => {
     return () => {
+      prerecordedAbortRef.current?.abort();
       void stopBrowserRecording();
     };
   }, []);
@@ -776,19 +833,9 @@ export function LiveClassMonitor() {
 
     let cancelled = false;
     const activeSessionId = apiSessionId;
-    const supabaseClient = supabase;
-
     async function loadLatestSegment() {
-      const { data, error } = await supabaseClient
-        .from("segments")
-        .select("lesson_state")
-        .eq("session_id", activeSessionId)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (cancelled || error || !data?.lesson_state) return;
-      setLatestLessonState(normalizeLessonState(data.lesson_state));
+      if (cancelled) return;
+      await refreshLatestLessonState(activeSessionId, () => !cancelled);
     }
 
     void loadLatestSegment();
@@ -828,6 +875,10 @@ export function LiveClassMonitor() {
   async function ensureBackendSession() {
     if (apiSessionIdRef.current) return apiSessionIdRef.current;
 
+    return createFreshBackendSession();
+  }
+
+  async function createFreshBackendSession() {
     if (!isAudioApiConfigured()) {
       throw new Error("Configura VITE_KOBI_API_URL para enviar audio al worker.");
     }
@@ -836,15 +887,159 @@ export function LiveClassMonitor() {
       throw new Error("Selecciona una clase antes de iniciar la sesion.");
     }
 
+    apiSessionIdRef.current = null;
+    setApiSessionId(null);
     const { sessionId } = await createBackendSession({ classId: resolveBackendClassId(activeClass.id) });
     apiSessionIdRef.current = sessionId;
     setApiSessionId(sessionId);
     return sessionId;
   }
 
-  async function handleAudioChunk(audio: Blob) {
-    const sessionId = apiSessionIdRef.current;
-    const startedAt = recordingStartedAtRef.current;
+  function resetActivityStateForNewRecording() {
+    activityContextVersionRef.current += 1;
+    setActivitySessionId(null);
+    setCandidates([]);
+    setSelectedCandidateId(null);
+    setStudents([]);
+    setOverridesByBand({});
+    setActivityLoading(false);
+    setActivityError(null);
+    setActivityBlockedReason(null);
+    setPublishStatus(null);
+    setLatestLessonState(null);
+    latestLessonStateRef.current = null;
+  }
+
+  async function processPrerecordedAudio() {
+    resetActivityStateForNewRecording();
+    setElapsed(0);
+    setUploadedChunkCount(0);
+    setRecordingError(null);
+    prerecordedAcceptedChunksRef.current = 0;
+    prerecordedDurationSecondsRef.current = 0;
+    finalizingSessionRef.current = false;
+
+    const abortController = new AbortController();
+    prerecordedAbortRef.current = abortController;
+
+    try {
+      const sessionId = await createFreshBackendSession();
+      isStoppingRef.current = false;
+      setUploadStatus("Cargando audio pregrabado");
+      setIsRecording(true);
+
+      const response = await fetch(getPrerecordedAudioPath(), { signal: abortController.signal });
+      if (!response.ok) {
+        throw new Error(`No se pudo cargar el MP3 configurado (${response.status}).`);
+      }
+
+      const chunks = await decodePrerecordedAudio(await response.arrayBuffer(), AUDIO_CHUNK_MS);
+      if (abortController.signal.aborted) return;
+
+      setUploadStatus(`Audio preparado · ${chunks.length} fragmentos`);
+      for (const chunk of chunks) {
+        if (abortController.signal.aborted) return;
+
+        setUploadStatus(`Enviando fragmento ${chunk.chunkIndex + 1} de ${chunks.length}`);
+        const upload = uploadAudioChunk({
+          sessionId,
+          audio: chunk.audio,
+          chunkIndex: chunk.chunkIndex,
+          startMs: chunk.startMs,
+          endMs: chunk.endMs,
+        }).then((result) => {
+          prerecordedAcceptedChunksRef.current += 1;
+          prerecordedDurationSecondsRef.current = Math.ceil(chunk.endMs / 1_000);
+          setUploadedChunkCount(prerecordedAcceptedChunksRef.current);
+          setElapsed(prerecordedDurationSecondsRef.current);
+          return result;
+        });
+        const trackedUpload = upload.then(() => undefined, () => undefined);
+        pendingAudioUploadsRef.current.add(trackedUpload);
+        try {
+          await upload;
+        } finally {
+          pendingAudioUploadsRef.current.delete(trackedUpload);
+        }
+        if (chunk.chunkIndex < chunks.length - 1) {
+          await abortableDelay(PRERECORDED_UPLOAD_INTERVAL_MS, abortController.signal);
+        }
+      }
+
+      setUploadStatus("Audio enviado · esperando transcripcion");
+      await startTranscriptionWait(sessionId, chunks.length, abortController.signal);
+      if (!abortController.signal.aborted) {
+        await refreshLatestLessonState(sessionId);
+        await finalizeSession(prerecordedDurationSecondsRef.current, true);
+      }
+    } catch (error) {
+      if (abortController.signal.aborted) return;
+      setIsRecording(false);
+      const message = error instanceof Error ? error.message : "No se pudo procesar el audio pregrabado.";
+      invalidatePrerecordedSession(message);
+      setRecordingError(message);
+      setUploadStatus(null);
+    }
+  }
+
+  function invalidatePrerecordedSession(reason: string) {
+    apiSessionIdRef.current = null;
+    setApiSessionId(null);
+    setActivitySessionId(null);
+    setActivityBlockedReason(reason);
+  }
+
+  async function startTranscriptionWait(
+    sessionId: string,
+    expectedChunks: number,
+    signal: AbortSignal,
+  ) {
+    const wait = waitForTranscriptionCompletion(sessionId, expectedChunks, signal);
+    prerecordedTranscriptionWaitRef.current = wait;
+    try {
+      await wait;
+    } finally {
+      if (prerecordedTranscriptionWaitRef.current === wait) {
+        prerecordedTranscriptionWaitRef.current = null;
+      }
+    }
+  }
+
+  async function waitForTranscriptionCompletion(
+    sessionId: string,
+    expectedChunks: number,
+    signal: AbortSignal,
+  ) {
+    const deadline = Date.now() + TRANSCRIPTION_STATUS_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      signal.throwIfAborted();
+      const status = await getTranscriptionStatus({ sessionId, expectedChunks, signal });
+      signal.throwIfAborted();
+      if (status.terminalFailed > 0) {
+        throw new Error(`${status.terminalFailed} fragmento(s) no se pudieron transcribir.`);
+      }
+      setUploadStatus(
+        `Transcribiendo ${status.transcribed} de ${expectedChunks} fragmentos`,
+      );
+      if (status.complete) {
+        if (status.spokenChunks === 0) {
+          throw new Error("No se detecto voz en el audio pregrabado.");
+        }
+        return;
+      }
+      await abortableDelay(TRANSCRIPTION_STATUS_POLL_MS, signal);
+    }
+    throw new Error("La transcripcion no termino dentro del tiempo esperado.");
+  }
+
+  async function handleAudioChunk(
+    audio: Blob,
+    recordingContext: { sessionId: string | null; startedAt: number | null } = {
+      sessionId: apiSessionIdRef.current,
+      startedAt: recordingStartedAtRef.current,
+    },
+  ) {
+    const { sessionId, startedAt } = recordingContext;
     if (audio.size === 0) return;
 
     if (!sessionId || !startedAt) {
@@ -889,8 +1084,12 @@ export function LiveClassMonitor() {
   // detenerse (sin timeslice). Encadenamos instancias para poder subir
   // fragmentos periodicos que sean decodificables de forma independiente.
   function attachRecorderHandlers(recorder: MediaRecorder) {
+    const recordingContext = {
+      sessionId: apiSessionIdRef.current,
+      startedAt: recordingStartedAtRef.current,
+    };
     recorder.ondataavailable = (event) => {
-      const upload = handleAudioChunk(event.data);
+      const upload = handleAudioChunk(event.data, recordingContext);
       pendingAudioUploadsRef.current.add(upload);
       void upload.finally(() => pendingAudioUploadsRef.current.delete(upload));
     };
@@ -923,6 +1122,19 @@ export function LiveClassMonitor() {
   }
 
   async function startRecording() {
+    finalizingSessionRef.current = false;
+    if (recordingSource === "prerecorded") {
+      if (prerecordedStartingRef.current || isRecording || isStoppingSession) return;
+      prerecordedStartingRef.current = true;
+      try {
+        await processPrerecordedAudio();
+      } finally {
+        prerecordedStartingRef.current = false;
+      }
+      return;
+    }
+
+    resetActivityStateForNewRecording();
     setElapsed(0);
     setUploadedChunkCount(0);
     setRecordingError(null);
@@ -979,20 +1191,91 @@ export function LiveClassMonitor() {
     }
   }
 
-  async function stopRecording() {
-    setIsRecording(false);
-    await stopBrowserRecording();
-    setUploadStatus(apiSessionIdRef.current ? "Sesion enviada al worker" : uploadStatus);
+  async function finalizeSession(durationSeconds: number, generateActivity: boolean) {
+    if (finalizingSessionRef.current) return;
+    finalizingSessionRef.current = true;
+    setIsStoppingSession(true);
+    const closedSessionId = apiSessionIdRef.current;
+    try {
+      await stopBrowserRecording();
+      setIsRecording(false);
+      setUploadStatus(closedSessionId ? "Sesion enviada al worker" : uploadStatus);
 
-    if (activeClass) {
-      const session = buildSession(activeClass, elapsed, latestLessonState);
-      setCompletedSessionClassId(activeClass.id);
-      endSession(session); // guarda en historial + limpia el monitor activo
-      void handleGenerateActivity();
+      if (activeClass) {
+        let sessionClosed = false;
+        if (closedSessionId && supabase) {
+          try {
+            await closeTeacherSession(supabase, closedSessionId);
+            sessionClosed = true;
+          } catch (error) {
+            setRecordingError(error instanceof Error ? error.message : "No se pudo cerrar la sesion.");
+          }
+        }
+        const session = buildSession(activeClass, durationSeconds, latestLessonStateRef.current);
+        setCompletedSessionClassId(activeClass.id);
+        endSession(session); // guarda en historial + limpia el monitor activo
+        if (generateActivity) void handleGenerateActivity(closedSessionId);
+        if (sessionClosed) {
+          completedSessionIdRef.current = closedSessionId;
+          apiSessionIdRef.current = null;
+          setApiSessionId(null);
+        }
+      }
+    } finally {
+      setIsStoppingSession(false);
     }
   }
 
+  async function stopRecording() {
+    if (finalizingSessionRef.current) return;
+    if (recordingSource === "prerecorded") {
+      const activeTranscriptionWait = prerecordedTranscriptionWaitRef.current;
+      if (!activeTranscriptionWait) {
+        prerecordedAbortRef.current?.abort();
+      }
+      setUploadStatus("Finalizando fragmentos enviados");
+      await Promise.all(Array.from(pendingAudioUploadsRef.current));
+      const expectedChunks = prerecordedAcceptedChunksRef.current;
+      if (expectedChunks === 0) {
+        const message = "No se envio ningun fragmento del audio pregrabado.";
+        setIsRecording(false);
+        invalidatePrerecordedSession(message);
+        setRecordingError(message);
+        setUploadStatus(null);
+        return;
+      }
+      if (expectedChunks > 0 && apiSessionIdRef.current) {
+        try {
+          if (activeTranscriptionWait) {
+            await activeTranscriptionWait;
+          } else {
+            const abortController = new AbortController();
+            prerecordedAbortRef.current = abortController;
+            await startTranscriptionWait(
+              apiSessionIdRef.current,
+              expectedChunks,
+              abortController.signal,
+            );
+          }
+          await refreshLatestLessonState(apiSessionIdRef.current);
+        } catch (error) {
+          setIsRecording(false);
+          const message = error instanceof Error ? error.message : "No se pudo finalizar la transcripcion.";
+          invalidatePrerecordedSession(message);
+          setRecordingError(message);
+          setUploadStatus(null);
+          return;
+        }
+      }
+      await finalizeSession(prerecordedDurationSecondsRef.current, true);
+      return;
+    }
+
+    await finalizeSession(elapsed, true);
+  }
+
   function toggleRecording() {
+    if (isStoppingSession) return;
     if (isRecording) {
       void stopRecording();
       return;
@@ -1003,8 +1286,11 @@ export function LiveClassMonitor() {
   async function handleManualLessonState(input: { topic: string; objective?: string }) {
     setRecordingError(null);
     try {
-      const sessionId = await ensureBackendSession();
+      const sessionId = apiSessionIdRef.current
+        ?? completedSessionIdRef.current
+        ?? await ensureBackendSession();
       await submitManualLessonState({ sessionId, ...input });
+      setActivityBlockedReason(null);
       setUploadStatus("Tema manual guardado como lesson_state");
     } catch (error) {
       const message = error instanceof Error ? error.message : "No se pudo guardar el tema manual.";
@@ -1015,6 +1301,7 @@ export function LiveClassMonitor() {
   async function loadCandidatesForSession(
     sessionId: string,
     options: { allowEmpty: boolean } = { allowEmpty: false },
+    contextVersion = activityContextVersionRef.current,
   ) {
     if (!activeClass || !deliveryStore) {
       if (!options.allowEmpty) {
@@ -1025,11 +1312,14 @@ export function LiveClassMonitor() {
 
     const readyCandidates = await deliveryStore.listCandidates(sessionId);
     if (readyCandidates.length === 0) {
-      if (!options.allowEmpty) setActivityError("Todavia no hay actividades listas para esta sesion.");
+      if (contextVersion === activityContextVersionRef.current && !options.allowEmpty) {
+        setActivityError("Todavia no hay actividades listas para esta sesion.");
+      }
       return false;
     }
 
     const loadedStudents = await deliveryStore.listStudents(activeClass.id);
+    if (contextVersion !== activityContextVersionRef.current) return false;
     setActivitySessionId(sessionId);
     setCandidates(readyCandidates);
     setStudents(loadedStudents);
@@ -1042,7 +1332,12 @@ export function LiveClassMonitor() {
     return true;
   }
 
-  async function handleGenerateActivity() {
+  async function handleGenerateActivity(sessionIdOverride?: string | null) {
+    if (activityBlockedReason) {
+      setActivityError(activityBlockedReason);
+      return;
+    }
+
     if (!activeClass || !deliveryStore) {
       setActivityError("Selecciona una clase y configura Supabase para generar la actividad.");
       return;
@@ -1051,22 +1346,31 @@ export function LiveClassMonitor() {
     setActivityLoading(true);
     setActivityError(null);
     setPublishStatus(null);
+    const contextVersion = activityContextVersionRef.current;
 
     try {
-      if (apiSessionIdRef.current && await loadCandidatesForSession(apiSessionIdRef.current, { allowEmpty: true })) {
+      const sessionId = sessionIdOverride ?? apiSessionIdRef.current ?? completedSessionIdRef.current;
+      if (sessionId && await loadCandidatesForSession(sessionId, { allowEmpty: true }, contextVersion)) {
         return;
       }
 
-      const sessionId = apiSessionIdRef.current ?? (await ensureBackendSession());
-      await requestActivityCandidates({ sessionId });
+      if (contextVersion !== activityContextVersionRef.current) return;
 
-      if (!await loadCandidatesForSession(sessionId)) {
+      const ensuredSessionId = sessionId ?? (await ensureBackendSession());
+      await requestActivityCandidates({ sessionId: ensuredSessionId });
+
+      if (!await loadCandidatesForSession(ensuredSessionId, { allowEmpty: false }, contextVersion)
+        && contextVersion === activityContextVersionRef.current) {
         setActivityError("La generacion termino, pero aun no hay actividades listas para esta sesion.");
       }
     } catch (error) {
-      setActivityError(error instanceof Error ? error.message : "No se pudo generar la actividad.");
+      if (contextVersion === activityContextVersionRef.current) {
+        setActivityError(error instanceof Error ? error.message : "No se pudo generar la actividad.");
+      }
     } finally {
-      setActivityLoading(false);
+      if (contextVersion === activityContextVersionRef.current) {
+        setActivityLoading(false);
+      }
     }
   }
 
@@ -1149,6 +1453,7 @@ export function LiveClassMonitor() {
                   <TranscriptPlayerCard
                     elapsed={elapsed}
                     isRecording={isRecording}
+                    isStopping={isStoppingSession}
                     onToggleRecording={toggleRecording}
                     uploadStatus={uploadStatus}
                     recordingError={recordingError}
@@ -1194,8 +1499,9 @@ export function LiveClassMonitor() {
         </div>
       </div>
       <SuggestedActivityFAB
+        disabled={Boolean(activityBlockedReason)}
         loading={activityLoading}
-        onGenerate={handleGenerateActivity}
+        onGenerate={() => void handleGenerateActivity()}
       />
     </main>
   );
