@@ -38,8 +38,17 @@ create table if not exists curriculum_sources (
   updated_at timestamptz not null default now()
 );
 
-create index if not exists curriculum_sources_class_idx
-  on curriculum_sources (class_id, created_at desc);
+do $$ begin
+  if exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'curriculum_sources'
+      and column_name = 'class_id'
+  ) then
+    create index if not exists curriculum_sources_class_idx
+      on curriculum_sources (class_id, created_at desc);
+  end if;
+end $$;
 
 create unique index if not exists curriculum_sources_storage_path_idx
   on curriculum_sources (storage_path);

@@ -15,6 +15,10 @@ create index if not exists activities_curriculum_tags_idx
 
 -- RPC used by packages/curriculum's retrieveCurriculumMatches(): top-k by cosine
 -- similarity, scoped to grade/subject/unit. Called via supabase.rpc(...).
+-- Later migrations extend this RPC's result columns. Raw migrations are replayed,
+-- so recreate this historical version instead of replacing an incompatible row type.
+drop function if exists match_curriculum_chunks(vector, integer, text, text, integer);
+
 create or replace function match_curriculum_chunks(
   query_embedding vector(768),
   match_grade integer,
