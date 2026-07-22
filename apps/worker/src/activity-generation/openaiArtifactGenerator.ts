@@ -15,7 +15,6 @@ import {
   evidenceFromCurriculumMatches,
   verifyActivityArtifact,
   type ActivityArtifactCandidate,
-  type ActivityFamily,
   type ActivityManifest,
   type ActivityVerifierScores,
   type CreateActivityCandidatesInput,
@@ -35,7 +34,11 @@ const activityTelemetryEventTypeSchema = z.enum(["attempt", "hint", "complete"])
 const rawManifestDraftSchema = z
   .object({
     family: activityFamilySchema,
-    mechanic: z.string().optional(),
+    mechanic: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/, "mechanic must be a snake_case slug"),
     title: z.string().min(3).max(90),
     est_minutes: z.number().int().min(3).max(12),
     allowed_capabilities: z.array(activityCapabilitySchema).min(1).max(4),
@@ -332,19 +335,38 @@ export async function generateOpenAiActivityCandidates(
 
   const accepted = new Map<DifficultyBand, ActivityArtifactCandidate>();
   const failedVerifierErrors: Partial<Record<DifficultyBand, string[]>> = {};
+  let sharedMetadata: Pick<ActivityManifest, "family" | "mechanic"> | undefined;
+  const rejectedMetadataBands = new Set<DifficultyBand>();
+  let metadataMismatchEncountered = firstAttempt.errors.some((error) =>
+    error.includes("all requested bands must share one family and mechanic"),
+  );
 
   for (const candidate of firstAttempt.candidates) {
     const result = verifyActivityArtifact(candidate);
-    if (result.ok) {
-      accepted.set(candidate.manifest.difficulty_band, candidate);
-    } else {
+    if (!result.ok) {
       failedVerifierErrors[candidate.manifest.difficulty_band] = result.errors;
       errors.push(
         ...result.errors.map(
           (error) => `${candidate.manifest.difficulty_band} verifier: ${error}`,
         ),
       );
+      continue;
     }
+
+    const coherenceError = getMetadataCoherenceError(candidate, sharedMetadata);
+    if (coherenceError) {
+      failedVerifierErrors[candidate.manifest.difficulty_band] = [coherenceError];
+      rejectedMetadataBands.add(candidate.manifest.difficulty_band);
+      errors.push(`${candidate.manifest.difficulty_band} verifier: ${coherenceError}`);
+      continue;
+    }
+
+    sharedMetadata ??= {
+      family: candidate.manifest.family,
+      mechanic: candidate.manifest.mechanic,
+    };
+    rejectedMetadataBands.delete(candidate.manifest.difficulty_band);
+    accepted.set(candidate.manifest.difficulty_band, candidate);
   }
   recordMissingDraftBands(bands, firstAttempt.candidates, failedVerifierErrors);
 
@@ -369,22 +391,45 @@ export async function generateOpenAiActivityCandidates(
     attempts += 1;
     errors.push(...repairAttempt.errors);
 
+    metadataMismatchEncountered ||= repairAttempt.errors.some((error) =>
+      error.includes("all requested bands must share one family and mechanic"),
+    );
     for (const candidate of repairAttempt.candidates) {
       const result = verifyActivityArtifact(candidate);
-      if (result.ok) {
-        accepted.set(candidate.manifest.difficulty_band, candidate);
-      } else {
+      if (!result.ok) {
         failedVerifierErrors[candidate.manifest.difficulty_band] = result.errors;
         errors.push(
           ...result.errors.map(
             (error) => `${candidate.manifest.difficulty_band} repair verifier: ${error}`,
           ),
         );
+        continue;
       }
+
+      const coherenceError = getMetadataCoherenceError(candidate, sharedMetadata);
+      if (coherenceError) {
+        failedVerifierErrors[candidate.manifest.difficulty_band] = [coherenceError];
+        rejectedMetadataBands.add(candidate.manifest.difficulty_band);
+        errors.push(`${candidate.manifest.difficulty_band} repair verifier: ${coherenceError}`);
+        continue;
+      }
+
+      sharedMetadata ??= {
+        family: candidate.manifest.family,
+        mechanic: candidate.manifest.mechanic,
+      };
+      rejectedMetadataBands.delete(candidate.manifest.difficulty_band);
+      accepted.set(candidate.manifest.difficulty_band, candidate);
     }
     recordMissingDraftBands(missingBands, repairAttempt.candidates, failedVerifierErrors);
   }
 
+  if (
+    rejectedMetadataBands.size > 0
+    || (metadataMismatchEncountered && accepted.size < bands.length)
+  ) {
+    return { candidates: [], attempted: true, attempts, errors };
+  }
   const candidates = bands.flatMap((band) => {
     const candidate = accepted.get(band);
     return candidate ? [candidate] : [];
@@ -408,6 +453,20 @@ export async function generateOpenAiActivityCandidates(
     attempts,
     errors,
   };
+}
+
+function getMetadataCoherenceError(
+  candidate: ActivityArtifactCandidate,
+  sharedMetadata: Pick<ActivityManifest, "family" | "mechanic"> | undefined,
+): string | undefined {
+  if (!sharedMetadata) return undefined;
+  if (
+    candidate.manifest.family === sharedMetadata.family
+    && candidate.manifest.mechanic === sharedMetadata.mechanic
+  ) {
+    return undefined;
+  }
+  return `activity set must share one family and mechanic; expected ${sharedMetadata.family}/${sharedMetadata.mechanic}, received ${candidate.manifest.family}/${candidate.manifest.mechanic}`;
 }
 
 async function requestAndNormalizeDrafts(
@@ -502,6 +561,23 @@ export function normalizeOpenAiActivityDrafts(
   const errors: string[] = [];
   const candidates: ActivityArtifactCandidate[] = [];
   const seenRequestedBands = new Set<DifficultyBand>();
+  const requestedArtifacts = parsed.data.artifacts.filter((artifact) =>
+    requestedBands.has(artifact.difficulty_band),
+  );
+  const sharedDraftMetadata = requestedArtifacts[0]?.manifest_draft;
+  if (
+    sharedDraftMetadata
+    && requestedArtifacts.some(
+      (artifact) =>
+        artifact.manifest_draft.family !== sharedDraftMetadata.family
+        || artifact.manifest_draft.mechanic !== sharedDraftMetadata.mechanic,
+    )
+  ) {
+    return {
+      candidates: [],
+      errors: ["draft schema: all requested bands must share one family and mechanic"],
+    };
+  }
 
   for (const artifact of parsed.data.artifacts) {
     if (!requestedBands.has(artifact.difficulty_band)) {
@@ -511,8 +587,8 @@ export function normalizeOpenAiActivityDrafts(
     seenRequestedBands.add(artifact.difficulty_band);
 
     const manifest: ActivityManifest = {
-      family: gamePlan.family as ActivityFamily,
-      mechanic: gamePlan.mechanic,
+      family: artifact.manifest_draft.family,
+      mechanic: artifact.manifest_draft.mechanic,
       title: artifact.manifest_draft.title,
       difficulty_band: artifact.difficulty_band,
       curriculum: {
@@ -603,17 +679,26 @@ export function buildActivityGenerationPrompt(input: BuildPromptInput): string {
       task: "Generate one activity artifact draft for each requested band.",
       requested_bands: input.bands,
       artifact_contract: {
-        allowed_families: ["match_classify", "sequence_order", "guided_practice"],
+        family_exemplars: ["match_classify", "sequence_order", "guided_practice"],
+        family_policy:
+          "Families are quality anchors for taxonomy/reuse, not a renderer whitelist. Invent the interaction that best practices the objective inside the sandbox.",
         required_shared_game_plan:
           input.gamePlan ?? createGamePlan(input.sessionContext, input.curriculumMatches),
+        metadata_contract: {
+          family: "Use exactly one taxonomy family across the generated set.",
+          mechanic:
+            "Provide one shared required snake_case mechanic slug (1-64 characters) across the generated set; the slug is descriptive metadata, not a renderer selector.",
+        },
         required_new_manifest_fields: ["mechanic", "learning_design.learning_goal", "learning_design.interaction_summary", "learning_design.success_criteria", "visual_theme.scene", "visual_theme.accent"],
         content_modes: [
-          "exercise items with prompts, answer keys, hints, and telemetry_events as an array or null",
+          "manifest items carry prompts, answer keys, and hints as success criteria; HTML must implement an interactive skill-practice UI rather than radio-button Q&A",
         ],
       },
       creativity_brief: {
         design_goal:
-          "Create a memorable, curriculum-grounded mini-app that feels like a small classroom manipulative, lab, or studio rather than a static worksheet.",
+          "Create a memorable, curriculum-grounded mini-app that feels like a small classroom manipulative, lab, or studio. The code is the experience; the manifest is the contract.",
+        skill_focus:
+          "Practice or assess one concrete student ability tied to the lesson objective: identify, organize, produce, justify, or compare.",
         interaction_patterns: [
           "sorting board",
           "evidence map",
@@ -626,13 +711,14 @@ export function buildActivityGenerationPrompt(input: BuildPromptInput): string {
           "checklist inspector",
         ],
         band_differentiation: {
-          support: "scaffold with fewer choices, clear labels, and guided hints",
-          core: "let students apply the concept with meaningful feedback",
-          challenge: "ask students to explain, justify, compare, or synthesize",
+          support: "scaffold the ability with guided steps, fewer pieces, and progressive hints",
+          core: "let students apply the ability through active manipulation and meaningful feedback",
+          challenge: "ask students to explain, justify, compare, or synthesize inside the same mechanic",
         },
         visual_contract: "Use Kobi blue foundation, rounded surfaces, clear typography, generous spacing, responsive phone/laptop layout, visible focus, readable contrast, touch-friendly controls, reduced-motion support, immediate feedback, no external assets.",
         avoid: [
-          "generic multiple-choice unless it is clearly the strongest fit",
+          "primary interaction that is multi-option / A/B/C / radio-button Q&A",
+          "static worksheet cards where the student only clicks one answer",
           "decorative effects that do not support the learning task",
           "long reading passages or dense instructions",
         ],
@@ -685,6 +771,7 @@ export function buildActivityReviewPrompt(
         "Spanish language and instructions are suitable for seventh-grade students.",
         "Support, core, and challenge preserve one mechanic while increasing cognitive demand.",
         "Hints scaffold without revealing answers.",
+        "The interaction practices a concrete ability through active manipulation, not a static multi-option quiz.",
         "The interaction is usable, self-contained, and does not request sensitive information.",
         "reportComplete declares score_unit, follows the count-or-normalized score contract, and cannot be submitted twice.",
       ],

@@ -89,6 +89,83 @@ describe("OpenAI activity artifact generator", () => {
       "complete",
     ]);
   });
+  it("preserves a novel model-provided family and mechanic", () => {
+    const result = normalizeOpenAiActivityDrafts(
+      {
+        artifacts: [
+          rawArtifact("core", {
+            family: "sequence_order",
+            mechanic: "headline_workshop",
+          }),
+        ],
+      },
+      { lessonState, sessionContext, curriculumMatches, bands: ["core"], activitySetId },
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.candidates[0]?.manifest).toMatchObject({
+      family: "sequence_order",
+      mechanic: "headline_workshop",
+    });
+  });
+
+  it("rejects invalid mechanic slugs from model output", () => {
+    const result = normalizeOpenAiActivityDrafts(
+      { artifacts: [rawArtifact("core", { mechanic: "Headline Workshop" })] },
+      { lessonState, sessionContext, curriculumMatches, bands: ["core"], activitySetId },
+    );
+
+    expect(result.candidates).toEqual([]);
+    expect(result.errors.some((error) => error.includes("snake_case slug"))).toBe(true);
+  });
+
+  it("rejects a draft response with mixed families", () => {
+    const result = normalizeOpenAiActivityDrafts(
+      {
+        artifacts: [
+          rawArtifact("support", { family: "guided_practice", mechanic: "headline_workshop" }),
+          rawArtifact("core", { family: "sequence_order", mechanic: "headline_workshop" }),
+          rawArtifact("challenge", { family: "guided_practice", mechanic: "headline_workshop" }),
+        ],
+      },
+      {
+        lessonState,
+        sessionContext,
+        curriculumMatches,
+        bands: ["support", "core", "challenge"],
+        activitySetId,
+      },
+    );
+
+    expect(result.candidates).toEqual([]);
+    expect(result.errors).toContain(
+      "draft schema: all requested bands must share one family and mechanic",
+    );
+  });
+
+  it("rejects a draft response with mixed mechanics", () => {
+    const result = normalizeOpenAiActivityDrafts(
+      {
+        artifacts: [
+          rawArtifact("support", { mechanic: "headline_workshop" }),
+          rawArtifact("core", { mechanic: "source_check_desk" }),
+          rawArtifact("challenge", { mechanic: "headline_workshop" }),
+        ],
+      },
+      {
+        lessonState,
+        sessionContext,
+        curriculumMatches,
+        bands: ["support", "core", "challenge"],
+        activitySetId,
+      },
+    );
+
+    expect(result.candidates).toEqual([]);
+    expect(result.errors).toContain(
+      "draft schema: all requested bands must share one family and mechanic",
+    );
+  });
 
   it("normalizes nullable OpenAI telemetry events to the optional manifest field", () => {
     const result = normalizeOpenAiActivityDrafts(
@@ -216,6 +293,48 @@ describe("OpenAI activity artifact generator", () => {
     ]);
     expect(result.errors).toContain("draft schema: missing requested difficulty band core");
   });
+  it("rejects mixed metadata introduced across repair attempts before AI review", async () => {
+    const client = mockClient([
+      {
+        artifacts: [
+          rawArtifact("support", {
+            family: "guided_practice",
+            mechanic: "headline_workshop",
+          }),
+        ],
+      },
+      {
+        artifacts: [
+          rawArtifact("core", {
+            family: "guided_practice",
+            mechanic: "source_check_desk",
+          }),
+        ],
+      },
+    ]);
+
+    const result = await generateOpenAiActivityCandidates(
+      {
+        lessonState,
+        sessionContext,
+        curriculumMatches,
+        bands: ["support", "core"],
+        activitySetId,
+      },
+      {
+        client,
+        model: "gpt-5.5",
+        templates: { system: "system", repair: "repair", review: "review" },
+        maxRepairAttempts: 1,
+      },
+    );
+
+    expect(result.candidates).toEqual([]);
+    expect(client.reviewCalls).toBe(0);
+    expect(result.errors.some((error) => error.includes("must share one family and mechanic"))).toBe(
+      true,
+    );
+  });
 
   it("sends fresh verifier errors after each failed repair", async () => {
     const client = mockClient([
@@ -294,16 +413,21 @@ describe("OpenAI activity artifact generator", () => {
     });
     const parsed = JSON.parse(prompt);
 
-    expect(parsed.artifact_contract.allowed_families).toEqual([
+    expect(parsed.artifact_contract.family_exemplars).toEqual([
       "match_classify",
       "sequence_order",
       "guided_practice",
     ]);
+    expect(parsed.artifact_contract.family_policy).toContain("not a renderer whitelist");
+    expect(parsed.artifact_contract.metadata_contract.mechanic).toContain(
+      "required snake_case mechanic slug",
+    );
     expect(parsed.creativity_brief.design_goal).toContain("mini-app");
+    expect(parsed.creativity_brief.skill_focus).toContain("concrete student ability");
     expect(parsed.creativity_brief.interaction_patterns).toContain("evidence map");
     expect(parsed.creativity_brief.band_differentiation.challenge).toContain("synthesize");
     expect(parsed.creativity_brief.avoid).toContain(
-      "generic multiple-choice unless it is clearly the strongest fit",
+      "primary interaction that is multi-option / A/B/C / radio-button Q&A",
     );
     expect(parsed.sdk.completion_score_contract.count).toContain("score_unit=count");
     expect(parsed.sdk.completion_score_contract.normalized).toContain("score_unit=normalized");
@@ -343,14 +467,19 @@ describe("OpenAI activity artifact generator", () => {
 
 function rawArtifact(
   band: DifficultyBand,
-  options: { telemetryEvents?: Array<"attempt" | "hint" | "complete"> | null } = {},
+  options: {
+    telemetryEvents?: Array<"attempt" | "hint" | "complete"> | null;
+    family?: "match_classify" | "sequence_order" | "guided_practice";
+    mechanic?: string;
+  } = {},
 ) {
   const title = `Actividad ${band}`;
   const prompt = `Responde sobre la noticia en nivel ${band}.`;
   return {
     difficulty_band: band,
     manifest_draft: {
-      family: "guided_practice",
+      family: options.family ?? "guided_practice",
+      mechanic: options.mechanic ?? "source_check_desk",
       title,
       est_minutes: 6,
       allowed_capabilities: ["dom", "css"],
@@ -372,29 +501,48 @@ function rawArtifact(
   };
 }
 
-function validHtml(title: string, prompt: string) {
+function validHtml(_title: string, _prompt: string) {
   return `<!doctype html>
 <html lang="es">
-<head><meta charset="utf-8"><title>${title}</title></head>
+<head><meta charset="utf-8"><title>Actividad interactiva</title></head>
 <body>
-  <h1>${title}</h1>
-  <p>${prompt}</p>
-  <button id="attempt">Responder</button>
-  <button id="hint">Pista</button>
-  <button id="complete">Completar</button>
+  <main id="app" aria-live="polite">Cargando actividad...</main>
+  <button id="attempt" type="button">Responder</button>
+  <button id="hint" type="button">Pista</button>
+  <button id="complete" type="button">Completar</button>
   <script>
     const SDK_VERSION = "activity-sdk/v1";
+    let manifest;
+    let band;
     function emit(method, payload) {
       window.parent.postMessage({ sdk: SDK_VERSION, type: "event", method, payload }, "*");
     }
-    function getManifest() { return {}; }
-    function getBand() { return "core"; }
+    function request(id, method) {
+      window.parent.postMessage({ sdk: SDK_VERSION, type: "request", id, method }, "*");
+    }
+    function getManifest() { request("manifest", "getManifest"); }
+    function getBand() { request("band", "getBand"); }
     function reportAttempt(payload) { emit("reportAttempt", payload); }
     function reportHint(payload) { emit("reportHint", payload); }
     function reportComplete(payload) { emit("reportComplete", payload); }
+    function render() {
+      if (!manifest || !band) return;
+      const item = manifest.content.items[0];
+      document.getElementById("app").innerHTML =
+        "<h1>" + manifest.title + "</h1><p class=\"prompt\">" + item.prompt + "</p><button class=\"option\" type=\"button\">Elegir</button>";
+      document.querySelector(".option").addEventListener("click", () => reportAttempt({ assignment_id: "assignment-1", item_index: 0, correct: true }));
+    }
+    addEventListener("message", (event) => {
+      if (!event.data || event.data.type !== "response") return;
+      if (event.data.id === "manifest") manifest = event.data.result;
+      if (event.data.id === "band") band = event.data.result;
+      render();
+    });
     document.getElementById("attempt").addEventListener("click", () => reportAttempt({ assignment_id: "assignment-1", item_index: 0, correct: true }));
     document.getElementById("hint").addEventListener("click", () => reportHint({ assignment_id: "assignment-1", item_index: 0, hint_index: 0 }));
     document.getElementById("complete").addEventListener("click", () => reportComplete({ assignment_id: "assignment-1", score_unit: "count", score: 1, total: 1 }));
+    getManifest();
+    getBand();
   </script>
 </body>
 </html>`;
