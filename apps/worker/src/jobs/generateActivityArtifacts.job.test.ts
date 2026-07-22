@@ -1,19 +1,32 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LessonState } from "@kobi/ai-core";
 import type { CurriculumMatch } from "@kobi/curriculum";
 import {
+  buildActivitySessionContext,
   ACTIVITY_ARTIFACT_CONTRACT_VERSION,
   ACTIVITY_SDK_VERSION,
   type ActivityArtifactCandidate,
   type ActivityManifest,
   type RankedActivityRepositoryRow,
 } from "@kobi/activities/server";
+
+vi.mock("../activity-generation/runtimeVerifier.js", () => ({
+  verifyActivityRuntime: vi.fn(async () => ({
+    requests: ["getManifest", "getBand"],
+    events: ["reportAttempt", "reportHint", "reportComplete"],
+  })),
+}));
+import { verifyActivityRuntime } from "../activity-generation/runtimeVerifier.js";
 import {
   planSessionArtifacts,
   refreshGenerateActivityArtifactsJobData,
   runGenerateActivityArtifactsJob,
 } from "./generateActivityArtifacts.job.js";
+
+beforeEach(() => {
+  vi.mocked(verifyActivityRuntime).mockClear();
+});
 
 describe("generateActivityArtifacts job planning", () => {
   it("refreshes stale queued lesson and curriculum data before generation", async () => {
@@ -398,6 +411,7 @@ function fakeSupabase(options: {
   openAiAttemptCount?: number;
   segments?: LessonState[];
   repositoryRows?: RankedActivityRepositoryRow[];
+  readyCandidates?: Array<{ difficulty_band: string; context_snapshot: unknown }>;
 } = {}) {
   const insertedCandidates: Array<{
     context_snapshot: { latest_topic: string; vocabulary: string[]; segment_count: number };
@@ -425,6 +439,7 @@ function fakeSupabase(options: {
     generationAttempts,
     segments: options.segments ?? [],
     repositoryRows: options.repositoryRows ?? [],
+    readyCandidates: options.readyCandidates ?? [],
     activityUpserts,
   };
 
@@ -473,6 +488,7 @@ interface FakeQueryState {
   generationAttempts: Array<Record<string, unknown>>;
   segments: LessonState[];
   repositoryRows: RankedActivityRepositoryRow[];
+  readyCandidates: Array<{ difficulty_band: string; context_snapshot: unknown }>;
   activityUpserts: Array<Record<string, unknown>>;
 }
 
@@ -568,7 +584,7 @@ class FakeQuery {
     }
 
     if (this.table === "session_activity_candidates" && this.operation === "select") {
-      return { data: [], error: null };
+      return { data: this.state.readyCandidates, error: null };
     }
 
     if (this.table === "session_activity_candidates" && this.operation === "insert") {
@@ -592,3 +608,56 @@ class FakeQuery {
     return { data: null, error: null };
   }
 }
+
+describe("generateActivityArtifacts skip guard", () => {
+  it("skips regeneration when ready candidates match the current session context", async () => {
+    const contextSnapshot = buildActivitySessionContext([lessonState]);
+    const supabase = fakeSupabase({
+      segments: [lessonState],
+      readyCandidates: [
+        { difficulty_band: "support", context_snapshot: contextSnapshot },
+        { difficulty_band: "core", context_snapshot: contextSnapshot },
+        { difficulty_band: "challenge", context_snapshot: contextSnapshot },
+      ],
+    });
+
+    const result = await runGenerateActivityArtifactsJob(supabase.client, {
+      sessionId: "session-1",
+      lessonState,
+      curriculumMatches,
+    });
+
+    expect(result.skippedReason).toBe("ready candidates are current");
+    expect(result.inserted).toBe(0);
+    expect(supabase.insertedCandidates).toHaveLength(0);
+    expect(supabase.rpcCalls).not.toContain("replace_session_activity_candidates");
+  });
+
+  it("regenerates when material session context changes", async () => {
+    const previousSnapshot = buildActivitySessionContext([lessonState]);
+    const changedLessonState: LessonState = {
+      ...lessonState,
+      topic: "El editorial",
+      key_terms: ["editorial", "opinion"],
+    };
+    const supabase = fakeSupabase({
+      segments: [changedLessonState],
+      readyCandidates: [
+        { difficulty_band: "support", context_snapshot: previousSnapshot },
+        { difficulty_band: "core", context_snapshot: previousSnapshot },
+        { difficulty_band: "challenge", context_snapshot: previousSnapshot },
+      ],
+    });
+
+    const result = await runGenerateActivityArtifactsJob(supabase.client, {
+      sessionId: "session-1",
+      lessonState: changedLessonState,
+      curriculumMatches,
+    });
+
+    expect(result.skippedReason).not.toBe("ready candidates are current");
+    expect(result.inserted).toBeGreaterThan(0);
+    expect(supabase.rpcCalls).toContain("replace_session_activity_candidates");
+  });
+});
+

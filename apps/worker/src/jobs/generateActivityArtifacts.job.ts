@@ -35,6 +35,7 @@ import {
   type GenerateOpenAiActivityCandidatesInput,
   type OpenAiActivityGenerationResult,
 } from "../activity-generation/openaiArtifactGenerator.js";
+import { verifyActivityRuntime } from "../activity-generation/runtimeVerifier.js";
 
 export interface GenerateActivityArtifactsJobData {
   sessionId: string;
@@ -540,6 +541,11 @@ async function persistGeneratedArtifact(
       `generateActivityArtifacts job: generated ${candidate.manifest.difficulty_band} artifact failed verification: ${result.errors.join("; ")}`,
     );
   }
+
+  await verifyActivityRuntime({
+    bundleHtml: candidate.bundle_html,
+    manifest: result.artifact.manifest,
+  });
 
   const { error: bundleError } = await supabase.from("activity_bundles").upsert(
     {
