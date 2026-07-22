@@ -11,22 +11,14 @@ export const activityFamilySchema = z.enum([
 
 export const difficultyBandSchema = z.enum(["support", "core", "challenge"]);
 export const activitySourceSchema = z.enum(["seeded", "reused", "adapted", "new"]);
-export const activityMechanicSchema = z.enum([
-  "sorting_board",
-  "matching_pairs",
-  "evidence_detective",
-  "vocabulary_lab",
-  "timeline_builder",
-  "story_path",
-  "source_check_desk",
-  "argument_builder",
-]);
-
-export const activityMechanicByFamily: Record<ActivityFamily, readonly ActivityMechanic[]> = {
-  match_classify: ["sorting_board", "matching_pairs", "evidence_detective", "vocabulary_lab"],
-  sequence_order: ["timeline_builder", "story_path"],
-  guided_practice: ["source_check_desk", "argument_builder", "vocabulary_lab"],
-};
+export const activityMechanicSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(
+    /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/,
+    "mechanic must be a snake_case slug",
+  );
 
 export const learningDesignSchema = z.object({
   learning_goal: z.string().min(1),
@@ -71,15 +63,6 @@ export const activityManifestSchema = z.object({
   allowed_capabilities: z.array(activityCapabilitySchema).min(1),
   learning_design: learningDesignSchema.optional(),
   visual_theme: visualThemeSchema.optional(),
-}).superRefine((manifest, ctx) => {
-  if (!manifest.mechanic) return;
-  if (!activityMechanicByFamily[manifest.family].includes(manifest.mechanic)) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      path: ["mechanic"],
-      message: `mechanic ${manifest.mechanic} is not valid for family ${manifest.family}`,
-    });
-  }
 });
 
 export const activityEvidenceSchema = z.object({

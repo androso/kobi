@@ -330,24 +330,32 @@ function checkSdkTelemetry(bundleHtml: string): string[] {
 }
 
 function checkManifestCodeConsistency(candidate: ActivityArtifactCandidate): string[] {
-  const errors: string[] = [];
+  const editableFields = [
+    { path: "manifest.title", value: candidate.manifest.title },
+    ...candidate.manifest.content.items.flatMap((item, itemIndex) => [
+      { path: `manifest.content.items[${itemIndex}].prompt`, value: item.prompt },
+      ...item.answer_key.map((value, answerIndex) => ({
+        path: `manifest.content.items[${itemIndex}].answer_key[${answerIndex}]`,
+        value,
+      })),
+      ...item.hints.map((value, hintIndex) => ({
+        path: `manifest.content.items[${itemIndex}].hints[${hintIndex}]`,
+        value,
+      })),
+    ]),
+  ];
   const html = candidate.bundle_html.toLocaleLowerCase("es-SV");
-  const title = candidate.manifest.title.toLocaleLowerCase("es-SV");
-  const prompts = candidate.manifest.content.items.map((item) =>
-    item.prompt.toLocaleLowerCase("es-SV"),
-  );
+  const errors: string[] = [];
 
-  if (!html.includes(title)) {
-    errors.push("bundle does not render the manifest title");
-  }
-
-  if (
-    !prompts.some((prompt) => {
-      const prefix = prompt.slice(0, Math.min(prompt.length, 40));
-      return html.includes(prefix) || html.includes(escapeHtml(prefix).toLocaleLowerCase("es-SV"));
-    })
-  ) {
-    errors.push("bundle does not render any manifest item prompt");
+  for (const field of editableFields) {
+    const variants = [
+      field.value,
+      escapeHtml(field.value),
+      JSON.stringify(field.value).slice(1, -1),
+    ].map((value) => value.toLocaleLowerCase("es-SV"));
+    if (variants.some((value) => value.length > 0 && html.includes(value))) {
+      errors.push(`bundle embeds editable runtime content from ${field.path}`);
+    }
   }
 
   return errors;
