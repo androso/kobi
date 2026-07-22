@@ -79,7 +79,7 @@ export function createActivityArtifactCandidates(
       },
     };
 
-    const bundleHtml = renderActivityHtml(manifest);
+    const bundleHtml = renderActivityHtml();
     const bundleRef = createUnguessableBundleRef("static");
 
     return {
@@ -158,27 +158,23 @@ function buildItemsForBand(
 
   return [
     {
-      prompt: `Escribe una respuesta sobre ${context.latest_objective ?? context.latest_topic} usando ${bandTermCount} ideas clave.`,
+      prompt: `Revisa las tarjetas y selecciona ${bandTermCount} ideas clave sobre ${context.latest_objective ?? context.latest_topic}.`,
       answer_key: boundedTerms.slice(0, bandTermCount),
       hints: [
-        "Escribe una oracion completa.",
-        "Revisa que tu explicacion tenga inicio y cierre.",
+        "Empieza por una tarjeta que puedas relacionar directamente con el objetivo.",
+        "Quita las tarjetas que no ayuden a comprobar la idea principal.",
       ],
     },
   ];
 }
 
-function renderActivityHtml(manifest: ActivityManifest): string {
-  const item = manifest.content.items[0];
-  const interactionHtml = renderInteraction(manifest);
-  const manifestJson = JSON.stringify(manifest).replace(/</g, "\\u003c");
-
+function renderActivityHtml(): string {
   return `<!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(manifest.title)}</title>
+  <title>Actividad interactiva</title>
   <style>
     :root { color-scheme: light; font-family: system-ui, sans-serif; }
     body { margin: 0; background: linear-gradient(135deg, #eff6ff, #dbeafe); color: #0f172a; }
@@ -186,14 +182,16 @@ function renderActivityHtml(manifest: ActivityManifest): string {
     .card { background: rgba(255,255,255,.96); border: 2px solid #bfdbfe; border-radius: 24px; padding: clamp(18px, 4vw, 28px); box-shadow: 0 18px 40px rgba(30, 64, 175, 0.14); }
     h1 { color: #1d4ed8; font-size: clamp(1.45rem, 5vw, 1.9rem); margin: 0 0 8px; }
     .prompt { font-size: 1.15rem; line-height: 1.5; }
-    .option { display: block; width: 100%; margin: 10px 0; padding: 12px 14px; border-radius: 12px; border: 1px solid #93c5fd; background: #eff6ff; text-align: left; font: inherit; cursor: pointer; }
+    .option { display: block; width: 100%; margin: 10px 0; padding: 12px 14px; border-radius: 12px; border: 1px solid #93c5fd; background: #eff6ff; text-align: left; font: inherit; cursor: pointer; touch-action: manipulation; }
     .option[aria-pressed="true"] { background: #bbf7d0; border-color: #22c55e; }
+    .option:disabled { cursor: default; opacity: .7; }
     .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
     .actions button { border: 0; border-radius: 999px; padding: 10px 16px; background: #2563eb; color: white; font-weight: 700; cursor: pointer; }
+    .actions button:disabled { background: #64748b; cursor: default; }
     #feedback { min-height: 1.5rem; margin-top: 12px; font-weight: 700; }
+    #order { min-height: 1.5rem; }
     .progress { height: 10px; border-radius: 999px; background: #dbeafe; overflow: hidden; margin: 16px 0; }
     .progress span { display:block; width: 0; height:100%; background:#2563eb; transition: width .2s ease; }
-    textarea { box-sizing: border-box; width: 100%; min-height: 130px; border: 2px solid #93c5fd; border-radius: 14px; padding: 12px; font: inherit; }
     :focus-visible { outline: 3px solid #f59e0b; outline-offset: 3px; }
     @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
     @media (max-width: 520px) { .actions { flex-direction: column; } .actions button { width: 100%; } }
@@ -202,178 +200,182 @@ function renderActivityHtml(manifest: ActivityManifest): string {
 <body>
   <main>
     <section class="card" aria-labelledby="activity-title">
-      <p>Actividad ${escapeHtml(manifest.difficulty_band)} - ${escapeHtml(manifest.curriculum.objective)}</p>
-      <h1 id="activity-title">${escapeHtml(manifest.title)}</h1>
+      <p id="band-label">Cargando actividad...</p>
+      <h1 id="activity-title">Actividad interactiva</h1>
       <div class="progress" aria-label="Progreso"><span></span></div>
-      <p class="prompt">${escapeHtml(item.prompt)}</p>
-      <div id="interaction">${interactionHtml}</div>
+      <p class="prompt" id="prompt" aria-live="polite">Espera mientras preparamos los materiales.</p>
+      <div id="interaction" aria-busy="true"></div>
+      <p id="order"></p>
       <div class="actions">
-        <button id="hint" type="button">Pedir pista</button>
-        <button id="complete" type="button">Completar</button>
+        <button id="hint" type="button" disabled>Pedir pista</button>
+        <button id="complete" type="button" disabled>Completar</button>
       </div>
       <p id="feedback" role="status"></p>
     </section>
   </main>
   <script>
     const SDK_VERSION = "${ACTIVITY_SDK_VERSION}";
-    const manifest = ${manifestJson};
-    const interactionMode = manifest.family;
-    const answers = manifest.content.items[0].answer_key;
-    let selected = new Set();
-    let ordered = [];
-    let responseText = "";
-    let justificationText = "";
-    let hintIndex = 0;
-    let completed = false;
-    const requiresJustification = manifest.difficulty_band === "challenge" && interactionMode !== "guided_practice";
+    const state = {
+      manifest: null,
+      band: null,
+      answers: [],
+      selected: new Set(),
+      ordered: [],
+      hintIndex: 0,
+      completed: false,
+      ready: false
+    };
 
+    function request(id, method) {
+      window.parent.postMessage({ sdk: SDK_VERSION, type: "request", id, method }, "*");
+    }
+
+    function getManifest() { request("manifest", "getManifest"); }
+    function getBand() { request("band", "getBand"); }
     function emit(method, payload) {
       window.parent.postMessage({ sdk: SDK_VERSION, type: "event", method, payload }, "*");
     }
-
-    function getManifest() {
-      window.parent.postMessage({ sdk: SDK_VERSION, type: "request", id: "manifest", method: "getManifest" }, "*");
-      return manifest;
-    }
-
-    function getBand() {
-      window.parent.postMessage({ sdk: SDK_VERSION, type: "request", id: "band", method: "getBand" }, "*");
-      return manifest.difficulty_band;
-    }
-
     function reportAttempt(payload) { emit("reportAttempt", payload); }
     function reportHint(payload) { emit("reportHint", payload); }
     function reportComplete(payload) { emit("reportComplete", payload); }
 
-    function normalizeAnswer(value) {
-      return String(value).toLocaleLowerCase("es-SV").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+    function rotated(values) {
+      return values.length < 2 ? values.slice() : values.slice(1).concat(values[0]);
     }
 
-    function computeScore() {
-      if (interactionMode === "sequence_order") {
-        return ordered.reduce((score, answer, index) => score + (answer === answers[index] ? 1 : 0), 0);
-      }
-      if (interactionMode === "guided_practice") {
-        const normalizedResponse = normalizeAnswer(responseText);
-        return answers.filter((answer) => normalizedResponse.includes(normalizeAnswer(answer))).length;
-      }
-
-      const correctSelections = answers.filter((answer) => selected.has(answer)).length;
-      const incorrectSelections = Array.from(selected).filter((answer) => !answers.includes(answer)).length;
-      return Math.max(0, correctSelections - incorrectSelections);
+    function choicesFor(manifest, answers) {
+      if (manifest.family === "sequence_order") return rotated(answers);
+      return rotated(answers.concat(["Tarjeta extra A", "Tarjeta extra B"]));
     }
 
     function currentAnswer() {
-      const answer = interactionMode === "sequence_order"
-        ? ordered
-        : interactionMode === "guided_practice"
-          ? responseText
-          : Array.from(selected);
-      return requiresJustification ? { answer, justification: justificationText } : answer;
+      return state.manifest.family === "sequence_order"
+        ? state.ordered.slice()
+        : Array.from(state.selected);
+    }
+
+    function computeScore() {
+      if (state.manifest.family === "sequence_order") {
+        return state.ordered.reduce(
+          (score, answer, index) => score + (answer === state.answers[index] ? 1 : 0),
+          0
+        );
+      }
+      const correct = state.answers.filter((answer) => state.selected.has(answer)).length;
+      const incorrect = Array.from(state.selected).filter((answer) => !state.answers.includes(answer)).length;
+      return Math.max(0, correct - incorrect);
     }
 
     function reportCurrentAttempt() {
       const score = computeScore();
-      const correct = score === answers.length && (!requiresJustification || justificationText.trim().length >= 8);
+      const correct = score === state.answers.length;
       reportAttempt({ item_index: 0, correct, answer: currentAnswer() });
-      document.querySelector(".progress span").style.width = String(Math.round((score / answers.length) * 100)) + "%";
+      document.querySelector(".progress span").style.width =
+        String(Math.round((score / state.answers.length) * 100)) + "%";
       document.getElementById("feedback").textContent = correct
-        ? "Respuesta correcta."
-        : "Sigue intentando o pide una pista.";
+        ? "Muy bien: la organizacion es correcta."
+        : "Buen intento. Ajusta las tarjetas o pide una pista.";
     }
 
-    getManifest();
-    getBand();
+    function updateOrder() {
+      document.getElementById("order").textContent = state.ordered.length > 0
+        ? "Tu orden: " + state.ordered.join(" -> ")
+        : "Toca las tarjetas en el orden correcto.";
+    }
 
-    document.querySelectorAll(".option").forEach((button) => {
-      button.addEventListener("click", () => {
-        const answer = button.dataset.answer;
-        const pressed = button.getAttribute("aria-pressed") === "true";
-        button.setAttribute("aria-pressed", String(!pressed));
-        if (interactionMode === "sequence_order") {
-          const position = ordered.indexOf(answer);
-          if (position >= 0) ordered.splice(position, 1); else ordered.push(answer);
-          document.getElementById("order").textContent = ordered.length > 0
-            ? "Tu orden: " + ordered.join(" -> ")
-            : "Selecciona las tarjetas en el orden correcto.";
-        } else if (pressed) {
-          selected.delete(answer);
-        } else {
-          selected.add(answer);
-        }
-        reportCurrentAttempt();
+    function choose(button, answer) {
+      if (state.completed) return;
+      const pressed = button.getAttribute("aria-pressed") === "true";
+      button.setAttribute("aria-pressed", String(!pressed));
+      if (state.manifest.family === "sequence_order") {
+        const position = state.ordered.indexOf(answer);
+        if (position >= 0) state.ordered.splice(position, 1);
+        else state.ordered.push(answer);
+        updateOrder();
+      } else if (pressed) {
+        state.selected.delete(answer);
+      } else {
+        state.selected.add(answer);
+      }
+      reportCurrentAttempt();
+    }
+
+    function makeOption(answer, index) {
+      const button = document.createElement("button");
+      button.className = "option";
+      button.type = "button";
+      button.setAttribute("aria-pressed", "false");
+      button.textContent = String(index + 1) + ". " + answer;
+      button.addEventListener("click", () => choose(button, answer));
+      return button;
+    }
+
+    function render() {
+      if (state.ready || !state.manifest || !state.band) return;
+      const manifest = state.manifest;
+      const item = manifest.content && manifest.content.items && manifest.content.items[0];
+      if (!item || !Array.isArray(item.answer_key) || item.answer_key.length === 0) return;
+      state.ready = true;
+      state.answers = item.answer_key.slice();
+      document.title = manifest.title;
+      document.getElementById("activity-title").textContent = manifest.title;
+      document.getElementById("band-label").textContent =
+        "Actividad " + state.band + " - " + manifest.curriculum.objective;
+      document.getElementById("prompt").textContent = item.prompt;
+      const interaction = document.getElementById("interaction");
+      choicesFor(manifest, state.answers).forEach((answer, index) => {
+        interaction.appendChild(makeOption(answer, index));
       });
+      interaction.setAttribute("aria-busy", "false");
+      if (manifest.family === "sequence_order") updateOrder();
+      document.getElementById("hint").disabled = false;
+      document.getElementById("complete").disabled = false;
+      document.getElementById("feedback").textContent =
+        "Toca una tarjeta para empezar. Puedes cambiar tu eleccion.";
+    }
+
+    window.addEventListener("message", (event) => {
+      if (event.source !== window.parent) return;
+      const message = event.data;
+      if (!message || message.sdk !== SDK_VERSION || message.type !== "response" || message.ok !== true) return;
+      if (message.id === "manifest") state.manifest = message.result;
+      if (message.id === "band") state.band = message.result;
+      render();
     });
 
-    const response = document.getElementById("response");
-    if (response) {
-      response.addEventListener("change", () => {
-        responseText = response.value;
-        reportCurrentAttempt();
-      });
-    }
-
-    const justification = document.getElementById("justification");
-    if (justification) {
-      justification.addEventListener("change", () => {
-        justificationText = justification.value;
-        reportCurrentAttempt();
-      });
-    }
-
     document.getElementById("hint").addEventListener("click", () => {
-      const hints = manifest.content.items[0].hints;
-      document.getElementById("feedback").textContent = hints[hintIndex] || "Ya usaste todas las pistas.";
-      reportHint({ item_index: 0, hint_index: hintIndex });
-      hintIndex += 1;
+      if (!state.ready || state.completed) return;
+      const hints = state.manifest.content.items[0].hints;
+      document.getElementById("feedback").textContent =
+        hints[state.hintIndex] || "Ya usaste todas las pistas.";
+      reportHint({ item_index: 0, hint_index: state.hintIndex });
+      state.hintIndex += 1;
     });
 
     const completeButton = document.getElementById("complete");
     completeButton.addEventListener("click", () => {
-      if (completed) return;
-      if (requiresJustification && justificationText.trim().length < 8) {
-        document.getElementById("feedback").textContent = "Explica brevemente tu decision antes de completar.";
-        return;
-      }
-      completed = true;
+      if (!state.ready || state.completed) return;
+      state.completed = true;
       completeButton.disabled = true;
-      reportComplete({ score_unit: "count", score: computeScore(), total: answers.length, completed_at: new Date().toISOString() });
+      document.getElementById("hint").disabled = true;
+      document.querySelectorAll(".option").forEach((button) => { button.disabled = true; });
+      reportComplete({
+        score_unit: "count",
+        score: computeScore(),
+        total: state.answers.length,
+        completed_at: new Date().toISOString()
+      });
       document.getElementById("feedback").textContent = "Actividad completada. Gracias.";
     });
+
+    getManifest();
+    getBand();
   </script>
 </body>
 </html>`;
 }
 
-function renderInteraction(manifest: ActivityManifest): string {
-  const answers = manifest.content.items[0].answer_key;
-  if (manifest.family === "guided_practice") {
-    return '<label for="response">Tu respuesta</label><textarea id="response" placeholder="Escribe aqui y usa las ideas clave de la clase."></textarea>';
-  }
 
-  const justification = manifest.difficulty_band === "challenge"
-    ? '<label for="justification">Explica tu decision</label><textarea id="justification" placeholder="Justifica brevemente usando evidencia del objetivo."></textarea>'
-    : "";
-
-  const choices = manifest.family === "sequence_order"
-    ? rotateChoices(answers)
-    : rotateChoices([...answers, "Detalle sin evidencia", "Concepto fuera del objetivo"]);
-  const buttons = choices
-    .map(
-      (answer, index) =>
-        `<button class="option" type="button" aria-pressed="false" data-answer="${escapeHtml(answer)}">${index + 1}. ${escapeHtml(answer)}</button>`,
-    )
-    .join("\n");
-
-  return manifest.family === "sequence_order"
-    ? `${buttons}<p id="order">Selecciona las tarjetas en el orden correcto.</p>${justification}`
-    : `${buttons}${justification}`;
-}
-
-function rotateChoices(values: string[]): string[] {
-  if (values.length < 2) return values;
-  return [...values.slice(1), values[0]];
-}
 
 function buildSuccessCriteria(band: DifficultyBand): string[] {
   const base = ["Completa la interaccion principal", "Usa vocabulario o evidencia del objetivo"];
@@ -392,11 +394,3 @@ function shortTitle(topic: string): string {
   return topic.length > 44 ? `${topic.slice(0, 41)}...` : topic;
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
