@@ -8,17 +8,16 @@ Kobi v0 turns the last 10 minutes of any class into a personalized, curriculum-g
 
 ## In / out of scope (v0)
 
-**In:** one class/grade/subject, 3 activity artifact families, difficulty-banded personalization (support/core/challenge artifacts), plain student experience (activity + hints + results), repository reuse within own content, teacher approval as a hard gate, session report (completion + correctness).
+**In:** one class/grade/subject (7th-grade Lenguaje), a three-value activity-family taxonomy, difficulty-banded personalization (support/core/challenge artifacts), plain student experience (activity + hints + results), repository reuse and an interactive deterministic fallback, teacher approval as a hard gate, and a session report (completion + correctness). Interaction mechanics are open within the verified sandbox/SDK/verifier contract.
 
-**Out:** multi-school/admin portals, unbounded generative game mechanics outside the verified artifact contract, deep learner modeling, pet companion, cross-school repositories, auto-delivery without review, longitudinal analytics.
+**Out:** multi-school/admin portals, artifact formats other than self-contained HTML/CSS/JavaScript, mechanics that violate the sandbox/SDK/verifier contract, deep learner modeling, pet companion, cross-school repositories, auto-delivery without review, and longitudinal analytics.
 
 ## Decision Log
 
 | # | Decision | Rationale |
 |---|---|---|
 | D1 | Subject: 7th-grade Lenguaje (reading comprehension + vocabulary) | Team owns the Ministry textbooks; avoids math's complex interaction mechanics |
-| D2 | REVISED (Jul 4): Activities are verified HTML artifacts + a structured manifest | Supersedes the original "data, not code". Every activity belongs to one of the three v0 artifact families, is delivered as a verified self-contained HTML bundle (`bundle_ref`) in a sandboxed iframe via a small activity SDK, and is paired with a schema-validated JSON manifest (curriculum tags, answer key, hints, est_minutes, variants). The manifest keeps activities storable, verifiable, reusable, and diffable without expanding beyond the three MVP families. |
-| D2 | Activity artifacts are verified HTML mini-apps plus manifests | Gate 0 decision on 2026-07-04: v0 uses self-contained HTML/CSS/JS artifacts in a sandboxed iframe, described by a structured manifest and verified before teacher display. This replaces the earlier JSON-player direction. |
+| D2 | Activity artifacts are verified HTML mini-apps plus manifests | Gate 0 decision on 2026-07-04: v0 uses only self-contained HTML/CSS/JavaScript `index.html` artifacts in a sandboxed iframe. React is the web host framework, not an artifact format. Each artifact is paired with a schema-validated manifest and verified before teacher display and persistence. The three family values are a taxonomy and quality exemplars, not a renderer or interaction whitelist; concrete mechanics remain open within the sandbox, SDK, and verifier contract. This replaces the earlier JSON-player direction. |
 | D3 | TypeScript stack: Vite + React frontend, Node API/worker backend | 3 devs, 24 hours, TS-native team. Supabase (Postgres, pgvector, Realtime) gives the same layering as a Python split without adding another language |
 | D4 | Personalization v0 = per-session difficulty banding, not learner modeling | Kobi prepares 3 variants (support/core/challenge). The teacher may assign support/challenge to selected students for that session; unselected students receive core by default. |
 | D5 | No pet in v0 | Cut for scope; hints stay in the activity artifact manifest/runtime, not the pet; pet is a post-MVP retention layer |
@@ -86,13 +85,16 @@ Teachers create, reset, deactivate, and reactivate durable student accounts from
 
 ## Activity Artifact Decision
 
-HTML activity artifacts are v0, not post-MVP, but they are limited to the three ratified v0 families below. Each candidate activity is a single self-contained `index.html` bundle plus a structured manifest. The bundle runs only inside the sandboxed student iframe, uses no external imports/assets/network, and reports attempts, hints, and completion through the parent-owned SDK over `postMessage`.
+HTML activity artifacts are v0, not post-MVP. Each candidate is a single self-contained `index.html` bundle with inline HTML/CSS/JavaScript plus a structured manifest; React components and multi-file bundles are not supported artifact formats. The bundle runs only inside the sandboxed student iframe, uses no external imports/assets/network/storage, and communicates through the parent-owned SDK over `postMessage`.
 
-The v0 families are:
+The manifest family remains one of three taxonomy and quality exemplars:
 
 1. **Match/classify** — vocabulary or concept grouping.
 2. **Sequence/order** — process, story, or argument steps.
-3. **Guided practice/checkpoint** — short applied questions with hints and feedback.
+3. **Guided practice/checkpoint** — short applied practice with hints and feedback.
 
-Newly generated or adapted artifacts are planned as one coherent support/core/challenge game set before HTML generation. The manifest records a concrete mechanic plus learning-design and visual-theme metadata while legacy v1 artifacts without those optional fields remain readable.
-Seeded runnable artifacts use the same contract and verifier path as generated artifacts. If generation or verification fails, the D6 fallback is a pre-seeded verified artifact, not a manifest-only renderer.
+These values support prompting, ranking, reuse, and quality review; they do not select a renderer or cap interaction design. `mechanic` identifies the concrete interaction with a required validated free-form snake_case slug (1–64 characters), so mini-apps may invent any mechanic that satisfies the sandbox, SDK, and verifier contract.
+
+For every new or adapted support/core/challenge set, all three bands share one family and mechanic and progress one coherent learning design. Model normalization preserves supplied mechanic, learning-design, and visual-theme metadata while deriving trusted fields server-side. Repository and deterministic static artifacts use the same runnable contract and verifier path as model-generated artifacts, and every fallback must remain genuinely interactive.
+
+The manifest is the runtime-owned editable content source. The bundle must request the manifest and band through the SDK, then render prompts, evaluate answers, and provide hints from that response; editable prompts, answer keys, and hints must not be duplicated in bundle source. Before persistence, verification must check schema and manifest/code consistency and run the secured HTML in a browser with the supplied manifest/band, fail on page errors, and observe valid SDK traffic.
