@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -44,11 +44,18 @@ const assignment = {
   },
   bundleHtml: "<!doctype html><html><body>Actividad</body></html>",
 };
+function dispatchActivityMessage(data: unknown, source: MessageEventSource) {
+  const event = new MessageEvent("message", { data });
+  Object.defineProperty(event, "source", { value: source });
+  fireEvent(window, event);
+}
+
 
 describe("StudentDashboard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.loadLatestAssignmentForStudent.mockResolvedValue(assignment);
+    mocks.handleStudentActivityMessage.mockResolvedValue({ ok: false });
     useClassStore.getState().resetClasses();
     useAuthStore.setState({
       status: "authenticated",
@@ -85,6 +92,55 @@ describe("StudentDashboard", () => {
     expect(activityFrame).toHaveAttribute("referrerpolicy", "no-referrer");
     expect(activityFrame.getAttribute("srcdoc")).toContain("Content-Security-Policy");
     expect(activityFrame.getAttribute("srcdoc")).toContain("connect-src 'none'");
+  });
+
+  it("answers manifest requests only for the current activity iframe and cleans up its listener", async () => {
+    const view = renderDashboard();
+    const activityFrame = await screen.findByTitle("Practica: La noticia") as HTMLIFrameElement;
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const sourceWindow = activityFrame.contentWindow;
+    expect(sourceWindow).not.toBeNull();
+    if (!sourceWindow) return;
+    const postMessage = vi.spyOn(sourceWindow, "postMessage");
+
+    dispatchActivityMessage(
+      { sdk: "activity-sdk/v1", type: "request", id: "manifest-1", method: "getManifest" },
+      sourceWindow,
+    );
+    dispatchActivityMessage(
+      { sdk: "activity-sdk/v1", type: "request", id: "band-1", method: "getBand" },
+      sourceWindow,
+    );
+
+    expect(postMessage).toHaveBeenNthCalledWith(1, {
+      sdk: "activity-sdk/v1",
+      type: "response",
+      id: "manifest-1",
+      ok: true,
+      result: assignment.manifest,
+    }, "*");
+    expect(postMessage).toHaveBeenNthCalledWith(2, {
+      sdk: "activity-sdk/v1",
+      type: "response",
+      id: "band-1",
+      ok: true,
+      result: "core",
+    }, "*");
+
+    dispatchActivityMessage(
+      { sdk: "activity-sdk/v1", type: "request", id: "foreign", method: "getManifest" },
+      window,
+    );
+    expect(postMessage).toHaveBeenCalledTimes(2);
+
+    view.unmount();
+    dispatchActivityMessage(
+      { sdk: "activity-sdk/v1", type: "request", id: "stale", method: "getBand" },
+      sourceWindow,
+    );
+    expect(postMessage).toHaveBeenCalledTimes(2);
   });
 
   it("uses dark-mode-safe student shell and pet surfaces", async () => {
