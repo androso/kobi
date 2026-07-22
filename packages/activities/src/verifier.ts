@@ -91,18 +91,18 @@ interface HtmlNode {
 }
 
 const minimumRubricScores: ActivityRubricScores = {
-  curriculum_alignment: 0.6,
-  age_fit: 0.6,
-  duration_fit: 0.6,
-  answer_correctness: 0.6,
-  hint_leakage: 0.6,
-  duplicate_risk: 0.6,
+  curriculum_alignment: 0.7,
+  age_fit: 0.8,
+  duration_fit: 0.65,
+  answer_correctness: 0.8,
+  hint_leakage: 0.8,
+  duplicate_risk: 0.8,
   spanish_suitability: 0.6,
-  gamefulness: 0.6,
+  gamefulness: 0.75,
   interaction_quality: 0.6,
   visual_coherence: 0.6,
-  accessibility: 0.6,
-  band_coherence: 0.6,
+  accessibility: 0.75,
+  band_coherence: 0.75,
 };
 
 export function verifyActivityArtifact(

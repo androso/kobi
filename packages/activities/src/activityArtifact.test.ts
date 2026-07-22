@@ -723,6 +723,6 @@ describe("activity artifact contracts", () => {
 
     expect(result.ok).toBe(false);
     expect(result.artifact.status).toBe("rejected");
-    expect(result.errors).toContain("rubric: hint_leakage 0.35 is below 0.60");
+    expect(result.errors).toContain("rubric: hint_leakage 0.35 is below 0.80");
   });
 });
