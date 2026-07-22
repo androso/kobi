@@ -31,6 +31,7 @@ function bindIframeSource(event: MessageEvent, iframe: HTMLIFrameElement): boole
     return true;
   }
 
+  if (!event.source) return false;
   const trackedSource = opaqueSourceByIframe.get(iframe);
   if (trackedSource && event.source === trackedSource) return true;
 

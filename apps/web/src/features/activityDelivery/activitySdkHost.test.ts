@@ -45,7 +45,7 @@ describe("activitySdkHost", () => {
         entry: "index.html",
         sdk_version: "activity-sdk/v1",
         allowed_capabilities: ["dom", "css"],
-        learning_design: { learning_goal: "goal", success_criteria: ["ok"], hint_policy: "progressive" },
+        learning_design: { learning_goal: "goal", interaction_summary: "summary", success_criteria: ["ok"] },
       },
       band: "core",
     });
