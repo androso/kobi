@@ -7,6 +7,7 @@
     "dev": "tsx watch src/index.ts",
     "generate:openai-artifacts": "tsx src/dev/generateOpenAiArtifacts.ts",
     "generate:static-artifacts": "tsx src/dev/generateStaticArtifacts.ts",
+    "try:static-activity-demo": "tsx src/dev/tryStaticActivityDemo.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
@@ -19,6 +20,7 @@
     "dotenv": "^16.4.5",
     "openai": "^6.45.0",
     "pg-boss": "^10.1.5",
+    "playwright": "^1.61.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
