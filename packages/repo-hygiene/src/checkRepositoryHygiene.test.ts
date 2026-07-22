@@ -61,6 +61,15 @@ describe("scanRepository", () => {
     expect(issues).toEqual([]);
   });
 
+  it("allows the tracked synthetic demo audio fixture over the size threshold", () => {
+    const issues = scanRepository("/repo", {
+      maxGeneratedFileBytes: 8,
+      files: [textFile("apps/web/public/local-audio/demo-audio.mp3", "larger than eight bytes")]
+    });
+
+    expect(issues).toEqual([]);
+  });
+
   it("rejects unexpectedly large generated files", () => {
     const issues = scanRepository("/repo", {
       maxGeneratedFileBytes: 8,

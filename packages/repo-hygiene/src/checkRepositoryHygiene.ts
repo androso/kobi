@@ -67,7 +67,8 @@ const LARGE_FILE_ALLOWLIST = [
   /^pnpm-lock\.yaml$/,
   /^packages\/db\/drizzle\/meta\/[^/]+_snapshot\.json$/,
   /^apps\/web\/public\/auth\/[^/]+\.png$/,
-  /^apps\/web\/public\/class_creation_illustration\.jpg$/
+  /^apps\/web\/public\/class_creation_illustration\.jpg$/,
+  /^apps\/web\/public\/local-audio\/demo-audio\.mp3$/
 ];
 
 const ROOT_FILE_ALLOWLIST = new Set([
