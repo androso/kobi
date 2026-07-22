@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { zodTextFormat } from "openai/helpers/zod";
 import type { LessonState } from "@kobi/ai-core";
 import type { CurriculumMatch } from "@kobi/curriculum";
 import type { DifficultyBand, SessionContext } from "@kobi/activities/contracts";
@@ -7,6 +8,8 @@ import {
   createActivitySetId,
   generateOpenAiActivityCandidates,
   normalizeOpenAiActivityDrafts,
+  openAiActivityDraftResponseSchema,
+  openAiActivityReviewResponseSchema,
   type OpenAiActivityDraftClient,
   type OpenAiActivityDraftRequest,
 } from "./openaiArtifactGenerator.js";
@@ -47,6 +50,15 @@ const curriculumMatches: CurriculumMatch[] = [
 const activitySetId = "set-test-run";
 
 describe("OpenAI activity artifact generator", () => {
+  it("builds a Structured Outputs format with every draft and review field required", () => {
+    expect(() =>
+      zodTextFormat(openAiActivityDraftResponseSchema, "kobi_activity_artifacts"),
+    ).not.toThrow();
+    expect(() =>
+      zodTextFormat(openAiActivityReviewResponseSchema, "kobi_activity_review"),
+    ).not.toThrow();
+  });
+
   it("creates a unique server-owned set id for each orchestration run", () => {
     expect(createActivitySetId()).not.toBe(createActivitySetId());
   });
@@ -483,6 +495,15 @@ function rawArtifact(
       title,
       est_minutes: 6,
       allowed_capabilities: ["dom", "css"],
+      learning_design: {
+        learning_goal: "Reconocer las partes de una noticia.",
+        interaction_summary: "Verifica las partes de una noticia en una mesa interactiva.",
+        success_criteria: ["Identifica el titular correctamente."],
+      },
+      visual_theme: {
+        scene: "mesa de verificacion",
+        accent: "azul Kobi",
+      },
       content: {
         items: [
           {

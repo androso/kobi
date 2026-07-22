@@ -46,11 +46,11 @@ const rawManifestDraftSchema = z
       learning_goal: z.string().min(1).max(240),
       interaction_summary: z.string().min(1).max(320),
       success_criteria: z.array(z.string().min(1).max(180)).min(1).max(5),
-    }).optional(),
+    }),
     visual_theme: z.object({
       scene: z.string().min(1).max(120),
       accent: z.string().min(1).max(80),
-    }).optional(),
+    }),
     content: z
       .object({
         items: z
