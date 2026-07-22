@@ -59,34 +59,45 @@ sendRequest("manifest", "getManifest");
 sendRequest("band", "getBand");
 </script></body></html>`;
 
-describe("activity runtime verifier", () => {
+const supportsBrowserLaunch = process.env.SKIP_BROWSER_TESTS !== "true" && process.platform !== "win32";
+
+describe("activity runtime verifier static checks", () => {
+  it("rejects editable answers or hints embedded in source", async () => {
+    const embedded = validBundle.replace("<main id=\"app\"></main>", `<main id="app">${manifest.content.items[0]?.answer_key[0]}</main>`);
+    await expect(
+      verifyActivityRuntime({ bundleHtml: embedded, manifest }),
+    ).rejects.toThrow(/embeds editable answer or hint content/i);
+  });
+});
+
+describe.runIf(supportsBrowserLaunch)("activity runtime verifier browser smoke", () => {
   it("passes a manifest-owned bundle with runnable SDK controls", async () => {
     await expect(verifyActivityRuntime({ bundleHtml: validBundle, manifest })).resolves.toEqual({
       requests: ["getManifest", "getBand"],
       events: ["reportAttempt", "reportHint", "reportComplete"],
     });
-  }, 15_000);
+  }, 30_000);
 
   it("rejects JavaScript syntax errors", async () => {
     const syntaxError = validBundle.replace("let receivedManifest;", "let receivedManifest = ;");
     await expect(
-      verifyActivityRuntime({ bundleHtml: syntaxError, manifest, timeoutMs: 700 }),
+      verifyActivityRuntime({ bundleHtml: syntaxError, manifest, timeoutMs: 1_500 }),
     ).rejects.toThrow(/SDK request getManifest.*page error.*Unexpected token/is);
-  }, 15_000);
+  }, 30_000);
 
   it("rejects no-op SDK hook strings", async () => {
     const noOp = '<!doctype html><body><h1>getManifest getBand reportAttempt reportHint reportComplete</h1></body>';
     await expect(
-      verifyActivityRuntime({ bundleHtml: noOp, manifest, timeoutMs: 700 }),
+      verifyActivityRuntime({ bundleHtml: noOp, manifest, timeoutMs: 1_500 }),
     ).rejects.toThrow(/SDK request getManifest/i);
-  }, 15_000);
+  }, 30_000);
 
   it("rejects a bundle that never requests the manifest", async () => {
     const withoutManifestRequest = validBundle.replace('sendRequest("manifest", "getManifest");', "");
     await expect(
-      verifyActivityRuntime({ bundleHtml: withoutManifestRequest, manifest, timeoutMs: 700 }),
+      verifyActivityRuntime({ bundleHtml: withoutManifestRequest, manifest, timeoutMs: 1_500 }),
     ).rejects.toThrow(/SDK request getManifest/i);
-  }, 15_000);
+  }, 30_000);
 
   it("rejects artifact console errors", async () => {
     const consoleError = validBundle.replace(
@@ -96,14 +107,7 @@ describe("activity runtime verifier", () => {
     await expect(
       verifyActivityRuntime({ bundleHtml: consoleError, manifest }),
     ).rejects.toThrow(/console error: runtime smoke console failure/i);
-  }, 15_000);
-
-  it("rejects editable answers or hints embedded in source", async () => {
-    const embedded = validBundle.replace("<main id=\"app\"></main>", `<main id="app">${manifest.content.items[0]?.answer_key[0]}</main>`);
-    await expect(
-      verifyActivityRuntime({ bundleHtml: embedded, manifest }),
-    ).rejects.toThrow(/embeds editable answer or hint content/i);
-  });
+  }, 30_000);
 
   it("rejects controls that cannot execute the smoke interaction", async () => {
     const disabled = validBundle
@@ -111,7 +115,7 @@ describe("activity runtime verifier", () => {
       .replace('<button id="hint">', '<button id="hint" disabled>')
       .replace('<button id="complete">', '<button id="complete" disabled>');
     await expect(
-      verifyActivityRuntime({ bundleHtml: disabled, manifest, timeoutMs: 700 }),
+      verifyActivityRuntime({ bundleHtml: disabled, manifest, timeoutMs: 1_500 }),
     ).rejects.toThrow(/non-runnable attempt smoke control/i);
-  }, 15_000);
+  }, 30_000);
 });

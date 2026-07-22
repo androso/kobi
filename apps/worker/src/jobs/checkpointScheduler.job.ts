@@ -4,7 +4,7 @@ import { JOB_EVALUATE_CHECKPOINT } from "../queue.js";
 
 export const CHECKPOINT_SCHEDULER_JOB_NAME = "checkpoint-scheduler";
 export const CHECKPOINT_SCHEDULER_CRON = "* * * * *";
-const DEFAULT_CHECKPOINT_INTERVAL_MINUTES = 10;
+const DEFAULT_CHECKPOINT_INTERVAL_MINUTES = 2;
 
 export interface CheckpointSchedulerJobOptions {
   intervalMinutes?: number;
