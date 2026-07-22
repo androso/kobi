@@ -13,8 +13,10 @@ build/
 apps/web/src/features/teacher/assets/
 
 # Local classroom recordings must never be committed.
+# The synthetic demo fixture below is the only tracked exception.
 apps/web/public/local-audio/**
 !apps/web/public/local-audio/.gitkeep
+!apps/web/public/local-audio/demo-audio.mp3
 
 # Raw curriculum PDFs and extraction scratch files are large local inputs.
 evals/tmp/curriculum/**
