@@ -123,6 +123,7 @@ function TranscriptPlayerCard({
   uploadStatus,
   recordingError,
   uploadedChunkCount,
+  recordingSource,
 }: {
   elapsed: number;
   isRecording: boolean;
@@ -131,8 +132,10 @@ function TranscriptPlayerCard({
   uploadStatus: string | null;
   recordingError: string | null;
   uploadedChunkCount: number;
+  recordingSource: "microphone" | "prerecorded";
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const isDemo = recordingSource === "prerecorded";
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -144,12 +147,12 @@ function TranscriptPlayerCard({
       {/* Recording status */}
       <div className="flex items-center justify-between px-6 pt-5 pb-3 shrink-0">
         <span className="text-[10px] font-bold tracking-widest uppercase text-slate-400">
-          Grabación de clase
+          {isDemo ? "Demo de clase" : "Grabación de clase"}
         </span>
         {isRecording ? (
           <span className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest uppercase text-emerald-600">
             <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-            En vivo
+            {isDemo ? "Transcribiendo" : "En vivo"}
           </span>
         ) : (
           <span className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest uppercase text-slate-400">
@@ -167,8 +170,14 @@ function TranscriptPlayerCard({
               <Circle className="h-5 w-5 text-emerald-500 fill-emerald-500 animate-pulse" />
             </span>
             <div>
-              <p className="text-sm font-bold text-slate-700">Grabando audio...</p>
-              <p className="text-xs text-slate-400 mt-1 max-w-xs">Los fragmentos se envían al análisis de la sesión.</p>
+              <p className="text-sm font-bold text-slate-700">
+                {isDemo ? "Transcribiendo..." : "Grabando audio..."}
+              </p>
+              <p className="text-xs text-slate-400 mt-1 max-w-xs">
+                {isDemo
+                  ? "La demo envía el audio pregrabado y espera la transcripción automáticamente."
+                  : "Los fragmentos se envían al análisis de la sesión."}
+              </p>
             </div>
           </div>
         ) : (
@@ -177,9 +186,13 @@ function TranscriptPlayerCard({
               <Circle className="h-5 w-5 text-red-500 fill-red-500" />
             </span>
             <div>
-              <p className="text-sm font-bold text-slate-700">Listo para grabar</p>
+              <p className="text-sm font-bold text-slate-700">
+                {isDemo ? "Listo para demo" : "Listo para grabar"}
+              </p>
               <p className="text-xs text-slate-400 mt-1 max-w-xs">
-                Inicia la grabación para comenzar el análisis de la sesión.
+                {isDemo
+                  ? "Inicia la demo para enviar el audio y comenzar la transcripción."
+                  : "Inicia la grabación para comenzar el análisis de la sesión."}
               </p>
             </div>
           </div>
@@ -188,17 +201,23 @@ function TranscriptPlayerCard({
 
       {/* Controles de grabación */}
       <div className="bg-slate-50 px-6 py-4 flex items-center justify-between gap-4 shrink-0">
-        <span className={`text-sm font-bold tabular-nums ${isRecording ? "text-slate-500" : "text-slate-300"}`}>
-          {formatTime(elapsed)}
-        </span>
+        {isDemo ? (
+          <span className="text-sm font-bold text-slate-300 tabular-nums w-12" aria-hidden="true">
+            —
+          </span>
+        ) : (
+          <span className={`text-sm font-bold tabular-nums ${isRecording ? "text-slate-500" : "text-slate-300"}`}>
+            {formatTime(elapsed)}
+          </span>
+        )}
 
         <div className="min-w-0 flex-1 text-center">
           {recordingError ? (
             <p className="text-xs font-semibold text-red-600 truncate">{recordingError}</p>
           ) : uploadStatus ? (
             <p className="text-xs font-semibold text-slate-500 truncate">
-              {uploadStatus}
-              {uploadedChunkCount > 0 ? ` · ${uploadedChunkCount} fragmentos enviados` : ""}
+              {isDemo ? "Transcribiendo" : uploadStatus}
+              {!isDemo && uploadedChunkCount > 0 ? ` · ${uploadedChunkCount} fragmentos enviados` : ""}
             </p>
           ) : null}
         </div>
@@ -221,7 +240,11 @@ function TranscriptPlayerCard({
             type="button"
           >
             <Circle className="h-4 w-4 fill-white" />
-            {isStopping ? "Finalizando sesión..." : "Iniciar grabación"}
+            {isStopping
+              ? "Finalizando sesión..."
+              : isDemo
+                ? "Iniciar demo"
+                : "Iniciar grabación"}
           </button>
         )}
       </div>
@@ -953,7 +976,7 @@ export function LiveClassMonitor() {
     try {
       const sessionId = await createFreshBackendSession();
       isStoppingRef.current = false;
-      setUploadStatus("Cargando audio pregrabado");
+      setUploadStatus("Transcribiendo");
       setIsRecording(true);
 
       const response = await fetch(getPrerecordedAudioPath(), { signal: abortController.signal });
@@ -964,11 +987,11 @@ export function LiveClassMonitor() {
       const chunks = await decodePrerecordedAudio(await response.arrayBuffer(), AUDIO_CHUNK_MS);
       if (abortController.signal.aborted) return;
 
-      setUploadStatus(`Audio preparado · ${chunks.length} fragmentos`);
+      setUploadStatus("Transcribiendo");
       for (const chunk of chunks) {
         if (abortController.signal.aborted) return;
 
-        setUploadStatus(`Enviando fragmento ${chunk.chunkIndex + 1} de ${chunks.length}`);
+        setUploadStatus("Transcribiendo");
         const upload = uploadAudioChunk({
           sessionId,
           audio: chunk.audio,
@@ -994,7 +1017,7 @@ export function LiveClassMonitor() {
         }
       }
 
-      setUploadStatus("Audio enviado · esperando transcripcion");
+      setUploadStatus("Transcribiendo");
       await startTranscriptionWait(sessionId, chunks.length, abortController.signal);
       if (!abortController.signal.aborted) {
         await refreshLatestLessonState(sessionId);
@@ -1046,9 +1069,7 @@ export function LiveClassMonitor() {
       if (status.terminalFailed > 0) {
         throw new Error(`${status.terminalFailed} fragmento(s) no se pudieron transcribir.`);
       }
-      setUploadStatus(
-        `Transcribiendo ${status.transcribed} de ${expectedChunks} fragmentos`,
-      );
+      setUploadStatus("Transcribiendo");
       if (status.complete) {
         if (status.spokenChunks === 0) {
           throw new Error("No se detecto voz en el audio pregrabado.");
@@ -1486,6 +1507,7 @@ export function LiveClassMonitor() {
                     uploadStatus={uploadStatus}
                     recordingError={recordingError}
                     uploadedChunkCount={uploadedChunkCount}
+                    recordingSource={recordingSource}
                   />
                 </div>
                 <div className="col-span-5 min-h-0">

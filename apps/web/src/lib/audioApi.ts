@@ -4,7 +4,7 @@ const rawApiUrl = import.meta.env.VITE_KOBI_API_URL?.replace(/\/$/, "") ?? "";
 const API_URL = rawApiUrl || (import.meta.env.DEV ? "http://localhost:8787" : "");
 const CONFIGURED_RECORDING_SOURCE = import.meta.env.VITE_KOBI_RECORDING_SOURCE;
 const PRERECORDED_AUDIO_PATH =
-  import.meta.env.VITE_KOBI_PRERECORDED_AUDIO_PATH ?? "/local-audio/classroom.mp3";
+  import.meta.env.VITE_KOBI_PRERECORDED_AUDIO_PATH ?? "/local-audio/demo-audio.mp3";
 const LESSON_STATE_RETRY_MS = 10_000;
 const LESSON_STATE_TIMEOUT_MS = 20 * 60_000;
 const LESSON_STATE_PENDING_ERROR = "No lesson_state is available for this session yet.";

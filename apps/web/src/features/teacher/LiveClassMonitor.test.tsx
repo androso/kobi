@@ -97,7 +97,7 @@ vi.mock("../../lib/supabase", () => ({ supabase: { from: mocks.supabaseFrom, rpc
 
 vi.mock("../../lib/audioApi", () => ({
   createBackendSession: mocks.createBackendSession,
-  getPrerecordedAudioPath: () => "/local-audio/classroom.mp3",
+  getPrerecordedAudioPath: () => "/local-audio/demo-audio.mp3",
   getRecordingSource: () => mocks.recordingSource,
   getTranscriptionStatus: mocks.getTranscriptionStatus,
   isAudioApiConfigured: () => true,
@@ -358,7 +358,7 @@ describe("LiveClassMonitor activity delivery", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+    fireEvent.click(screen.getByRole("button", { name: /iniciar demo/i }));
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
@@ -419,12 +419,12 @@ describe("LiveClassMonitor activity delivery", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+    fireEvent.click(screen.getByRole("button", { name: /iniciar demo/i }));
     await waitFor(() => expect(mocks.uploadAudioChunk).toHaveBeenCalledTimes(1));
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /iniciar grabación/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /iniciar demo/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+    fireEvent.click(screen.getByRole("button", { name: /iniciar demo/i }));
 
     await waitFor(() => expect(mocks.createBackendSession).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(mocks.uploadAudioChunk).toHaveBeenCalledTimes(2));
@@ -459,7 +459,7 @@ describe("LiveClassMonitor activity delivery", () => {
     fireEvent.click(screen.getByRole("button", { name: /hora de actividad/i }));
     expect(await screen.findByText("Practica: La noticia")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+    fireEvent.click(screen.getByRole("button", { name: /iniciar demo/i }));
     await waitFor(() => {
       expect(screen.queryByText("Practica: La noticia")).not.toBeInTheDocument();
     });
@@ -484,7 +484,7 @@ describe("LiveClassMonitor activity delivery", () => {
       </MemoryRouter>,
     );
 
-    const startButton = screen.getByRole("button", { name: /iniciar grabación/i });
+    const startButton = screen.getByRole("button", { name: /iniciar demo/i });
     fireEvent.click(startButton);
     fireEvent.click(startButton);
 
@@ -521,7 +521,7 @@ describe("LiveClassMonitor activity delivery", () => {
     );
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+      fireEvent.click(screen.getByRole("button", { name: /iniciar demo/i }));
       await Promise.resolve();
       await Promise.resolve();
       await Promise.resolve();
@@ -559,7 +559,7 @@ describe("LiveClassMonitor activity delivery", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+    fireEvent.click(screen.getByRole("button", { name: /iniciar demo/i }));
 
     expect(await screen.findByText(/no se detecto voz/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /hora de actividad/i })).toBeDisabled();
@@ -586,7 +586,7 @@ describe("LiveClassMonitor activity delivery", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+    fireEvent.click(screen.getByRole("button", { name: /iniciar demo/i }));
     await waitFor(() => expect(mocks.getTranscriptionStatus).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByRole("button", { name: /detener/i }));
@@ -604,7 +604,7 @@ describe("LiveClassMonitor activity delivery", () => {
       complete: true,
     });
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /iniciar grabación/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /iniciar demo/i })).toBeInTheDocument();
     });
     expect(mocks.getTranscriptionStatus).toHaveBeenCalledTimes(1);
   });
@@ -631,7 +631,7 @@ describe("LiveClassMonitor activity delivery", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+    fireEvent.click(screen.getByRole("button", { name: /iniciar demo/i }));
     await waitFor(() => expect(mocks.getTranscriptionStatus).toHaveBeenCalledTimes(1));
 
     unmount();
@@ -653,7 +653,7 @@ describe("LiveClassMonitor activity delivery", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+    fireEvent.click(screen.getByRole("button", { name: /iniciar demo/i }));
     await screen.findByRole("button", { name: /detener/i });
     fireEvent.click(screen.getByRole("button", { name: /detener/i }));
 
@@ -676,7 +676,7 @@ describe("LiveClassMonitor activity delivery", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /iniciar grabación/i }));
+    fireEvent.click(screen.getByRole("button", { name: /iniciar demo/i }));
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
