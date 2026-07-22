@@ -166,6 +166,12 @@ function installFakeBrowserRecorder() {
   return { getUserMedia, stopTrack };
 }
 
+function dispatchActivityMessage(data: unknown, source: MessageEventSource) {
+  const event = new MessageEvent("message", { data });
+  Object.defineProperty(event, "source", { value: source });
+  fireEvent(window, event);
+}
+
 beforeEach(() => {
   mocks.createBackendSession.mockReset().mockResolvedValue({ sessionId: "session-1" });
   mocks.listCandidates.mockResolvedValue([mocks.candidate]);
@@ -235,6 +241,106 @@ describe("LiveClassMonitor activity delivery", () => {
     );
     expect(await screen.findByText(/Publicado para 1 estudiantes/i)).toBeInTheDocument();
   });
+  it("answers preview SDK requests only for its iframe and ignores telemetry", async () => {
+    const user = userEvent.setup();
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+    const supportCandidate = {
+      ...mocks.candidate,
+      id: "candidate-support",
+      activityId: "activity-support",
+      difficultyBand: "support",
+      bundleRef: "bundle-support",
+      manifest: {
+        ...mocks.candidate.manifest,
+        title: "Practica: La noticia - Apoyo",
+        difficulty_band: "support",
+      },
+    };
+    mocks.listCandidates.mockResolvedValue([mocks.candidate, supportCandidate]);
+
+
+    const view = render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole("button", { name: /hora de actividad/i }));
+
+    const preview = await screen.findByTitle(/previsualizacion practica: la noticia/i) as HTMLIFrameElement;
+    const sourceWindow = preview.contentWindow;
+    expect(sourceWindow).not.toBeNull();
+    if (!sourceWindow) return;
+    const postMessage = vi.spyOn(sourceWindow, "postMessage");
+
+    dispatchActivityMessage(
+      { sdk: "activity-sdk/v1", type: "request", id: "manifest-1", method: "getManifest" },
+      sourceWindow,
+    );
+    dispatchActivityMessage(
+      { sdk: "activity-sdk/v1", type: "request", id: "band-1", method: "getBand" },
+      sourceWindow,
+    );
+
+    expect(postMessage).toHaveBeenNthCalledWith(1, {
+      sdk: "activity-sdk/v1",
+      type: "response",
+      id: "manifest-1",
+      ok: true,
+      result: mocks.candidate.manifest,
+    }, "*");
+    expect(postMessage).toHaveBeenNthCalledWith(2, {
+      sdk: "activity-sdk/v1",
+      type: "response",
+      id: "band-1",
+      ok: true,
+      result: "core",
+    }, "*");
+
+    dispatchActivityMessage(
+      { sdk: "activity-sdk/v1", type: "request", id: "foreign", method: "getManifest" },
+      window,
+    );
+    dispatchActivityMessage({
+      sdk: "activity-sdk/v1",
+      type: "event",
+      method: "reportAttempt",
+      payload: { item_index: 0, correct: true },
+    }, sourceWindow);
+    expect(postMessage).toHaveBeenCalledTimes(2);
+
+    await user.click(screen.getByRole("button", { name: "Previsualizar" }));
+    const supportPreview = await screen.findByTitle(/previsualizacion practica: la noticia - apoyo/i) as HTMLIFrameElement;
+    const supportSourceWindow = supportPreview.contentWindow;
+    expect(supportSourceWindow).not.toBeNull();
+    if (!supportSourceWindow) return;
+    const supportPostMessage = vi.spyOn(supportSourceWindow, "postMessage");
+
+    dispatchActivityMessage(
+      { sdk: "activity-sdk/v1", type: "request", id: "stale-core", method: "getBand" },
+      sourceWindow,
+    );
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    dispatchActivityMessage(
+      { sdk: "activity-sdk/v1", type: "request", id: "support-band", method: "getBand" },
+      supportSourceWindow,
+    );
+    expect(supportPostMessage).toHaveBeenCalledWith({
+      sdk: "activity-sdk/v1",
+      type: "response",
+      id: "support-band",
+      ok: true,
+      result: "support",
+    }, "*");
+
+    view.unmount();
+    dispatchActivityMessage(
+      { sdk: "activity-sdk/v1", type: "request", id: "stale-unmounted", method: "getBand" },
+      supportSourceWindow,
+    );
+    expect(supportPostMessage).toHaveBeenCalledTimes(1);
+  });
+
   it("uploads prerecorded WAV chunks without requesting microphone access", async () => {
     vi.useFakeTimers();
     mocks.recordingSource = "prerecorded";

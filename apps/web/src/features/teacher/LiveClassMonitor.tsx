@@ -21,6 +21,10 @@ import {
   secureActivitySrcDoc,
 } from "../activityDelivery/activityIframeSecurity";
 import {
+  markActivityIframeAwaitingSource,
+  respondToActivitySdkRequest,
+} from "../activityDelivery/activitySdkHost";
+import {
   createBackendSession,
   getPrerecordedAudioPath,
   getRecordingSource,
@@ -505,6 +509,28 @@ function ActivityCandidatePanel({
   onAssignStudentBand: (studentId: string, band: DifficultyBand) => void;
   onPublish: () => void;
 }) {
+  const previewIframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    if (!selectedCandidate) return;
+    const iframe = previewIframeRef.current;
+    if (!iframe) return;
+    const currentCandidate = selectedCandidate;
+
+    markActivityIframeAwaitingSource(iframe);
+
+    function handleMessage(event: MessageEvent) {
+      respondToActivitySdkRequest(event, {
+        iframe,
+        manifest: currentCandidate.manifest,
+        band: currentCandidate.difficultyBand,
+      });
+    }
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [selectedCandidate]);
+
   if (candidates.length === 0) return null;
 
   const supportIds = overridesByBand.support ?? [];
@@ -601,6 +627,8 @@ function ActivityCandidatePanel({
               <iframe
                 {...activityIframeSecurityAttributes}
                 className="h-[560px] w-full bg-white"
+                key={selectedCandidate.id}
+                ref={previewIframeRef}
                 srcDoc={secureActivitySrcDoc(selectedCandidate.bundleHtml)}
                 title={`Previsualizacion ${selectedCandidate.manifest.title}`}
               />
