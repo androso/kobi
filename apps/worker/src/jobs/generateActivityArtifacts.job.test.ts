@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { LessonState } from "@kobi/ai-core";
 import type { CurriculumMatch } from "@kobi/curriculum";
@@ -10,24 +10,11 @@ import {
   type ActivityManifest,
   type RankedActivityRepositoryRow,
 } from "@kobi/activities/server";
-
-vi.mock("../activity-generation/runtimeVerifier.js", () => ({
-  verifyActivityRuntime: vi.fn(async () => ({
-    requests: ["getManifest", "getBand"],
-    events: ["reportAttempt", "reportHint", "reportComplete"],
-  })),
-}));
-import { verifyActivityRuntime } from "../activity-generation/runtimeVerifier.js";
 import {
   planSessionArtifacts,
   refreshGenerateActivityArtifactsJobData,
   runGenerateActivityArtifactsJob,
 } from "./generateActivityArtifacts.job.js";
-
-beforeEach(() => {
-  vi.mocked(verifyActivityRuntime).mockClear();
-});
-
 describe("generateActivityArtifacts job planning", () => {
   it("refreshes stale queued lesson and curriculum data before generation", async () => {
     const latestLessonState: LessonState = {

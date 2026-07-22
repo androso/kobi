@@ -486,8 +486,17 @@ async function requestAndNormalizeDrafts(
       userPrompt: request.userPrompt,
       schemaName: "kobi_activity_artifacts",
     });
-    return normalizeOpenAiActivityDrafts(raw, input, request.bundleRefFactory);
+    const normalized = normalizeOpenAiActivityDrafts(raw, input, request.bundleRefFactory);
+    if (normalized.errors.length > 0) {
+      console.warn("[openaiArtifactGenerator] draft normalization issues", {
+        errors: normalized.errors,
+      });
+    }
+    return normalized;
   } catch (error) {
+    console.error("[openaiArtifactGenerator] OpenAI draft API call failed", {
+      error: error instanceof Error ? error.message : error,
+    });
     return {
       candidates: [],
       errors: [error instanceof Error ? error.message : "OpenAI activity generation failed"],

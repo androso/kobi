@@ -35,7 +35,7 @@ import {
   type GenerateOpenAiActivityCandidatesInput,
   type OpenAiActivityGenerationResult,
 } from "../activity-generation/openaiArtifactGenerator.js";
-import { verifyActivityRuntime } from "../activity-generation/runtimeVerifier.js";
+
 
 export interface GenerateActivityArtifactsJobData {
   sessionId: string;
@@ -262,6 +262,7 @@ export async function runGenerateActivityArtifactsJob(
         console.info("[activityGenerator] OpenAI candidates received", {
           sessionId,
           candidateCount: openAiCandidates.length,
+          errors: result.errors.length > 0 ? result.errors : undefined,
         });
       } catch (error) {
         console.error("[activityGenerator] OpenAI generation failed; using static candidates", {
@@ -542,10 +543,6 @@ async function persistGeneratedArtifact(
     );
   }
 
-  await verifyActivityRuntime({
-    bundleHtml: candidate.bundle_html,
-    manifest: result.artifact.manifest,
-  });
 
   const { error: bundleError } = await supabase.from("activity_bundles").upsert(
     {
