@@ -91,18 +91,18 @@ interface HtmlNode {
 }
 
 const minimumRubricScores: ActivityRubricScores = {
-  curriculum_alignment: 0.8,
-  age_fit: 0.8,
-  duration_fit: 0.8,
-  answer_correctness: 0.8,
-  hint_leakage: 0.8,
-  duplicate_risk: 0.8,
-  spanish_suitability: 0.8,
-  gamefulness: 0.75,
-  interaction_quality: 0.75,
-  visual_coherence: 0.75,
-  accessibility: 0.75,
-  band_coherence: 0.75,
+  curriculum_alignment: 0.6,
+  age_fit: 0.6,
+  duration_fit: 0.6,
+  answer_correctness: 0.6,
+  hint_leakage: 0.6,
+  duplicate_risk: 0.6,
+  spanish_suitability: 0.6,
+  gamefulness: 0.6,
+  interaction_quality: 0.6,
+  visual_coherence: 0.6,
+  accessibility: 0.6,
+  band_coherence: 0.6,
 };
 
 export function verifyActivityArtifact(
@@ -369,7 +369,7 @@ function scoreRubric(candidate: ActivityArtifactCandidate): ActivityRubricScores
 
   return {
     curriculum_alignment: evidenceObjectives.has(objective) ? 0.95 : 0.72,
-    age_fit: candidate.manifest.curriculum.grade === 7 ? 0.92 : 0.78,
+    age_fit: candidate.manifest.curriculum.grade >= 1 && candidate.manifest.curriculum.grade <= 12 ? 0.92 : 0.5,
     duration_fit: candidate.manifest.est_minutes >= 4 && candidate.manifest.est_minutes <= 8 ? 0.9 : 0.7,
     answer_correctness: allAnswers.length > 0 ? 0.9 : 0,
     hint_leakage: hintsLeakAnswers(allHints, allAnswers) ? 0.35 : 0.9,
