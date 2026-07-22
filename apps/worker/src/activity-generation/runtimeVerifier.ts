@@ -147,8 +147,8 @@ async function installSandboxHost(
   const securedHtml = secureActivityHtml(bundleHtml);
   const iframe = page.locator("#activity-host");
   await iframe.evaluate((element, html) => {
-    if (!(element instanceof HTMLIFrameElement)) throw new Error("activity host is not an iframe");
-    element.srcdoc = html;
+    if (element.tagName.toLowerCase() !== "iframe") throw new Error("activity host is not an iframe");
+    (element as { srcdoc?: string }).srcdoc = html;
   }, securedHtml);
 }
 
@@ -185,7 +185,8 @@ async function waitForSdkMessage(
   try {
     await page.waitForFunction(
       ({ expectedType, expectedMethod }) => {
-        const raw = document.body.dataset.sdkMessages ?? "[]";
+        const doc = (globalThis as unknown as { document?: { body?: { dataset?: Record<string, string> } } }).document;
+        const raw = doc?.body?.dataset?.sdkMessages ?? "[]";
         const messages = JSON.parse(raw);
         return Array.isArray(messages) && messages.some((message) =>
           message && typeof message === "object" && message.type === expectedType && message.method === expectedMethod

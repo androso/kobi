@@ -24,12 +24,11 @@ const candidates = createActivityArtifactCandidates({
   activitySetId: createActivitySetId(),
 });
 
-const core = candidates.find((candidate) => candidate.manifest.difficulty_band === "core");
-if (!core) {
-  throw new Error("missing core candidate");
-}
-
 async function main() {
+  const core = candidates.find((candidate) => candidate.manifest.difficulty_band === "core");
+  if (!core) {
+    throw new Error("missing core candidate");
+  }
   const staticResult = verifyActivityArtifact(core);
   console.log("static verification:", staticResult.ok, staticResult.errors);
 
