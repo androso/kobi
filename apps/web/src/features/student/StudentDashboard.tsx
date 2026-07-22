@@ -164,15 +164,15 @@ export function StudentDashboard() {
     const currentStore = deliveryStore;
     eventsInWindowRef.current = 0;
 
-    const iframe = iframeRef.current;
-    if (!iframe) return;
-    markActivityIframeAwaitingSource(iframe);
+    const activeIframe = iframeRef.current;
+    if (!activeIframe) return;
+    markActivityIframeAwaitingSource(activeIframe);
 
     function handleMessage(event: MessageEvent) {
-      const sourceMatches = isActivitySdkTelemetryFromIframe(event, iframe);
-
+      if (!activeIframe) return;
+      const sourceMatches = isActivitySdkTelemetryFromIframe(event, activeIframe);
       if (respondToActivitySdkRequest(event, {
-        iframe,
+        iframe: activeIframe,
         manifest: currentAssignment.manifest,
         band: currentAssignment.variant,
       })) {

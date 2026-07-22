@@ -536,15 +536,16 @@ function ActivityCandidatePanel({
 
   useEffect(() => {
     if (!selectedCandidate) return;
-    const iframe = previewIframeRef.current;
-    if (!iframe) return;
+    const activeIframe = previewIframeRef.current;
+    if (!activeIframe) return;
     const currentCandidate = selectedCandidate;
 
-    markActivityIframeAwaitingSource(iframe);
+    markActivityIframeAwaitingSource(activeIframe);
 
     function handleMessage(event: MessageEvent) {
+      if (!activeIframe) return;
       respondToActivitySdkRequest(event, {
-        iframe,
+        iframe: activeIframe,
         manifest: currentCandidate.manifest,
         band: currentCandidate.difficultyBand,
       });
