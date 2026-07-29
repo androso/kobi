@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "generate:openai-artifacts": "tsx src/dev/generateOpenAiArtifacts.ts",
+    "verify:modal-artifact": "tsx src/dev/verifyModalArtifact.ts",
     "generate:static-artifacts": "tsx src/dev/generateStaticArtifacts.ts",
     "try:static-activity-demo": "tsx src/dev/tryStaticActivityDemo.ts",
     "test": "vitest run",
@@ -18,6 +19,7 @@
     "@kobi/db": "workspace:*",
     "@supabase/supabase-js": "^2.45.4",
     "dotenv": "^16.4.5",
+    "modal": "^0.9.0",
     "openai": "^6.45.0",
     "pg-boss": "^10.1.5",
     "playwright": "^1.61.1",
