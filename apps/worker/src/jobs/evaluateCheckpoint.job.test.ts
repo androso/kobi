@@ -146,7 +146,12 @@ describe("evaluateCheckpoint job", () => {
       curriculumMatches,
       curriculumFallback: expect.objectContaining({ sourceIds: [] }),
     });
-    expect(boss.sent[0].options).toEqual({ singletonKey: "session-1" });
+    expect(boss.sent[0].options).toEqual({
+      singletonKey: "session-1",
+      retryLimit: 2,
+      retryDelay: 15,
+      retryBackoff: true,
+    });
   });
 
   it("uses session class metadata for curriculum retrieval when job data omits it", async () => {
@@ -191,6 +196,31 @@ describe("evaluateCheckpoint job", () => {
     );
 
     expect(supabase.segmentsGtValue).toBe("2026-01-01T00:05:00Z");
+  });
+
+  it("reconsiders the full lesson for the forced session-end checkpoint", async () => {
+    const supabase = fakeSupabase({
+      lastReadyCheckpointAt: "2026-01-01T00:05:00Z",
+      segments: [lessonState],
+    });
+    const boss = fakeBoss();
+    let evaluated = false;
+
+    await runEvaluateCheckpointJob(
+      supabase.client,
+      boss.instance,
+      { sessionId: "session-1", trigger: "session_end", force: true },
+      {
+        evaluator: async () => {
+          evaluated = true;
+          return { ready: false, reason: "Contexto final insuficiente.", summary: "Cierre." };
+        },
+      },
+    );
+
+    expect(evaluated).toBe(true);
+    expect(supabase.segmentsGtValue).toBeNull();
+    expect(supabase.tablesRead[0]).toBe("segments");
   });
 
   it("never queries raw audio chunks while evaluating the checkpoint handoff", async () => {
