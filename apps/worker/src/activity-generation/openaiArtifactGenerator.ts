@@ -11,7 +11,6 @@ import {
   ACTIVITY_SDK_VERSION,
   activityManifestSchema,
   createUnguessableBundleRef,
-  createGamePlan,
   evidenceFromCurriculumMatches,
   verifyActivityArtifact,
   type ActivityArtifactCandidate,
@@ -21,14 +20,23 @@ import {
   type DifficultyBand,
   type SessionContext,
 } from "@kobi/activities/server";
+import type { ActivityRuntimeVerifier } from "./runtimeVerifier.js";
 
 const difficultyBandSchema = z.enum(["support", "core", "challenge"]);
-const activityFamilySchema = z.enum([
-  "match_classify",
-  "sequence_order",
-  "guided_practice",
+const activityFamilySchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/, "family must be a snake_case slug");
+const activityCapabilitySchema = z.enum([
+  "dom",
+  "css",
+  "svg",
+  "canvas",
+  "audio",
+  "webgl",
+  "animation",
 ]);
-const activityCapabilitySchema = z.enum(["dom", "css", "svg", "canvas"]);
 const activityTelemetryEventTypeSchema = z.enum(["attempt", "hint", "complete"]);
 
 const rawManifestDraftSchema = z
@@ -40,8 +48,22 @@ const rawManifestDraftSchema = z
       .max(64)
       .regex(/^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/, "mechanic must be a snake_case slug"),
     title: z.string().min(3).max(90),
-    est_minutes: z.number().int().min(3).max(12),
-    allowed_capabilities: z.array(activityCapabilitySchema).min(1).max(4),
+    est_minutes: z.number().int().min(1).max(45),
+    allowed_capabilities: z.array(activityCapabilitySchema).min(1).max(7),
+    experience: z.object({
+      type: z.enum([
+        "simulation",
+        "interactive_laboratory",
+        "creative_studio",
+        "guided_inquiry",
+        "learning_game",
+        "practice_tool",
+        "exploration",
+      ]),
+      assessment_mode: z.enum(["scored", "mastery", "reflection", "exploration"]),
+      interaction_model: z.string().min(1).max(240),
+      adaptive_features: z.array(z.string().min(1).max(160)).max(8),
+    }),
     learning_design: z.object({
       learning_goal: z.string().min(1).max(240),
       interaction_summary: z.string().min(1).max(320),
@@ -58,13 +80,13 @@ const rawManifestDraftSchema = z
             z
               .object({
                 prompt: z.string().min(1).max(600),
-                answer_key: z.array(z.string().min(1).max(160)).min(1).max(12),
+                answer_key: z.array(z.string().min(1).max(160)).max(12),
                 hints: z.array(z.string().min(1).max(220)).max(4),
               })
               .strict(),
           )
           .min(1)
-          .max(8),
+          .max(24),
         telemetry_events: z
           .array(activityTelemetryEventTypeSchema)
           .min(1)
@@ -98,6 +120,9 @@ const activityReviewFindingSchema = z
       "answer_correctness",
       "age_fit",
       "band_coherence",
+      "engagement",
+      "adaptive_support",
+      "runtime_contract",
       "safety",
       "usability",
     ]),
@@ -147,6 +172,8 @@ export interface GenerateOpenAiActivityCandidatesOptions {
   model: string;
   templates?: ActivityPromptTemplates;
   maxRepairAttempts?: number;
+  maxReviewRepairAttempts?: number;
+  runtimeVerifier?: ActivityRuntimeVerifier | null;
   bundleRefFactory?: () => string;
 }
 
@@ -155,11 +182,19 @@ export interface OpenAiActivityGenerationResult {
   attempted: boolean;
   attempts: number;
   errors: string[];
+  diagnostics?: string[];
 }
 
 interface BuildPromptInput extends CreateActivityCandidatesInput {
   bands: DifficultyBand[];
   verifierErrors?: Partial<Record<DifficultyBand, string[]>>;
+}
+
+interface ActivityReviewResult {
+  approved: boolean;
+  errors: string[];
+  errorsByBand: Partial<Record<DifficultyBand, string[]>>;
+  rejectedBands: DifficultyBand[];
 }
 
 const defaultInitialVerifierScores: ActivityVerifierScores = {
@@ -233,6 +268,7 @@ export function createOpenAiActivityDraftClient(apiKey: string): OpenAiActivityD
 
 export function createOpenAiActivityGeneratorFromEnv(
   env: NodeJS.ProcessEnv = process.env,
+  options: Pick<GenerateOpenAiActivityCandidatesOptions, "runtimeVerifier"> = {},
 ): ((input: GenerateOpenAiActivityCandidatesInput) => Promise<OpenAiActivityGenerationResult>) | null {
   const validation = validateOpenAiActivityConfig(env);
   if (!validation.enabled) return null;
@@ -245,6 +281,7 @@ export function createOpenAiActivityGeneratorFromEnv(
     generateOpenAiActivityCandidates(input, {
       client,
       model: validation.model,
+      runtimeVerifier: options.runtimeVerifier,
     });
 }
 
@@ -317,7 +354,9 @@ export async function generateOpenAiActivityCandidates(
   const templates = options.templates ?? (await loadActivityPromptTemplates());
   const bundleRefFactory = options.bundleRefFactory ?? (() => createUnguessableBundleRef("openai"));
   const maxRepairAttempts = options.maxRepairAttempts ?? 2;
+  const maxReviewRepairAttempts = options.maxReviewRepairAttempts ?? 3;
   const errors: string[] = [];
+  const diagnostics: string[] = [];
   let attempts = 0;
 
   const firstAttempt = await requestAndNormalizeDrafts(
@@ -335,14 +374,9 @@ export async function generateOpenAiActivityCandidates(
 
   const accepted = new Map<DifficultyBand, ActivityArtifactCandidate>();
   const failedVerifierErrors: Partial<Record<DifficultyBand, string[]>> = {};
-  let sharedMetadata: Pick<ActivityManifest, "family" | "mechanic"> | undefined;
-  const rejectedMetadataBands = new Set<DifficultyBand>();
-  let metadataMismatchEncountered = firstAttempt.errors.some((error) =>
-    error.includes("all requested bands must share one family and mechanic"),
-  );
 
   for (const candidate of firstAttempt.candidates) {
-    const result = verifyActivityArtifact(candidate);
+    const result = await verifyGeneratedCandidate(candidate, options.runtimeVerifier ?? null);
     if (!result.ok) {
       failedVerifierErrors[candidate.manifest.difficulty_band] = result.errors;
       errors.push(
@@ -353,19 +387,6 @@ export async function generateOpenAiActivityCandidates(
       continue;
     }
 
-    const coherenceError = getMetadataCoherenceError(candidate, sharedMetadata);
-    if (coherenceError) {
-      failedVerifierErrors[candidate.manifest.difficulty_band] = [coherenceError];
-      rejectedMetadataBands.add(candidate.manifest.difficulty_band);
-      errors.push(`${candidate.manifest.difficulty_band} verifier: ${coherenceError}`);
-      continue;
-    }
-
-    sharedMetadata ??= {
-      family: candidate.manifest.family,
-      mechanic: candidate.manifest.mechanic,
-    };
-    rejectedMetadataBands.delete(candidate.manifest.difficulty_band);
     accepted.set(candidate.manifest.difficulty_band, candidate);
   }
   recordMissingDraftBands(bands, firstAttempt.candidates, failedVerifierErrors);
@@ -375,7 +396,11 @@ export async function generateOpenAiActivityCandidates(
     if (missingBands.length === 0) break;
 
     const repairAttempt = await requestAndNormalizeDrafts(
-      { ...input, bands: missingBands },
+      {
+        ...input,
+        bands: missingBands,
+        verifierErrors: failedVerifierErrors,
+      },
       {
         model: options.model,
         client: options.client,
@@ -391,11 +416,8 @@ export async function generateOpenAiActivityCandidates(
     attempts += 1;
     errors.push(...repairAttempt.errors);
 
-    metadataMismatchEncountered ||= repairAttempt.errors.some((error) =>
-      error.includes("all requested bands must share one family and mechanic"),
-    );
     for (const candidate of repairAttempt.candidates) {
-      const result = verifyActivityArtifact(candidate);
+      const result = await verifyGeneratedCandidate(candidate, options.runtimeVerifier ?? null);
       if (!result.ok) {
         failedVerifierErrors[candidate.manifest.difficulty_band] = result.errors;
         errors.push(
@@ -406,71 +428,173 @@ export async function generateOpenAiActivityCandidates(
         continue;
       }
 
-      const coherenceError = getMetadataCoherenceError(candidate, sharedMetadata);
-      if (coherenceError) {
-        failedVerifierErrors[candidate.manifest.difficulty_band] = [coherenceError];
-        rejectedMetadataBands.add(candidate.manifest.difficulty_band);
-        errors.push(`${candidate.manifest.difficulty_band} repair verifier: ${coherenceError}`);
-        continue;
-      }
-
-      sharedMetadata ??= {
-        family: candidate.manifest.family,
-        mechanic: candidate.manifest.mechanic,
-      };
-      rejectedMetadataBands.delete(candidate.manifest.difficulty_band);
       accepted.set(candidate.manifest.difficulty_band, candidate);
     }
     recordMissingDraftBands(missingBands, repairAttempt.candidates, failedVerifierErrors);
   }
 
-  if (
-    rejectedMetadataBands.size > 0
-    || (metadataMismatchEncountered && accepted.size < bands.length)
-  ) {
-    return { candidates: [], attempted: true, attempts, errors };
-  }
   const candidates = bands.flatMap((band) => {
     const candidate = accepted.get(band);
     return candidate ? [candidate] : [];
   });
 
-  if (candidates.length === bands.length) {
-    const review = await reviewOpenAiActivityCandidates(candidates, input, {
-      client: options.client,
-      model: options.model,
-      systemPrompt: templates.review,
-    });
-    errors.push(...review.errors);
-    if (!review.approved) {
-      return { candidates: [], attempted: true, attempts, errors };
-    }
+  const reviewResults = await Promise.all(
+    candidates.map((candidate) =>
+      reviewAndRepairCandidate(candidate, input, {
+        client: options.client,
+        model: options.model,
+        runtimeVerifier: options.runtimeVerifier ?? null,
+        templates,
+        bundleRefFactory,
+        maxReviewRepairAttempts,
+      }),
+    ),
+  );
+  attempts += reviewResults.reduce((total, result) => total + result.repairAttempts, 0);
+  errors.push(...reviewResults.flatMap((result) => result.errors));
+  diagnostics.push(...reviewResults.flatMap((result) => result.diagnostics));
+
+  const reviewedByBand = new Map(
+    reviewResults.flatMap((result) =>
+      result.candidate
+        ? [[result.candidate.manifest.difficulty_band, result.candidate] as const]
+        : [],
+    ),
+  );
+  const reviewedCandidates = bands.flatMap((band) => {
+    const candidate = reviewedByBand.get(band);
+    return candidate ? [candidate] : [];
+  });
+
+  if (bands.includes("core") && !reviewedByBand.has("core")) {
+    return {
+      candidates: [],
+      attempted: true,
+      attempts,
+      errors,
+      diagnostics: diagnostics.length > 0 ? diagnostics : undefined,
+    };
   }
 
   return {
-    candidates,
+    candidates: reviewedCandidates,
     attempted: true,
     attempts,
     errors,
+    diagnostics: diagnostics.length > 0 ? diagnostics : undefined,
   };
 }
 
-function getMetadataCoherenceError(
+async function verifyGeneratedCandidate(
   candidate: ActivityArtifactCandidate,
-  sharedMetadata: Pick<ActivityManifest, "family" | "mechanic"> | undefined,
-): string | undefined {
-  if (!sharedMetadata) return undefined;
-  if (
-    candidate.manifest.family === sharedMetadata.family
-    && candidate.manifest.mechanic === sharedMetadata.mechanic
-  ) {
-    return undefined;
+  runtimeVerifier: ActivityRuntimeVerifier | null,
+): Promise<{ ok: boolean; errors: string[] }> {
+  const staticResult = verifyActivityArtifact(candidate);
+  if (!staticResult.ok || !runtimeVerifier) {
+    return { ok: staticResult.ok, errors: staticResult.errors };
   }
-  return `activity set must share one family and mechanic; expected ${sharedMetadata.family}/${sharedMetadata.mechanic}, received ${candidate.manifest.family}/${candidate.manifest.mechanic}`;
+
+  try {
+    await runtimeVerifier({
+      bundleHtml: candidate.bundle_html,
+      manifest: candidate.manifest,
+    });
+    return { ok: true, errors: [] };
+  } catch (error) {
+    return {
+      ok: false,
+      errors: [error instanceof Error ? error.message : "isolated runtime verification failed"],
+    };
+  }
+}
+
+async function reviewAndRepairCandidate(
+  initialCandidate: ActivityArtifactCandidate,
+  input: GenerateOpenAiActivityCandidatesInput,
+  options: {
+    client: OpenAiActivityDraftClient;
+    model: string;
+    runtimeVerifier: ActivityRuntimeVerifier | null;
+    templates: ActivityPromptTemplates;
+    bundleRefFactory: () => string;
+    maxReviewRepairAttempts: number;
+  },
+): Promise<{
+  candidate: ActivityArtifactCandidate | null;
+  repairAttempts: number;
+  errors: string[];
+  diagnostics: string[];
+}> {
+  const band = initialCandidate.manifest.difficulty_band;
+  const diagnostics: string[] = [];
+  let candidate = initialCandidate;
+  let repairAttempts = 0;
+  let needsReview = true;
+  let repairFeedback: string[] = [];
+
+  while (true) {
+    if (needsReview) {
+      const review = await reviewOpenAiActivityCandidates([candidate], input, {
+        client: options.client,
+        model: options.model,
+        systemPrompt: options.templates.review,
+      });
+      diagnostics.push(...review.errors);
+      if (review.approved) {
+        return { candidate, repairAttempts, errors: [], diagnostics };
+      }
+      repairFeedback = review.errorsByBand[band] ?? review.errors;
+    }
+
+    if (repairAttempts >= options.maxReviewRepairAttempts) {
+      return { candidate: null, repairAttempts, errors: repairFeedback, diagnostics };
+    }
+
+    const repairAttempt = await requestAndNormalizeDrafts(
+      { ...input, bands: [band], verifierErrors: { [band]: repairFeedback } },
+      {
+        model: options.model,
+        client: options.client,
+        systemPrompt: `${options.templates.system}\n\n${options.templates.repair}`,
+        userPrompt: buildActivityGenerationPrompt({
+          ...input,
+          bands: [band],
+          verifierErrors: { [band]: repairFeedback },
+        }),
+        bundleRefFactory: options.bundleRefFactory,
+      },
+    );
+    repairAttempts += 1;
+    diagnostics.push(...repairAttempt.errors);
+
+    const repaired = repairAttempt.candidates.find(
+      (item) => item.manifest.difficulty_band === band,
+    );
+    if (!repaired) {
+      repairFeedback = repairAttempt.errors.length > 0
+        ? repairAttempt.errors
+        : ["review repair did not return an artifact for this band"];
+      needsReview = false;
+      continue;
+    }
+
+    const verification = await verifyGeneratedCandidate(repaired, options.runtimeVerifier);
+    if (!verification.ok) {
+      repairFeedback = verification.errors;
+      diagnostics.push(
+        ...verification.errors.map((error) => `${band} review repair verifier: ${error}`),
+      );
+      needsReview = false;
+      continue;
+    }
+
+    candidate = repaired;
+    needsReview = true;
+  }
 }
 
 async function requestAndNormalizeDrafts(
-  input: GenerateOpenAiActivityCandidatesInput,
+  input: BuildPromptInput,
   request: {
     client: OpenAiActivityDraftClient;
     model: string;
@@ -479,6 +603,27 @@ async function requestAndNormalizeDrafts(
     bundleRefFactory: () => string;
   },
 ): Promise<{ candidates: ActivityArtifactCandidate[]; errors: string[] }> {
+  if (input.bands.length > 1) {
+    const perBandResults = await Promise.all(
+      input.bands.map((band) => {
+        const bandErrors = input.verifierErrors?.[band];
+        const bandInput: BuildPromptInput = {
+          ...input,
+          bands: [band],
+          verifierErrors: bandErrors ? { [band]: bandErrors } : {},
+        };
+        return requestAndNormalizeDrafts(bandInput, {
+          ...request,
+          userPrompt: buildActivityGenerationPrompt(bandInput),
+        });
+      }),
+    );
+    return {
+      candidates: perBandResults.flatMap((result) => result.candidates),
+      errors: perBandResults.flatMap((result) => result.errors),
+    };
+  }
+
   try {
     const raw = await request.client.generateActivityDrafts({
       model: request.model,
@@ -512,7 +657,7 @@ async function reviewOpenAiActivityCandidates(
     model: string;
     systemPrompt: string;
   },
-): Promise<{ approved: boolean; errors: string[] }> {
+): Promise<ActivityReviewResult> {
   try {
     const raw = await request.client.reviewActivityCandidates({
       model: request.model,
@@ -522,32 +667,83 @@ async function reviewOpenAiActivityCandidates(
     });
     const parsed = openAiActivityReviewResponseSchema.safeParse(raw);
     if (!parsed.success) {
+      const schemaErrors = parsed.error.issues.map(
+        (issue) => `AI review schema: ${issue.path.join(".")}: ${issue.message}`,
+      );
       return {
         approved: false,
-        errors: parsed.error.issues.map(
-          (issue) => `AI review schema: ${issue.path.join(".")}: ${issue.message}`,
-        ),
+        errors: schemaErrors,
+        errorsByBand: errorsForCandidateBands(candidates, schemaErrors),
+        rejectedBands: candidates.map((candidate) => candidate.manifest.difficulty_band),
       };
     }
 
     const blockingFindings = parsed.data.findings.filter(
-      (finding) => finding.severity === "error",
-    );
-    const approved = parsed.data.approved && blockingFindings.length === 0;
-    const errors = parsed.data.findings.map(
       (finding) =>
-        `AI review ${finding.severity} ${finding.difficulty_band ?? "set"}/${finding.category}: ${finding.message}`,
+        finding.severity === "error" &&
+        finding.category !== "engagement" &&
+        finding.category !== "adaptive_support",
     );
-    if (!approved && errors.length === 0) errors.push("AI review rejected the activity set");
-    return { approved, errors };
+    const approved = blockingFindings.length === 0;
+    const errors = parsed.data.findings.map(formatActivityReviewFinding);
+    if (!approved && errors.length === 0) errors.push("AI review rejected one or more artifacts");
+    const candidateBands = candidates.map((candidate) => candidate.manifest.difficulty_band);
+    const errorsByBand: Partial<Record<DifficultyBand, string[]>> = {};
+    for (const band of candidateBands) {
+      errorsByBand[band] = parsed.data.findings
+        .filter((finding) => finding.difficulty_band === null || finding.difficulty_band === band)
+        .map(formatActivityReviewFinding);
+      if (!approved && errorsByBand[band]?.length === 0) {
+        errorsByBand[band] = ["AI review rejected this artifact without a specific finding"];
+      }
+    }
+    const hasSetLevelError = blockingFindings.some((finding) => finding.difficulty_band === null);
+    const rejectedBands = approved
+      ? []
+      : hasSetLevelError
+        ? candidateBands
+        : [...new Set(blockingFindings.flatMap((finding) =>
+            finding.difficulty_band ? [finding.difficulty_band] : []
+          ))];
+    return {
+      approved,
+      errors,
+      errorsByBand,
+      rejectedBands: rejectedBands.length > 0 ? rejectedBands : candidateBands,
+    };
   } catch (error) {
+    const reviewErrors = [
+      `AI review failed: ${error instanceof Error ? error.message : "unknown review error"}`,
+    ];
     return {
       approved: false,
-      errors: [
-        `AI review failed: ${error instanceof Error ? error.message : "unknown review error"}`,
-      ],
+      errors: reviewErrors,
+      errorsByBand: errorsForCandidateBands(candidates, reviewErrors),
+      rejectedBands: candidates.map((candidate) => candidate.manifest.difficulty_band),
     };
   }
+}
+
+function formatActivityReviewFinding(
+  finding: OpenAiActivityReviewResponse["findings"][number],
+): string {
+  const effectiveSeverity =
+    finding.severity === "error" &&
+    (finding.category === "engagement" || finding.category === "adaptive_support")
+      ? "warning"
+      : finding.severity;
+  return `AI review ${effectiveSeverity} ${finding.difficulty_band ?? "set"}/${finding.category}: ${finding.message}`;
+}
+
+function errorsForCandidateBands(
+  candidates: ActivityArtifactCandidate[],
+  errors: string[],
+): Partial<Record<DifficultyBand, string[]>> {
+  const errorsByBand: Partial<Record<DifficultyBand, string[]>> = {};
+  for (const candidate of candidates) {
+    errorsByBand[candidate.manifest.difficulty_band] = errors;
+  }
+  return errorsByBand;
 }
 
 export function normalizeOpenAiActivityDrafts(
@@ -566,28 +762,9 @@ export function normalizeOpenAiActivityDrafts(
   const requestedBands = new Set(input.bands);
   const evidence = evidenceFromCurriculumMatches(input.curriculumMatches);
   const primaryMatch = input.curriculumMatches[0];
-  const gamePlan = input.gamePlan ?? createGamePlan(input.sessionContext, input.curriculumMatches);
   const errors: string[] = [];
   const candidates: ActivityArtifactCandidate[] = [];
   const seenRequestedBands = new Set<DifficultyBand>();
-  const requestedArtifacts = parsed.data.artifacts.filter((artifact) =>
-    requestedBands.has(artifact.difficulty_band),
-  );
-  const sharedDraftMetadata = requestedArtifacts[0]?.manifest_draft;
-  if (
-    sharedDraftMetadata
-    && requestedArtifacts.some(
-      (artifact) =>
-        artifact.manifest_draft.family !== sharedDraftMetadata.family
-        || artifact.manifest_draft.mechanic !== sharedDraftMetadata.mechanic,
-    )
-  ) {
-    return {
-      candidates: [],
-      errors: ["draft schema: all requested bands must share one family and mechanic"],
-    };
-  }
-
   for (const artifact of parsed.data.artifacts) {
     if (!requestedBands.has(artifact.difficulty_band)) {
       errors.push(`draft schema: unexpected difficulty band ${artifact.difficulty_band}`);
@@ -611,15 +788,9 @@ export function normalizeOpenAiActivityDrafts(
       entry: "index.html",
       sdk_version: ACTIVITY_SDK_VERSION,
       allowed_capabilities: artifact.manifest_draft.allowed_capabilities,
-      learning_design: artifact.manifest_draft.learning_design ?? {
-        learning_goal: gamePlan.learning_goal,
-        interaction_summary: `${gamePlan.interaction_metaphor}: ${gamePlan.band_requirements[artifact.difficulty_band]}`,
-        success_criteria: ["Completa la interaccion", "Conecta la respuesta con el objetivo"],
-      },
-      visual_theme: artifact.manifest_draft.visual_theme ?? {
-        scene: gamePlan.interaction_metaphor,
-        accent: "azul Kobi",
-      },
+      experience: artifact.manifest_draft.experience,
+      learning_design: artifact.manifest_draft.learning_design,
+      visual_theme: artifact.manifest_draft.visual_theme,
     };
 
     const manifestResult = activityManifestSchema.safeParse(manifest);
@@ -688,47 +859,66 @@ export function buildActivityGenerationPrompt(input: BuildPromptInput): string {
       task: "Generate one activity artifact draft for each requested band.",
       requested_bands: input.bands,
       artifact_contract: {
-        family_exemplars: ["match_classify", "sequence_order", "guided_practice"],
-        family_policy:
-          "Families are quality anchors for taxonomy/reuse, not a renderer whitelist. Invent the interaction that best practices the objective inside the sandbox.",
-        required_shared_game_plan:
-          input.gamePlan ?? createGamePlan(input.sessionContext, input.curriculumMatches),
+        experience_policy:
+          "Invent the best interactive learning experience from the objective. No renderer, family list, deterministic game plan, or quiz template is imposed.",
+        optional_prior_context: input.gamePlan ?? null,
         metadata_contract: {
-          family: "Use exactly one taxonomy family across the generated set.",
+          family:
+            "Invent a descriptive snake_case experience family. Keep it shared across variants only when the variants are adaptations of the same experience.",
           mechanic:
-            "Provide one shared required snake_case mechanic slug (1-64 characters) across the generated set; the slug is descriptive metadata, not a renderer selector.",
+            "Invent a descriptive snake_case interaction mechanic. It describes the experience; it never selects a renderer.",
+          experience:
+            "Declare the experience type, assessment mode, interaction model, and only adaptive features implemented in code. Use [] when there are none.",
         },
-        required_new_manifest_fields: ["mechanic", "learning_design.learning_goal", "learning_design.interaction_summary", "learning_design.success_criteria", "visual_theme.scene", "visual_theme.accent"],
-        content_modes: [
-          "manifest items carry prompts, answer keys, and hints as success criteria; HTML must implement an interactive skill-practice UI rather than radio-button Q&A",
+        required_new_manifest_fields: [
+          "mechanic",
+          "experience.type",
+          "experience.assessment_mode",
+          "experience.interaction_model",
+          "experience.adaptive_features",
+          "learning_design.learning_goal",
+          "learning_design.interaction_summary",
+          "learning_design.success_criteria",
+          "visual_theme.scene",
+          "visual_theme.accent",
+        ],
+        content_policy: [
+          "content.items provide runtime-owned material for the experience",
+          "answer_key may be empty for reflection or exploration experiences",
+          "scored and mastery experiences must provide evaluable answer keys or equivalent success criteria",
+          "the HTML is a complete interactive application, never a JSON renderer or question-card template",
+          "use one canonical answer representation in the manifest, checker, feedback, and telemetry",
+          "recompute correctness from current state at completion or lock editing immediately after a successful check",
+          "hints coach strategy and never draw, place, select, or reveal the exact scored answer",
+          "canvas and SVG primary interactions include keyboard-operable controls or an equivalent accessible path",
         ],
       },
       creativity_brief: {
         design_goal:
-          "Create a memorable, curriculum-grounded mini-app that feels like a small classroom manipulative, lab, or studio. The code is the experience; the manifest is the contract.",
+          "Build a memorable, curriculum-grounded learning app: simulation, interactive lab, creative studio, guided inquiry, learning game, practice tool, or exploration. The code is the experience; the manifest is editable learning content.",
         skill_focus:
-          "Practice or assess one concrete student ability tied to the lesson objective: identify, organize, produce, justify, or compare.",
+          "Let the learner investigate, manipulate, create, test, explain, model, compare, or practice a concrete ability tied to the lesson objective.",
         interaction_patterns: [
-          "sorting board",
-          "evidence map",
-          "headline workshop",
-          "source-check desk",
-          "story sequencer",
-          "vocabulary lab",
-          "argument builder",
-          "timeline",
-          "checklist inspector",
+          "simulation with adjustable variables and visible consequences",
+          "interactive laboratory with observation and hypothesis cycles",
+          "creative studio for composing, annotating, or constructing an artifact",
+          "guided inquiry with evidence gathering and reflection",
+          "spatial or canvas-based manipulative",
+          "timeline, map, system model, story world, or argument builder",
+          "adaptive practice that changes scaffolding after learner actions",
+          "lightweight learning game with meaningful rules and feedback",
         ],
         band_differentiation: {
-          support: "scaffold the ability with guided steps, fewer pieces, and progressive hints",
-          core: "let students apply the ability through active manipulation and meaningful feedback",
-          challenge: "ask students to explain, justify, compare, or synthesize inside the same mechanic",
+          support: "reduce cognitive load, model the first move, and adapt scaffolds based on actions",
+          core: "offer an authentic task with learner control, meaningful feedback, and productive struggle",
+          challenge: "add synthesis, transfer, competing constraints, explanation, or open-ended creation",
         },
-        visual_contract: "Use Kobi blue foundation, rounded surfaces, clear typography, generous spacing, responsive phone/laptop layout, visible focus, readable contrast, touch-friendly controls, reduced-motion support, immediate feedback, no external assets.",
+        visual_contract: "Create a coherent responsive app with accessible controls, visible focus, readable contrast, touch targets, reduced-motion support, and visuals that explain the learning system. No external assets.",
         avoid: [
           "primary interaction that is multi-option / A/B/C / radio-button Q&A",
           "static worksheet cards where the student only clicks one answer",
-          "decorative effects that do not support the learning task",
+          "a generic dashboard wrapped around questions",
+          "fake interactivity, hidden verifier bypass controls, or decoration unrelated to learning",
           "long reading passages or dense instructions",
         ],
       },
@@ -743,6 +933,27 @@ export function buildActivityGenerationPrompt(input: BuildPromptInput): string {
           "reportHint",
           "reportComplete",
         ],
+        exact_message_protocol: {
+          request: 'window.parent.postMessage({ sdk: SDK_VERSION, type: "request", id, method }, "*")',
+          response: 'Listen for { sdk: SDK_VERSION, type: "response", id, ok: true, result }; resolve the matching request id.',
+          event: 'window.parent.postMessage({ sdk: SDK_VERSION, type: "event", method, payload }, "*")',
+          warning: "The host ignores messages without the exact type field. Do not invent replyTo or method-only envelopes.",
+        },
+        event_payloads: {
+          reportAttempt:
+            'Use { item_index: <non-negative integer>, correct: <boolean>, answer?: <student answer> }. The parent adds assignment_id; do not invent one.',
+          reportHint:
+            'Use { item_index: <non-negative integer>, hint_index: <non-negative integer> }. The parent adds assignment_id; do not invent one.',
+          reportComplete:
+            'Use either { score_unit: "count", score: <non-negative integer>, total: <positive integer> } with score <= total, or { score_unit: "normalized", score: <number from 0 through 1> } with no total. The parent adds assignment_id.',
+        },
+        runtime_smoke_controls: {
+          attempt: 'Put data-smoke-action="attempt" on one real visible meaningful control. Bind its reportAttempt handler during initial render so one direct click emits a valid event.',
+          hint: 'Put data-smoke-action="hint" on one real visible hint control. Bind its reportHint handler during initial render so one direct click emits a valid event.',
+          complete: 'Put data-smoke-action="complete" on one real visible meaningful completion/submit control. Bind its reportComplete handler during initial render so one direct click emits a valid event exactly once.',
+          completion_state: "Keep completion rendered and visible from initial load. It may begin disabled for learners, but bind its handler immediately. The handler recomputes current score and emits when invoked; the isolated protocol check temporarily enables the real control.",
+          policy: "These attributes are test hooks on real student controls, not hidden bypass buttons.",
+        },
         completion_score_contract: {
           count: "Send score_unit=count with an integer correct-count score and a positive integer total.",
           normalized: "Send score_unit=normalized with a 0-1 score and omit total.",
@@ -772,17 +983,22 @@ export function buildActivityReviewPrompt(
 ): string {
   return JSON.stringify(
     {
-      task: "Review this generated activity set. Approve only when it is safe and classroom-ready.",
-      required_game_plan:
-        input.gamePlan ?? createGamePlan(input.sessionContext, input.curriculumMatches),
+      task: "Review every supplied learning artifact. Approve only when each one is safe, functional, grounded, and genuinely useful for learning.",
+      experience_intent: input.gamePlan ?? null,
       review_criteria: [
-        "Each answer key is correct and supported by the curriculum evidence.",
-        "Spanish language and instructions are suitable for seventh-grade students.",
-        "Support, core, and challenge preserve one mechanic while increasing cognitive demand.",
-        "Hints scaffold without revealing answers.",
-        "The interaction practices a concrete ability through active manipulation, not a static multi-option quiz.",
-        "The interaction is usable, self-contained, and does not request sensitive information.",
+        "The experience directly practices the supplied curriculum objective rather than merely asking recall questions about it.",
+        "For scored or mastery experiences, every answer key is correct and supported by curriculum evidence. Reflection and exploration experiences may use empty answer keys when completion is based on meaningful action.",
+        "Language, pacing, and instructions fit the grade and subject supplied in curriculum_matches.",
+        "The interaction model is authentic: simulation, construction, experimentation, inquiry, creative production, or another purposeful learner action. Reject generic dashboards and disguised quizzes.",
+        "Declared adaptive features are implemented in the experience and respond usefully to learner actions.",
+        "Hints coach strategy without revealing scored answers.",
+        "When multiple bands are supplied, each is independently usable and any progression in support or cognitive demand is coherent; do not reject a valid core artifact merely because another band is absent.",
+        "The artifact is usable, self-contained, accessible, and does not request sensitive information.",
+        "The real student controls implement getManifest, getBand, reportAttempt, reportHint, and reportComplete through the exact SDK envelope.",
         "reportComplete declares score_unit, follows the count-or-normalized score contract, and cannot be submitted twice.",
+        "The manifest answer, checker, feedback, and telemetry use one canonical answer representation; completion never submits stale cached state.",
+        "Hints coach without drawing, placing, selecting, or revealing the exact scored answer.",
+        "Canvas or SVG primary interactions have keyboard-operable controls or an equivalent accessible path.",
       ],
       lesson_state: minimizeLessonState(input.lessonState),
       curriculum_matches: input.curriculumMatches.map((match) => ({

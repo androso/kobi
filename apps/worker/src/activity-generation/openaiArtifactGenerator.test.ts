@@ -252,6 +252,7 @@ describe("OpenAI activity artifact generator", () => {
         model: "gpt-5.5",
         templates: { system: "system", repair: "repair", review: "review" },
         maxRepairAttempts: 0,
+        maxReviewRepairAttempts: 0,
       },
     );
 
@@ -393,6 +394,7 @@ describe("OpenAI activity artifact generator", () => {
         model: "gpt-5.5",
         templates: { system: "system", repair: "repair", review: "review" },
         maxRepairAttempts: 0,
+        maxReviewRepairAttempts: 0,
       },
     );
 
@@ -401,6 +403,115 @@ describe("OpenAI activity artifact generator", () => {
     expect(result.errors.some((error) => error.includes("answer_correctness"))).toBe(true);
   });
 
+  it("repairs only review-rejected bands and reviews the coherent set again", async () => {
+    const client = mockClient(
+      [
+        { artifacts: [rawArtifact("core")] },
+        { artifacts: [rawArtifact("core")] },
+      ],
+      [
+        {
+          approved: false,
+          findings: [{
+            difficulty_band: "core",
+            category: "usability",
+            severity: "error",
+            message: "Bloquea los controles despues de enviar.",
+          }],
+        },
+        { approved: true, findings: [] },
+      ],
+    );
+
+    const result = await generateOpenAiActivityCandidates(
+      { lessonState, sessionContext, curriculumMatches, bands: ["core"], activitySetId },
+      {
+        client,
+        model: "gpt-5.5",
+        templates: { system: "system", repair: "repair", review: "review" },
+        maxRepairAttempts: 1,
+      },
+    );
+
+    expect(client.calls).toBe(2);
+    expect(client.reviewCalls).toBe(2);
+    expect(result.attempts).toBe(2);
+    expect(result.candidates).toHaveLength(1);
+    expect(result.errors).toEqual([]);
+    expect(result.diagnostics).toContain(
+      "AI review error core/usability: Bloquea los controles despues de enviar.",
+    );
+    expect(JSON.parse(client.requests[1].userPrompt).verifier_errors.core).toContain(
+      "AI review error core/usability: Bloquea los controles despues de enviar.",
+    );
+  });
+  it("reports non-blocking review findings as diagnostics rather than terminal errors", async () => {
+    const client = mockClient(
+      [{ artifacts: [rawArtifact("support")] }],
+      [{
+        approved: true,
+        findings: [{
+          difficulty_band: "support",
+          category: "adaptive_support",
+          severity: "warning",
+          message: "La pista puede ser mas especifica.",
+        }],
+      }],
+    );
+
+    const result = await generateOpenAiActivityCandidates(
+      { lessonState, sessionContext, curriculumMatches, bands: ["support"], activitySetId },
+      {
+        client,
+        model: "gpt-5.5",
+        templates: { system: "system", repair: "repair", review: "review" },
+      },
+    );
+
+    expect(result.candidates).toHaveLength(1);
+    expect(result.errors).toEqual([]);
+    expect(result.diagnostics).toEqual([
+      "AI review warning support/adaptive_support: La pista puede ser mas especifica.",
+    ]);
+  });
+  it("uses remaining repair budget when a review repair fails deterministic verification", async () => {
+    const client = mockClient(
+      [
+        { artifacts: [rawArtifact("challenge")] },
+        { artifacts: [{ ...rawArtifact("challenge"), index_html: "<!doctype html><html><script></script></html>" }] },
+        { artifacts: [rawArtifact("challenge")] },
+      ],
+      [
+        {
+          approved: false,
+          findings: [{
+            difficulty_band: "challenge",
+            category: "usability",
+            severity: "error",
+            message: "La interaccion necesita feedback verificable.",
+          }],
+        },
+        { approved: true, findings: [] },
+      ],
+    );
+
+    const result = await generateOpenAiActivityCandidates(
+      { lessonState, sessionContext, curriculumMatches, bands: ["challenge"], activitySetId },
+      {
+        client,
+        model: "gpt-5.5",
+        templates: { system: "system", repair: "repair", review: "review" },
+        maxRepairAttempts: 2,
+      },
+    );
+
+    expect(client.calls).toBe(3);
+    expect(client.reviewCalls).toBe(2);
+    expect(result.candidates).toHaveLength(1);
+    expect(JSON.parse(client.requests[2].userPrompt).verifier_errors.challenge).toContain(
+      "bundle is missing SDK hook: getManifest",
+    );
+  });
   it("keeps raw transcript and likely student names out of prompt input", () => {
     const prompt = buildActivityGenerationPrompt({
       lessonState,
@@ -440,6 +551,12 @@ describe("OpenAI activity artifact generator", () => {
     expect(parsed.creativity_brief.band_differentiation.challenge).toContain("synthesize");
     expect(parsed.creativity_brief.avoid).toContain(
       "primary interaction that is multi-option / A/B/C / radio-button Q&A",
+    );
+    expect(parsed.sdk.exact_message_protocol.request).toContain(
+      'type: "request"',
+    );
+    expect(parsed.sdk.exact_message_protocol.event).toContain(
+      'type: "event"',
     );
     expect(parsed.sdk.completion_score_contract.count).toContain("score_unit=count");
     expect(parsed.sdk.completion_score_contract.normalized).toContain("score_unit=normalized");
@@ -495,6 +612,12 @@ function rawArtifact(
       title,
       est_minutes: 6,
       allowed_capabilities: ["dom", "css"],
+      experience: {
+        type: "guided_inquiry",
+        assessment_mode: "mastery",
+        interaction_model: "Clasificar partes de una noticia con feedback inmediato.",
+        adaptive_features: ["Pista contextual despues de un error."],
+      },
       learning_design: {
         learning_goal: "Reconocer las partes de una noticia.",
         interaction_summary: "Verifica las partes de una noticia en una mesa interactiva.",
