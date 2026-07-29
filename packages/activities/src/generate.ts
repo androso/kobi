@@ -68,6 +68,12 @@ export function createActivityArtifactCandidates(
       entry: "index.html",
       sdk_version: ACTIVITY_SDK_VERSION,
       allowed_capabilities: band === "challenge" ? ["dom", "css", "svg"] : ["dom", "css"],
+      experience: {
+        type: "practice_tool",
+        assessment_mode: "scored",
+        interaction_model: `${gamePlan.interaction_metaphor}: manipular, comprobar y recibir retroalimentacion`,
+        adaptive_features: band === "support" ? ["pistas progresivas", "menos decisiones simultaneas"] : [],
+      },
       learning_design: {
         learning_goal: gamePlan.learning_goal,
         interaction_summary: `${gamePlan.interaction_metaphor}: ${gamePlan.band_requirements[band]}`,

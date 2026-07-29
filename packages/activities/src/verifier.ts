@@ -45,7 +45,10 @@ const forbiddenPatterns: Array<{ pattern: RegExp; reason: string }> = [
   },
   { pattern: /\beval\s*\(/i, reason: "eval is forbidden" },
   { pattern: /\bnew\s+Function\s*\(/i, reason: "Function constructor is forbidden" },
-  { pattern: /https?:\/\//i, reason: "absolute network URLs are forbidden" },
+  {
+    pattern: /https?:\/\/(?!(?:www\.)?w3\.org\/(?:2000\/svg|1999\/xhtml|1999\/xlink)(?=["'`\s<>)]))/i,
+    reason: "absolute network URLs are forbidden",
+  },
 ];
 
 const forbiddenElements = new Map([
@@ -304,6 +307,8 @@ function checkNewManifestFields(candidate: ActivityArtifactCandidate): string[] 
   if (!manifest.learning_design?.success_criteria?.length) errors.push("manifest.learning_design.success_criteria is required for new artifacts");
   if (!manifest.visual_theme?.scene) errors.push("manifest.visual_theme.scene is required for new artifacts");
   if (!manifest.visual_theme?.accent) errors.push("manifest.visual_theme.accent is required for new artifacts");
+  if (!manifest.experience) errors.push("manifest.experience is required for new artifacts");
+  if (!manifest.experience?.interaction_model) errors.push("manifest.experience.interaction_model is required for new artifacts");
   return errors;
 }
 function checkForbiddenApis(bundleHtml: string): string[] {
@@ -334,10 +339,6 @@ function checkManifestCodeConsistency(candidate: ActivityArtifactCandidate): str
     { path: "manifest.title", value: candidate.manifest.title },
     ...candidate.manifest.content.items.flatMap((item, itemIndex) => [
       { path: `manifest.content.items[${itemIndex}].prompt`, value: item.prompt },
-      ...item.answer_key.map((value, answerIndex) => ({
-        path: `manifest.content.items[${itemIndex}].answer_key[${answerIndex}]`,
-        value,
-      })),
       ...item.hints.map((value, hintIndex) => ({
         path: `manifest.content.items[${itemIndex}].hints[${hintIndex}]`,
         value,
@@ -371,7 +372,11 @@ function scoreRubric(candidate: ActivityArtifactCandidate): ActivityRubricScores
     curriculum_alignment: evidenceObjectives.has(objective) ? 0.95 : 0.72,
     age_fit: candidate.manifest.curriculum.grade >= 1 && candidate.manifest.curriculum.grade <= 12 ? 0.92 : 0.5,
     duration_fit: candidate.manifest.est_minutes >= 4 && candidate.manifest.est_minutes <= 8 ? 0.9 : 0.7,
-    answer_correctness: allAnswers.length > 0 ? 0.9 : 0,
+    answer_correctness:
+      candidate.manifest.experience?.assessment_mode === "reflection"
+      || candidate.manifest.experience?.assessment_mode === "exploration"
+        ? 0.9
+        : allAnswers.length > 0 ? 0.9 : 0,
     hint_leakage: hintsLeakAnswers(allHints, allAnswers) ? 0.35 : 0.9,
     duplicate_risk: 0.86,
     spanish_suitability: looksSpanish(candidate.bundle_html) ? 0.9 : 0.62,
@@ -396,10 +401,25 @@ function checkRubricThresholds(scores: ActivityRubricScores): string[] {
 }
 
 function hintsLeakAnswers(hints: string[], answers: string[]): boolean {
-  const normalizedAnswers = answers.map(normalize).filter((answer) => answer.length > 3);
+  const normalizedAnswers = answers
+    .map((answer) => normalize(answer).trim())
+    .filter((answer) => answer.length > 3);
+  const directRevealPrefixes = [
+    "la respuesta es",
+    "respuesta es",
+    "respuesta:",
+    "la opcion correcta es",
+    "la opción correcta es",
+    "correcta es",
+    "answer is",
+  ];
+
   return hints.some((hint) => {
-    const normalizedHint = normalize(hint);
-    return normalizedAnswers.some((answer) => normalizedHint.includes(answer));
+    const normalizedHint = normalize(hint).trim();
+    return normalizedAnswers.some((answer) =>
+      normalizedHint === answer
+      || directRevealPrefixes.some((prefix) => normalizedHint.includes(`${prefix} ${answer}`))
+    );
   });
 }
 

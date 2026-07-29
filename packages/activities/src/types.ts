@@ -3,11 +3,14 @@ import { z } from "zod";
 export const ACTIVITY_ARTIFACT_CONTRACT_VERSION = "activity-artifact/v1" as const;
 export const ACTIVITY_SDK_VERSION = "activity-sdk/v1" as const;
 
-export const activityFamilySchema = z.enum([
-  "match_classify",
-  "sequence_order",
-  "guided_practice",
-]);
+export const activityFamilySchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(
+    /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/,
+    "family must be a snake_case slug",
+  );
 
 export const difficultyBandSchema = z.enum(["support", "core", "challenge"]);
 export const activitySourceSchema = z.enum(["seeded", "reused", "adapted", "new"]);
@@ -31,7 +34,7 @@ export const visualThemeSchema = z.object({
   accent: z.string().min(1),
 });
 
-export const activityCapabilitySchema = z.enum(["dom", "css", "svg", "canvas"]);
+export const activityCapabilitySchema = z.enum(["dom", "css", "svg", "canvas", "audio", "webgl", "animation"]);
 export const activityTelemetryEventTypeSchema = z.enum(["attempt", "hint", "complete"]);
 
 export const activityCurriculumSchema = z.object({
@@ -43,8 +46,23 @@ export const activityCurriculumSchema = z.object({
 
 export const activityContentItemSchema = z.object({
   prompt: z.string().min(1),
-  answer_key: z.array(z.string().min(1)).min(1),
+  answer_key: z.array(z.string().min(1)).default([]),
   hints: z.array(z.string().min(1)).default([]),
+});
+
+export const activityExperienceSchema = z.object({
+  type: z.enum([
+    "simulation",
+    "interactive_laboratory",
+    "creative_studio",
+    "guided_inquiry",
+    "learning_game",
+    "practice_tool",
+    "exploration",
+  ]),
+  assessment_mode: z.enum(["scored", "mastery", "reflection", "exploration"]),
+  interaction_model: z.string().min(1).max(240),
+  adaptive_features: z.array(z.string().min(1).max(160)).max(8).default([]),
 });
 
 export const activityManifestSchema = z.object({
@@ -53,14 +71,15 @@ export const activityManifestSchema = z.object({
   title: z.string().min(3),
   difficulty_band: difficultyBandSchema,
   curriculum: activityCurriculumSchema,
-  est_minutes: z.number().int().min(3).max(12),
+  est_minutes: z.number().int().min(1).max(45),
   content: z.object({
-    items: z.array(activityContentItemSchema).min(1).max(8),
+    items: z.array(activityContentItemSchema).min(1).max(24),
     telemetry_events: z.array(activityTelemetryEventTypeSchema).min(1).max(3).optional(),
   }),
   entry: z.literal("index.html"),
   sdk_version: z.literal(ACTIVITY_SDK_VERSION),
   allowed_capabilities: z.array(activityCapabilitySchema).min(1),
+  experience: activityExperienceSchema.optional(),
   learning_design: learningDesignSchema.optional(),
   visual_theme: visualThemeSchema.optional(),
 });
@@ -118,6 +137,7 @@ export type ActivityCapability = z.infer<typeof activityCapabilitySchema>;
 export type ActivityTelemetryEventType = z.infer<typeof activityTelemetryEventTypeSchema>;
 export type ActivityCurriculum = z.infer<typeof activityCurriculumSchema>;
 export type ActivityContentItem = z.infer<typeof activityContentItemSchema>;
+export type ActivityExperience = z.infer<typeof activityExperienceSchema>;
 export type ActivityManifest = z.infer<typeof activityManifestSchema>;
 export type ActivityEvidence = z.infer<typeof activityEvidenceSchema>;
 export type ActivityRubricScores = z.infer<typeof activityRubricScoresSchema>;
