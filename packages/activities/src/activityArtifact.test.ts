@@ -37,6 +37,111 @@ const curriculumMatches: CurriculumMatch[] = [
   },
 ];
 
+class ActivityTestElement {
+  className = "";
+  type = "";
+  textContent = "";
+  disabled = false;
+  readonly style: Record<string, string> = {};
+  readonly children: ActivityTestElement[] = [];
+  private readonly attributes: Record<string, string> = {};
+  private readonly listeners: Record<string, Array<() => void>> = {};
+
+  setAttribute(name: string, value: string) {
+    this.attributes[name] = value;
+  }
+
+  getAttribute(name: string) {
+    return this.attributes[name] ?? null;
+  }
+
+  addEventListener(name: string, listener: () => void) {
+    (this.listeners[name] ??= []).push(listener);
+  }
+
+  appendChild(child: ActivityTestElement) {
+    this.children.push(child);
+  }
+
+  click() {
+    if (this.disabled) return;
+    for (const listener of this.listeners.click ?? []) listener();
+  }
+}
+
+function runActivityBundle(bundleHtml: string) {
+  const elements: Record<string, ActivityTestElement> = {};
+  for (const id of [
+    "activity-title",
+    "band-label",
+    "prompt",
+    "interaction",
+    "order",
+    "hint",
+    "complete",
+    "feedback",
+  ]) {
+    elements[id] = new ActivityTestElement();
+  }
+  elements.hint.disabled = true;
+  elements.complete.disabled = true;
+  const progress = new ActivityTestElement();
+  const messages: unknown[] = [];
+  const messageListeners: Array<(event: { source: unknown; data: unknown }) => void> = [];
+  const parent = {
+    postMessage(message: unknown) {
+      messages.push(message);
+    },
+  };
+  const testWindow = {
+    parent,
+    addEventListener(
+      name: string,
+      listener: (event: { source: unknown; data: unknown }) => void,
+    ) {
+      if (name === "message") messageListeners.push(listener);
+    },
+  };
+  const document = {
+    title: "",
+    getElementById(id: string) {
+      return elements[id];
+    },
+    createElement() {
+      return new ActivityTestElement();
+    },
+    querySelector(selector: string) {
+      return selector === ".progress span" ? progress : null;
+    },
+    querySelectorAll(selector: string) {
+      return selector === ".option" ? elements.interaction.children : [];
+    },
+  };
+  const inlineScript = bundleHtml.match(/<script>([\s\S]*)<\/script>/)?.[1];
+  expect(inlineScript).toBeDefined();
+  new Function("window", "document", inlineScript ?? "")(testWindow, document);
+
+  return {
+    document,
+    elements,
+    messages,
+    respond(id: string, result: unknown) {
+      for (const listener of messageListeners) {
+        listener({
+          source: parent,
+          data: {
+            sdk: "activity-sdk/v1",
+            type: "response",
+            id,
+            ok: true,
+            result,
+          },
+        });
+      }
+    },
+  };
+}
+
 describe("activity artifact contracts", () => {
   it("builds bounded session context from lesson_state only", () => {
     const context = buildActivitySessionContext([lessonState]);
@@ -67,16 +172,28 @@ describe("activity artifact contracts", () => {
 
     for (const candidate of candidates) {
       const result = verifyActivityArtifact(candidate);
-      expect(result.ok).toBe(true);
+      expect(result.ok, result.errors.join("; ")).toBe(true);
       expect(result.artifact.status).toBe("verified");
       expect(result.artifact.evidence[0].objective_code).toBe("L7.4.2");
-      expect(candidate.bundle_html).toContain('<textarea id="response"');
-      expect(candidate.bundle_html).toContain('score_unit: "count", score: computeScore(), total: answers.length');
-      expect(candidate.bundle_html).toContain("if (completed) return");
+      expect(candidate.bundle_html).not.toContain("<textarea");
+      expect(candidate.bundle_html).not.toContain('type="radio"');
+      expect(candidate.bundle_html).toContain('className = "option"');
+      expect(candidate.bundle_html).toContain('score_unit: "count"');
+      expect(candidate.bundle_html).toContain("if (!state.ready || state.completed) return");
       expect(candidate.bundle_html).toContain("completeButton.disabled = true");
-      expect(candidate.bundle_html).not.toContain("const correct = selected.size > 0");
       expect(candidate.bundle_html).not.toContain("preview-assignment");
       expect(candidate.bundle_html).not.toContain("assignment_id:");
+      expect(candidate.bundle_html).not.toContain(JSON.stringify(candidate.manifest));
+      expect(candidate.bundle_html).not.toContain(candidate.manifest.title);
+      for (const item of candidate.manifest.content.items) {
+        expect(candidate.bundle_html).not.toContain(item.prompt);
+        for (const answer of item.answer_key) {
+          expect(candidate.bundle_html).not.toContain(answer);
+        }
+        for (const hint of item.hints) {
+          expect(candidate.bundle_html).not.toContain(hint);
+        }
+      }
       const inlineScript = candidate.bundle_html.match(/<script>([\s\S]*)<\/script>/)?.[1];
       expect(inlineScript).toBeDefined();
       expect(() => new Function(inlineScript ?? "")).not.toThrow();
@@ -206,6 +323,66 @@ describe("activity artifact contracts", () => {
     expect(result.errors).toContain("external or executable URL references are forbidden");
   });
 
+  it("waits for SDK content and initializes an active manipulative in every band", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const candidates = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+      activitySetId: "set-runtime",
+    });
+
+    for (const candidate of candidates) {
+      const runtime = runActivityBundle(candidate.bundle_html);
+      expect(runtime.messages).toEqual([
+        {
+          sdk: "activity-sdk/v1",
+          type: "request",
+          id: "manifest",
+          method: "getManifest",
+        },
+        {
+          sdk: "activity-sdk/v1",
+          type: "request",
+          id: "band",
+          method: "getBand",
+        },
+      ]);
+      expect(runtime.elements.interaction.children).toHaveLength(0);
+      expect(runtime.elements.complete.disabled).toBe(true);
+
+      runtime.respond("manifest", candidate.manifest);
+      expect(runtime.elements.interaction.children).toHaveLength(0);
+      runtime.respond("band", candidate.manifest.difficulty_band);
+
+      expect(runtime.document.title).toBe(candidate.manifest.title);
+      expect(runtime.elements["activity-title"].textContent).toBe(candidate.manifest.title);
+      expect(runtime.elements.prompt.textContent).toBe(
+        candidate.manifest.content.items[0].prompt,
+      );
+      expect(runtime.elements.interaction.children.length).toBeGreaterThan(0);
+      expect(runtime.elements.hint.disabled).toBe(false);
+      expect(runtime.elements.complete.disabled).toBe(false);
+
+      runtime.elements.interaction.children[0].click();
+      runtime.elements.hint.click();
+      runtime.elements.complete.click();
+      runtime.elements.complete.click();
+      const eventMethods = runtime.messages
+        .filter(
+          (message): message is { type: string; method: string } =>
+            typeof message === "object" &&
+            message !== null &&
+            "type" in message &&
+            message.type === "event",
+        )
+        .map((message) => message.method);
+      expect(eventMethods).toContain("reportAttempt");
+      expect(eventMethods).toContain("reportHint");
+      expect(eventMethods.filter((method) => method === "reportComplete")).toHaveLength(1);
+    }
+  });
+
   it("renders an order interaction when the shared plan uses a sequence mechanic", () => {
     const context = buildActivitySessionContext([lessonState]);
     const candidates = createActivityArtifactCandidates({
@@ -232,14 +409,56 @@ describe("activity artifact contracts", () => {
       expect(candidate.manifest.family).toBe("sequence_order");
       expect(candidate.manifest.content.items[0].prompt).toContain("Ordena");
       expect(candidate.bundle_html).toContain('id="order"');
-      expect(candidate.bundle_html).toContain('interactionMode === "sequence_order"');
-      if (candidate.manifest.difficulty_band === "challenge") {
-        expect(candidate.bundle_html).toContain('<textarea id="justification"');
-        expect(candidate.bundle_html).toContain("justificationText.trim().length < 8");
-      } else {
-        expect(candidate.bundle_html).not.toContain('<textarea id="justification"');
-      }
+      expect(candidate.bundle_html).toContain('state.manifest.family === "sequence_order"');
+      expect(candidate.bundle_html).not.toContain("<textarea");
+      const runtime = runActivityBundle(candidate.bundle_html);
+      runtime.respond("band", candidate.manifest.difficulty_band);
+      runtime.respond("manifest", candidate.manifest);
+      expect(runtime.elements.interaction.children.length).toBe(
+        candidate.manifest.content.items[0].answer_key.length,
+      );
+      runtime.elements.interaction.children[0].click();
+      expect(runtime.elements.order.textContent).toContain("Tu orden:");
       expect(verifyActivityArtifact(candidate).ok).toBe(true);
+    }
+  });
+
+  it("renders card manipulation for match/classify without form Q&A", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const candidates = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+      activitySetId: "set-classify",
+      gamePlan: {
+        family: "match_classify",
+        mechanic: "evidence_sorting_board",
+        learning_goal: "Clasificar evidencia de una noticia.",
+        interaction_metaphor: "mesa de clasificacion",
+        kobi_visual_direction: "Azul Kobi",
+        rationale: "Las tarjetas permiten revisar evidencia con manipulacion directa.",
+        band_requirements: {
+          support: "Dos tarjetas.",
+          core: "Tres tarjetas.",
+          challenge: "Cuatro tarjetas.",
+        },
+      },
+    });
+
+    for (const candidate of candidates) {
+      const runtime = runActivityBundle(candidate.bundle_html);
+      runtime.respond("manifest", candidate.manifest);
+      runtime.respond("band", candidate.manifest.difficulty_band);
+      expect(candidate.manifest.family).toBe("match_classify");
+      expect(runtime.elements.interaction.children.length).toBeGreaterThan(
+        candidate.manifest.content.items[0].answer_key.length,
+      );
+      expect(candidate.bundle_html).not.toContain("<textarea");
+      expect(candidate.bundle_html).not.toContain('type="radio"');
+      runtime.elements.interaction.children[0].click();
+      expect(runtime.messages).toContainEqual(
+        expect.objectContaining({ type: "event", method: "reportAttempt" }),
+      );
     }
   });
 
@@ -248,8 +467,9 @@ describe("activity artifact contracts", () => {
     const plan = createGamePlan(context, curriculumMatches);
 
     expect(plan.mechanic).toBe("source_check_desk");
-    expect(plan.band_requirements.support).toContain("Menos opciones");
-    expect(plan.band_requirements.challenge).toContain("Justificacion");
+    expect(plan.learning_goal).toContain("verificar");
+    expect(plan.band_requirements.support).toContain("Andamiaje");
+    expect(plan.band_requirements.challenge).toContain("justificar");
   });
 
   it("rejects newly generated bundles that omit explicit completion score units", () => {
@@ -270,7 +490,61 @@ describe("activity artifact contracts", () => {
     expect(result.errors).toContain("bundle is missing SDK hook: score_unit");
   });
 
-  it("keeps legacy manifests readable while rejecting invalid family/mechanic combinations", () => {
+  it("rejects editable manifest content embedded in bundle source", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+      activitySetId: "set-manifest-owned-content",
+    });
+    const item = candidate.manifest.content.items[0];
+    const embeddedValues = [
+      ["manifest.title", candidate.manifest.title],
+      ["manifest.content.items[0].prompt", item.prompt],
+      ["manifest.content.items[0].hints[0]", item.hints[0]],
+    ] as const;
+
+    for (const [path, value] of embeddedValues) {
+      const result = verifyActivityArtifact({
+        ...candidate,
+        bundle_html: candidate.bundle_html.replace("</body>", `<p>${value}</p></body>`),
+      });
+      expect(result.ok).toBe(false);
+      expect(result.errors).toContain(`bundle embeds editable runtime content from ${path}`);
+    }
+  });
+
+  it("allows answer constants and W3C SVG namespace identifiers without allowing network URLs", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+      activitySetId: "set-free-form-runtime-constants",
+    });
+    const answer = candidate.manifest.content.items[0].answer_key[0];
+    const safeBundle = candidate.bundle_html.replace(
+      "</script>",
+      `const SVG_NAMESPACE = "http://www.w3.org/2000/svg"; const DOMAIN_ANSWER = ${JSON.stringify(answer)};</script>`,
+    );
+
+    const safeResult = verifyActivityArtifact({ ...candidate, bundle_html: safeBundle });
+    expect(safeResult.errors).not.toContain("absolute network URLs are forbidden");
+    expect(safeResult.errors).not.toContain(
+      "bundle embeds editable runtime content from manifest.content.items[0].answer_key[0]",
+    );
+
+    const unsafeResult = verifyActivityArtifact({
+      ...candidate,
+      bundle_html: candidate.bundle_html.replace(
+        "</script>",
+        'const REMOTE_ASSET = "https://example.com/shape.svg";</script>',
+      ),
+    });
+    expect(unsafeResult.errors).toContain("absolute network URLs are forbidden");
+  });
+  it("keeps legacy manifests readable and validates free-form mechanic slugs", () => {
     const context = buildActivitySessionContext([lessonState]);
     const [candidate] = createActivityArtifactCandidates({
       lessonState,
@@ -278,10 +552,27 @@ describe("activity artifact contracts", () => {
       curriculumMatches,
       activitySetId: "set-test",
     });
-    const legacy = { ...candidate.manifest, mechanic: undefined, learning_design: undefined, visual_theme: undefined };
+    const legacy = {
+      ...candidate.manifest,
+      mechanic: undefined,
+      learning_design: undefined,
+      visual_theme: undefined,
+    };
 
     expect(activityManifestSchema.safeParse(legacy).success).toBe(true);
-    expect(activityManifestSchema.safeParse({ ...candidate.manifest, family: "sequence_order", mechanic: "source_check_desk" }).success).toBe(false);
+    expect(
+      activityManifestSchema.safeParse({
+        ...candidate.manifest,
+        family: "sequence_order",
+        mechanic: "source_check_desk",
+      }).success,
+    ).toBe(true);
+    expect(
+      activityManifestSchema.safeParse({
+        ...candidate.manifest,
+        mechanic: "Not a valid mechanic!",
+      }).success,
+    ).toBe(false);
   });
 
   it("validates SDK telemetry messages", () => {

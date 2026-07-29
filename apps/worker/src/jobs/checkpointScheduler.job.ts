@@ -4,7 +4,7 @@ import { JOB_EVALUATE_CHECKPOINT } from "../queue.js";
 
 export const CHECKPOINT_SCHEDULER_JOB_NAME = "checkpoint-scheduler";
 export const CHECKPOINT_SCHEDULER_CRON = "* * * * *";
-const DEFAULT_CHECKPOINT_INTERVAL_MINUTES = 10;
+const DEFAULT_CHECKPOINT_INTERVAL_MINUTES = 2;
 
 export interface CheckpointSchedulerJobOptions {
   intervalMinutes?: number;
@@ -62,8 +62,14 @@ export async function runCheckpointSchedulerTick(
   for (const sessionId of dueSessionIds) {
     await boss.send(
       JOB_EVALUATE_CHECKPOINT,
-      { sessionId },
-      { singletonKey: sessionId, singletonSeconds: Math.max(intervalMinutes * 60 - 5, 30) },
+      { sessionId, trigger: "timer" },
+      {
+        singletonKey: sessionId,
+        singletonSeconds: Math.max(intervalMinutes * 60 - 5, 30),
+        retryLimit: 3,
+        retryDelay: 10,
+        retryBackoff: true,
+      },
     );
   }
 

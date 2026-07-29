@@ -69,7 +69,7 @@ describe("runCheckpointSchedulerTick", () => {
     expect(result.enqueued).toEqual(["session-due"]);
     expect(boss.sent).toHaveLength(1);
     expect(boss.sent[0].name).toBe(JOB_EVALUATE_CHECKPOINT);
-    expect(boss.sent[0].data).toEqual({ sessionId: "session-due" });
+    expect(boss.sent[0].data).toEqual({ sessionId: "session-due", trigger: "timer" });
     expect(boss.sent[0].options).toMatchObject({ singletonKey: "session-due" });
   });
 

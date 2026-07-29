@@ -10,6 +10,10 @@ Full spec: [`docs/product-spec.md`](docs/product-spec.md) · Team contracts: [`d
 
 TypeScript everywhere: one Vite + React frontend (teacher + student portals), one Node worker/API backend (background AI pipeline, on Railway/Fly), Supabase (Postgres + pgvector + Realtime + Auth) as the single datastore. No Python/FastAPI — see decision D3/D8 in the product spec.
 
+Activity artifacts are model-generated, self-contained HTML/CSS/JavaScript learning mini-apps—not React components or deterministic question templates. The model is free to invent simulations, laboratories, creative studios, inquiry tools, learning games, and other interaction models. Structured output carries the runtime contract and free-form `index_html`; it does not select a renderer. Kobi never substitutes repository or canned activities when generation fails. Instead, it preserves valid artifacts, repairs failed bands with verifier feedback, reviews pedagogy, executes code in an isolated browser sandbox, and persists only verified results. Students receive the verified bundle through the sandboxed Activity SDK iframe, with telemetry and progress stored by the trusted host.
+
+See [activity generation and sandbox execution](docs/activity-sandbox.md) for model-only behavior and the production Modal/gVisor artifact foundry.
+
 ## Structure
 
 ```

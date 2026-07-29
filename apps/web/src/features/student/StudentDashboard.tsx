@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Clock3, PlayCircle, ShieldCheck, Sparkles } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ACTIVITY_SDK_VERSION, activitySdkMessageSchema } from "@kobi/activities/contracts";
 import {
   findClassByCode,
   useAuthStore,
@@ -18,6 +17,11 @@ import {
   activityIframeSecurityAttributes,
   secureActivitySrcDoc,
 } from "../activityDelivery/activityIframeSecurity";
+import {
+  isActivitySdkTelemetryFromIframe,
+  markActivityIframeAwaitingSource,
+  respondToActivitySdkRequest,
+} from "../activityDelivery/activitySdkHost";
 import { StudentSidebar, type StudentSidebarNavItem } from "./components/StudentSidebar";
 import { LessonList } from "./components/LessonList";
 import { ProgressDashboard } from "./components/ProgressDashboard";
@@ -160,22 +164,18 @@ export function StudentDashboard() {
     const currentStore = deliveryStore;
     eventsInWindowRef.current = 0;
 
-    function handleMessage(event: MessageEvent) {
-      const sourceMatches = event.source === iframeRef.current?.contentWindow;
-      const parsed = activitySdkMessageSchema.safeParse(event.data);
+    const activeIframe = iframeRef.current;
+    if (!activeIframe) return;
+    markActivityIframeAwaitingSource(activeIframe);
 
-      if (sourceMatches && parsed.success && parsed.data.type === "request") {
-        const result = parsed.data.method === "getManifest" ? currentAssignment.manifest : currentAssignment.variant;
-        iframeRef.current?.contentWindow?.postMessage(
-          {
-            sdk: ACTIVITY_SDK_VERSION,
-            type: "response",
-            id: parsed.data.id,
-            ok: true,
-            result,
-          },
-          "*",
-        );
+    function handleMessage(event: MessageEvent) {
+      if (!activeIframe) return;
+      const sourceMatches = isActivitySdkTelemetryFromIframe(event, activeIframe);
+      if (respondToActivitySdkRequest(event, {
+        iframe: activeIframe,
+        manifest: currentAssignment.manifest,
+        band: currentAssignment.variant,
+      })) {
         return;
       }
 

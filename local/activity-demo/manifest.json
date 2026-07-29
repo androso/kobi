@@ -1,0 +1,52 @@
+{
+  "family": "guided_practice",
+  "mechanic": "source_check_desk",
+  "title": "Practica: La noticia y sus partes",
+  "difficulty_band": "core",
+  "curriculum": {
+    "grade": 7,
+    "subject": "lenguaje",
+    "unit": "U4",
+    "objective": "L7.4.2"
+  },
+  "est_minutes": 6,
+  "content": {
+    "items": [
+      {
+        "prompt": "Revisa las tarjetas y selecciona 3 ideas clave sobre Identificar titular, entradilla, cuerpo y fuente en una noticia breve.",
+        "answer_key": [
+          "titular",
+          "entradilla",
+          "cuerpo"
+        ],
+        "hints": [
+          "Empieza por una tarjeta que puedas relacionar directamente con el objetivo.",
+          "Quita las tarjetas que no ayuden a comprobar la idea principal."
+        ]
+      }
+    ],
+    "telemetry_events": [
+      "attempt",
+      "hint",
+      "complete"
+    ]
+  },
+  "entry": "index.html",
+  "sdk_version": "activity-sdk/v1",
+  "allowed_capabilities": [
+    "dom",
+    "css"
+  ],
+  "learning_design": {
+    "learning_goal": "Practicar verificar y clasificar evidencias de una noticia sobre La noticia y sus partes, conectado con L7.4.2.",
+    "interaction_summary": "mesa de verificacion de fuentes: Manipulacion activa del concepto con feedback inmediato y aplicacion directa del objetivo.",
+    "success_criteria": [
+      "Completa la interaccion principal",
+      "Usa vocabulario o evidencia del objetivo"
+    ]
+  },
+  "visual_theme": {
+    "scene": "mesa de verificacion de fuentes",
+    "accent": "azul"
+  }
+}

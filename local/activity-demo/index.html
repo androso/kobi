@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Kobi activity demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background: #eff6ff; color: #0f172a; }
+    main { padding: 24px; max-width: 960px; margin: 0 auto; }
+    #frame { width: 100%; height: 720px; border: 0; border-radius: 16px; box-shadow: 0 12px 40px rgba(30, 64, 175, 0.2); background: white; }
+    #status { font-weight: 600; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Manifest-driven activity demo</h1>
+    <p id="status">Loading secured iframe…</p>
+    <iframe id="frame" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
+  </main>
+  <script>
+    const manifest = {"family":"guided_practice","mechanic":"source_check_desk","title":"Practica: La noticia y sus partes","difficulty_band":"core","curriculum":{"grade":7,"subject":"lenguaje","unit":"U4","objective":"L7.4.2"},"est_minutes":6,"content":{"items":[{"prompt":"Revisa las tarjetas y selecciona 3 ideas clave sobre Identificar titular, entradilla, cuerpo y fuente en una noticia breve.","answer_key":["titular","entradilla","cuerpo"],"hints":["Empieza por una tarjeta que puedas relacionar directamente con el objetivo.","Quita las tarjetas que no ayuden a comprobar la idea principal."]}],"telemetry_events":["attempt","hint","complete"]},"entry":"index.html","sdk_version":"activity-sdk/v1","allowed_capabilities":["dom","css"],"learning_design":{"learning_goal":"Practicar verificar y clasificar evidencias de una noticia sobre La noticia y sus partes, conectado con L7.4.2.","interaction_summary":"mesa de verificacion de fuentes: Manipulacion activa del concepto con feedback inmediato y aplicacion directa del objetivo.","success_criteria":["Completa la interaccion principal","Usa vocabulario o evidencia del objetivo"]},"visual_theme":{"scene":"mesa de verificacion de fuentes","accent":"azul"}};
+    const band = "core";
+    const frame = document.getElementById("frame");
+    window.addEventListener("message", (event) => {
+      if (event.source === window) return;
+      const data = event.data;
+      if (!data || data.sdk !== "activity-sdk/v1" || data.type !== "request") return;
+      const result = data.method === "getManifest" ? manifest : band;
+      event.source.postMessage(
+        { sdk: "activity-sdk/v1", type: "response", id: data.id, ok: true, result },
+        "*",
+      );
+      document.getElementById("status").textContent = "SDK request: " + data.method;
+    });
+    fetch("./bundle.html")
+      .then((response) => response.text())
+      .then((bundleHtml) => {
+        const csp = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; font-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+        frame.srcdoc = bundleHtml.replace(/<!doctype[^>]*>/i, (match) =>
+          match + '<meta http-equiv="Content-Security-Policy" content="' + csp + '">'
+        );
+      })
+      .catch((error) => {
+        document.getElementById("status").textContent = "Demo failed: " + error.message;
+      });
+  </script>
+</body>
+</html>

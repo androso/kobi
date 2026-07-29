@@ -1,6 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { buildLessonState, type LessonState, type LessonStateClassContext } from "@kobi/ai-core";
+import {
+  buildLessonState,
+  lessonStateSchema,
+  type LessonState,
+  type LessonStateClassContext,
+} from "@kobi/ai-core";
 import type PgBoss from "pg-boss";
+import {
+  evaluateContextReadiness,
+  readContextReadinessThresholds,
+} from "../checkpoint/contextReadiness.js";
+import { JOB_EVALUATE_CHECKPOINT } from "../queue.js";
 import { silentLessonState } from "../silentLessonState.js";
 
 export interface BuildLessonStateJobData {
@@ -60,6 +70,12 @@ export async function resolveLessonStateClassContext(
  * Supabase Realtime once apps/web subscribes to it.
  */
 export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClient) {
+  const readinessThresholds = readContextReadinessThresholds();
+  const readinessHistoryLimit = Math.max(
+    readinessThresholds.minSegments,
+    readinessThresholds.minStableSegments,
+  );
+
   return boss.work<BuildLessonStateJobData>(
     "build-lesson-state",
     { batchSize: 1 },
@@ -74,16 +90,21 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
 
       try {
         stage = "loading previous lesson_state";
-        const { data: previousSegment, error: previousSegmentError } = await supabase
+        const { data: previousSegments, error: previousSegmentError } = await supabase
           .from("segments")
           .select("lesson_state")
           .eq("session_id", sessionId)
           .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+          .limit(readinessHistoryLimit);
         if (previousSegmentError) {
           throw new Error(`buildLessonState job: failed to load previous segment: ${previousSegmentError.message}`);
         }
+        const previousSegment = previousSegments?.[0];
+        const recentLessonStates = (previousSegments ?? [])
+          .map((segment) => lessonStateSchema.safeParse(segment.lesson_state))
+          .filter((result) => result.success)
+          .map((result) => result.data)
+          .reverse();
 
         stage = "loading class context";
         const classContext = await resolveLessonStateClassContext(supabase, job.data);
@@ -110,6 +131,7 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
             : -1;
         let nextChunkIndex = previousProgress + 1;
         let currentLessonState = (previousSegment?.lesson_state as LessonState) ?? null;
+        let contextCheckpointQueued = false;
 
         while (true) {
           stage = "loading completed chunks";
@@ -149,12 +171,20 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
           }
 
           if (contiguousChunks.length === 0) {
-            console.warn("[buildLessonState] stopped because the next contiguous transcript is not ready", {
+            const logContext = {
               sessionId,
               jobId: job.id,
               chunkCount: chunks?.length ?? 0,
               nextChunkIndex,
-            });
+            };
+            if ((chunks?.length ?? 0) === 0) {
+              console.info("[buildLessonState] caught up with completed transcripts", logContext);
+            } else {
+              console.warn(
+                "[buildLessonState] stopped at a gap before the next completed transcript",
+                logContext,
+              );
+            }
             return;
           }
 
@@ -214,6 +244,40 @@ export function registerBuildLessonStateJob(boss: PgBoss, supabase: SupabaseClie
             sourceThroughChunkIndex,
             durationMs: Date.now() - startedAt,
           });
+
+          if (transcriptText) {
+            recentLessonStates.push(lessonState);
+            if (recentLessonStates.length > readinessHistoryLimit) {
+              recentLessonStates.splice(0, recentLessonStates.length - readinessHistoryLimit);
+            }
+            const readiness = evaluateContextReadiness(recentLessonStates, readinessThresholds);
+            if (readiness.eligible && !contextCheckpointQueued) {
+              const checkpointJobId = await boss.send(
+                JOB_EVALUATE_CHECKPOINT,
+                {
+                  sessionId,
+                  grade: job.data.grade,
+                  subject: job.data.subject,
+                  unit: job.data.unit,
+                  trigger: "context",
+                },
+                {
+                  singletonKey: sessionId,
+                  singletonSeconds: 60,
+                  retryLimit: 3,
+                  retryDelay: 10,
+                  retryBackoff: true,
+                },
+              );
+              contextCheckpointQueued = true;
+              console.info("[buildLessonState] context checkpoint enqueued", {
+                sessionId,
+                lessonStateJobId: job.id,
+                checkpointJobId,
+                ...readiness,
+              });
+            }
+          }
 
           currentLessonState = lessonState;
           nextChunkIndex = sourceThroughChunkIndex + 1;

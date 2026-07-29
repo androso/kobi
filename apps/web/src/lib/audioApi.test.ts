@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getTranscriptionStatus, requestActivityCandidates } from "./audioApi";
+import {
+  finalizeBackendSession,
+  getTranscriptionStatus,
+  requestActivityCandidates,
+} from "./audioApi";
 
 vi.mock("./supabase", () => ({
   supabase: {
@@ -46,6 +50,35 @@ describe("requestActivityCandidates", () => {
       skippedReason: null,
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("finalizeBackendSession", () => {
+  it("hands class-end processing to the authenticated worker", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      sessionId: "session-1",
+      finalizationEnqueued: true,
+    }), {
+      status: 202,
+      headers: { "content-type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(finalizeBackendSession({ sessionId: "session-1" })).resolves.toEqual({
+      sessionId: "session-1",
+      finalizationEnqueued: true,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/sessions/session-1/finalize"),
+      {
+        method: "POST",
+        keepalive: true,
+        headers: {
+          authorization: "Bearer test-access-token",
+          "content-type": "application/json",
+        },
+      },
+    );
   });
 });
 

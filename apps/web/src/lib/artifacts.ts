@@ -7,5 +7,5 @@
 
 export interface VerifiedBundleContent {
   type: "verified_bundle";
-  family: "match_classify" | "sequence_order" | "guided_practice";
+  family: string;
 }

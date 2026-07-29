@@ -3,8 +3,10 @@ import type PgBoss from "pg-boss";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildLessonState } from "@kobi/ai-core";
 import { registerBuildLessonStateJob, resolveLessonStateClassContext } from "./buildLessonState.job.js";
+import { JOB_EVALUATE_CHECKPOINT } from "../queue.js";
 
-vi.mock("@kobi/ai-core", () => ({
+vi.mock("@kobi/ai-core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@kobi/ai-core")>()),
   buildLessonState: vi.fn(),
 }));
 
@@ -138,6 +140,47 @@ describe("buildLessonState job", () => {
     expect(buildLessonState).not.toHaveBeenCalled();
     expect(insertedSegments).toEqual([]);
   });
+
+  it("wakes the semantic checkpoint as soon as stable context is sufficient", async () => {
+    const previousLessonState = {
+      topic: "Figuras geométricas",
+      objective_guess: "Identificar ángulos en triángulos y cuadriláteros",
+      key_terms: ["ángulo", "triángulo", "cuadrilátero"],
+      transcript_summary: "La docente identificó ángulos.",
+      confidence: 0.82,
+      evidence: { quoted_phrases: ["ángulo"], reason: "Contenido claro." },
+    };
+    vi.mocked(buildLessonState).mockResolvedValueOnce({
+      ...previousLessonState,
+      confidence: 0.88,
+    });
+    const boss = fakeBoss();
+    await registerBuildLessonStateJob(
+      boss,
+      fakeSupabase({
+        previousLessonState,
+        previousProgress: 0,
+        chunks: [{
+          chunk_index: 1,
+          status: "transcribed",
+          transcript_text: "Ahora identifiquemos los ángulos de este triángulo.",
+        }],
+        insertedSegments: [],
+      }),
+    );
+
+    expect(boss.send).toHaveBeenCalledWith(
+      JOB_EVALUATE_CHECKPOINT,
+      expect.objectContaining({ sessionId: "session-1", trigger: "context" }),
+      {
+        singletonKey: "session-1",
+        singletonSeconds: 60,
+        retryLimit: 3,
+        retryDelay: 10,
+        retryBackoff: true,
+      },
+    );
+  });
 });
 
 function fakeBoss() {
@@ -149,6 +192,7 @@ function fakeBoss() {
       }]);
       return "worker-1";
     }),
+    send: vi.fn(async () => "checkpoint-job"),
   } as unknown as PgBoss;
 }
 
@@ -206,11 +250,15 @@ function fakeSupabase({
         eq: () => query,
         not: () => query,
         order: () => query,
-        limit: () => query,
+        limit: () => selectedColumns === "lesson_state"
+          ? Promise.resolve({
+              data: previousLessonState == null
+                ? []
+                : [{ lesson_state: previousLessonState }],
+              error: null,
+            })
+          : query,
         maybeSingle: async () => {
-          if (selectedColumns === "lesson_state") {
-            return { data: { lesson_state: previousLessonState }, error: null };
-          }
           return {
             data: previousProgress === null
               ? null

@@ -4,7 +4,7 @@ Area C: Activity Generation & Quality (owned by Androso) — artifact manifest s
 
 **Contract:** `lesson_state` + curriculum chunks + repository -> 3 verified candidate `ActivityArtifact`s.
 
-Gate 0 decision on 2026-07-04: v0 uses self-contained HTML/CSS/JS mini-app artifacts plus structured manifests. There are no legacy JSON activities or consumers, so no JSON migration path is needed.
+Gate 0 decision on 2026-07-04: v0 uses only self-contained HTML/CSS/JavaScript `index.html` mini-app artifacts plus structured manifests. React/TSX components, multi-file bundles, and JSON-rendered activities are unsupported artifact formats.
 
 **What this package receives (Isaac's side of the contract — see `docs/area-bc-contract.md`):**
 
@@ -12,15 +12,11 @@ Gate 0 decision on 2026-07-04: v0 uses self-contained HTML/CSS/JS mini-app artif
 - `CurriculumMatch[]` (from `@kobi/curriculum`'s `retrieveCurriculumMatches()`) — top-3 curriculum chunks grounding the current lesson segment.
 - The activity repository (`activities` table) — for the reuse-vs-generate decision.
 
-**Expected usage flow:** ground a planner call in `lesson_state` + `CurriculumMatch[]`, create a shared `GamePlan`, check the repository for a complete reusable set first, adapt medium matches with parent lineage, and generate new candidates only when nothing fits, verify each candidate, and produce 3 ranked candidates for the teacher shortlist. The teacher can assign selected students to support/challenge; unselected students receive core by default.
+**Expected usage flow:** build bounded context from `lesson_state` + `CurriculumMatch[]`, let the model invent a self-contained learning experience, verify it statically and in the isolated runtime, repair failures selectively, and persist only reviewed model-generated artifacts. Core is the required deliverable; support and challenge are optional differentiated experiences. Repository and static generators are not selected by the production activity job.
 
-Three artifact families ship in v0:
+The manifest keeps one of three family taxonomy values—`match_classify`, `sequence_order`, or `guided_practice`—as a prompt, ranking, reuse, and quality exemplar. Families are not renderer selectors or an interaction whitelist. Each new artifact also has a required validated free-form snake_case `mechanic` slug (1–64 characters); all three bands in a generated/adapted set share one family and mechanic. Mechanics may vary freely within the sandbox, SDK, and verifier contract.
 
-1. **Match/classify** — vocabulary or concept grouping
-2. **Sequence/order** — process, story, or argument steps
-3. **Guided practice/checkpoint** — short applied questions with hints and feedback
-
-Each artifact is a single self-contained `index.html` bundle plus a manifest:
+Each artifact is a single self-contained HTML/CSS/JavaScript `index.html` bundle plus a manifest:
 
 ```json
 {
@@ -60,14 +56,16 @@ Each artifact is a single self-contained `index.html` bundle plus a manifest:
 }
 ```
 
+The manifest is the runtime-owned editable content source. Bundle code must request it and the difficulty band through `getManifest()` / `getBand()`, then render prompts, score answers, and reveal hints from the returned values; editable prompts, answer keys, and hints must not be embedded in bundle source.
+
 Implemented exports:
 
 - manifest, artifact, evidence, verifier-score, source, and SDK `postMessage` validators
 - `buildActivitySessionContext()` for bounded context from structured `lesson_state` rows only
-- `createActivityArtifactCandidates()` for deterministic support/core/challenge HTML fallback artifacts
-- `verifyActivityArtifact()` for schema, structural HTML, forbidden API, SDK hook, and manifest/code consistency checks
+- `createActivityArtifactCandidates()` remains a development fixture for local demos; the production job does not select it
+- `verifyActivityArtifact()` for manifest schema, structural HTML, forbidden APIs, SDK hooks, embedded-content rejection, manifest/code consistency, and required secured-browser smoke before persistence
 - `createUnguessableBundleRef()` for cryptographically random, opaque bundle locators
 - `authorizeActivityTelemetryMessage()` for parent-owned assignment telemetry validation
 - repository ranking helpers that bias objective match, current lesson context, verifier score, usage, outcomes, and set-level coherence
 
-The verifier performs structural and deterministic checks plus local rubric scoring, and the worker's OpenAI path adds a structured AI review before persistence. These are generation-time defenses; the web host still enforces the shared iframe sandbox/CSP policy, and bundle delivery still requires assignment/class authorization.
+The verifier performs structural and deterministic checks plus required browser smoke and local rubric scoring; the worker's OpenAI path adds a structured AI review before persistence. Browser smoke loads the secured HTML with the supplied manifest/band, fails on page errors, and requires valid SDK traffic. These are pre-persistence defenses; the web host still enforces the shared iframe sandbox/CSP policy, and bundle delivery still requires assignment/class authorization.

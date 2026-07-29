@@ -59,6 +59,10 @@ const mocks = vi.hoisted(() => {
       },
     ]),
     createBackendSession: vi.fn(async () => ({ sessionId: "session-1" })),
+    finalizeBackendSession: vi.fn(async () => ({
+      sessionId: "session-1",
+      finalizationEnqueued: true,
+    })),
     recordingSource: "microphone" as "microphone" | "prerecorded",
     uploadAudioChunk: vi.fn(async () => ({ audioChunkId: "uploaded-chunk" })),
     getTranscriptionStatus: vi.fn(async (_input: {
@@ -97,6 +101,7 @@ vi.mock("../../lib/supabase", () => ({ supabase: { from: mocks.supabaseFrom, rpc
 
 vi.mock("../../lib/audioApi", () => ({
   createBackendSession: mocks.createBackendSession,
+  finalizeBackendSession: mocks.finalizeBackendSession,
   getPrerecordedAudioPath: () => "/local-audio/demo-audio.mp3",
   getRecordingSource: () => mocks.recordingSource,
   getTranscriptionStatus: mocks.getTranscriptionStatus,
@@ -166,8 +171,18 @@ function installFakeBrowserRecorder() {
   return { getUserMedia, stopTrack };
 }
 
+function dispatchActivityMessage(data: unknown, source: MessageEventSource) {
+  const event = new MessageEvent("message", { data });
+  Object.defineProperty(event, "source", { value: source });
+  fireEvent(window, event);
+}
+
 beforeEach(() => {
   mocks.createBackendSession.mockReset().mockResolvedValue({ sessionId: "session-1" });
+  mocks.finalizeBackendSession.mockReset().mockResolvedValue({
+    sessionId: "session-1",
+    finalizationEnqueued: true,
+  });
   mocks.listCandidates.mockResolvedValue([mocks.candidate]);
   mocks.requestActivityCandidates.mockResolvedValue({ inserted: 1, reused: 0, generated: 0, skippedReason: null });
   mocks.submitManualLessonState.mockResolvedValue(undefined);
@@ -235,6 +250,106 @@ describe("LiveClassMonitor activity delivery", () => {
     );
     expect(await screen.findByText(/Publicado para 1 estudiantes/i)).toBeInTheDocument();
   });
+  it("answers preview SDK requests only for its iframe and ignores telemetry", async () => {
+    const user = userEvent.setup();
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+    const supportCandidate = {
+      ...mocks.candidate,
+      id: "candidate-support",
+      activityId: "activity-support",
+      difficultyBand: "support",
+      bundleRef: "bundle-support",
+      manifest: {
+        ...mocks.candidate.manifest,
+        title: "Practica: La noticia - Apoyo",
+        difficulty_band: "support",
+      },
+    };
+    mocks.listCandidates.mockResolvedValue([mocks.candidate, supportCandidate]);
+
+
+    const view = render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole("button", { name: /hora de actividad/i }));
+
+    const preview = await screen.findByTitle(/previsualizacion practica: la noticia/i) as HTMLIFrameElement;
+    const sourceWindow = preview.contentWindow;
+    expect(sourceWindow).not.toBeNull();
+    if (!sourceWindow) return;
+    const postMessage = vi.spyOn(sourceWindow, "postMessage");
+
+    dispatchActivityMessage(
+      { sdk: "activity-sdk/v1", type: "request", id: "manifest-1", method: "getManifest" },
+      sourceWindow,
+    );
+    dispatchActivityMessage(
+      { sdk: "activity-sdk/v1", type: "request", id: "band-1", method: "getBand" },
+      sourceWindow,
+    );
+
+    expect(postMessage).toHaveBeenNthCalledWith(1, {
+      sdk: "activity-sdk/v1",
+      type: "response",
+      id: "manifest-1",
+      ok: true,
+      result: mocks.candidate.manifest,
+    }, "*");
+    expect(postMessage).toHaveBeenNthCalledWith(2, {
+      sdk: "activity-sdk/v1",
+      type: "response",
+      id: "band-1",
+      ok: true,
+      result: "core",
+    }, "*");
+
+    dispatchActivityMessage(
+      { sdk: "activity-sdk/v1", type: "request", id: "foreign", method: "getManifest" },
+      window,
+    );
+    dispatchActivityMessage({
+      sdk: "activity-sdk/v1",
+      type: "event",
+      method: "reportAttempt",
+      payload: { item_index: 0, correct: true },
+    }, sourceWindow);
+    expect(postMessage).toHaveBeenCalledTimes(2);
+
+    await user.click(screen.getByRole("button", { name: "Previsualizar" }));
+    const supportPreview = await screen.findByTitle(/previsualizacion practica: la noticia - apoyo/i) as HTMLIFrameElement;
+    const supportSourceWindow = supportPreview.contentWindow;
+    expect(supportSourceWindow).not.toBeNull();
+    if (!supportSourceWindow) return;
+    const supportPostMessage = vi.spyOn(supportSourceWindow, "postMessage");
+
+    dispatchActivityMessage(
+      { sdk: "activity-sdk/v1", type: "request", id: "stale-core", method: "getBand" },
+      sourceWindow,
+    );
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    dispatchActivityMessage(
+      { sdk: "activity-sdk/v1", type: "request", id: "support-band", method: "getBand" },
+      supportSourceWindow,
+    );
+    expect(supportPostMessage).toHaveBeenCalledWith({
+      sdk: "activity-sdk/v1",
+      type: "response",
+      id: "support-band",
+      ok: true,
+      result: "support",
+    }, "*");
+
+    view.unmount();
+    dispatchActivityMessage(
+      { sdk: "activity-sdk/v1", type: "request", id: "stale-unmounted", method: "getBand" },
+      supportSourceWindow,
+    );
+    expect(supportPostMessage).toHaveBeenCalledTimes(1);
+  });
+
   it("uploads prerecorded WAV chunks without requesting microphone access", async () => {
     vi.useFakeTimers();
     mocks.recordingSource = "prerecorded";
@@ -276,6 +391,41 @@ describe("LiveClassMonitor activity delivery", () => {
       sessionId: "session-1",
       expectedChunks: 2,
     }));
+  });
+
+  it("shows prerecorded audio as processed after transcription and activity generation finish", async () => {
+    mocks.recordingSource = "prerecorded";
+    mocks.decodePrerecordedAudio.mockResolvedValueOnce([
+      { audio: new Blob(["one"], { type: "audio/wav" }), chunkIndex: 0, startMs: 0, endMs: 10_000 },
+    ]);
+    mocks.getTranscriptionStatus.mockResolvedValueOnce({
+      expectedChunks: 1,
+      uploaded: 1,
+      pending: 0,
+      transcribing: 0,
+      transcribed: 1,
+      spokenChunks: 1,
+      terminalFailed: 0,
+      lessonStateThroughChunkIndex: 0,
+      complete: true,
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([1]))));
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /iniciar demo/i }));
+
+    expect(await screen.findByText("Audio procesado")).toBeInTheDocument();
+    expect(screen.getByText("Sesión procesada")).toBeInTheDocument();
+    expect(screen.getByText(/sesion enviada al worker · 1 fragmento procesado/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^Transcribiendo$/i)).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /aprobar y entregar actividad/i })).toBeInTheDocument();
   });
 
   it("creates a fresh backend session when prerecorded playback starts again", async () => {
@@ -611,6 +761,9 @@ describe("LiveClassMonitor activity delivery", () => {
 
     expect(screen.queryByText(/sesión finalizada/i)).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: /aprobar y entregar actividad/i })).toBeInTheDocument();
+    expect(screen.queryByText("Audio procesado")).not.toBeInTheDocument();
+    expect(screen.queryByText("Sesión procesada")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Listo para grabar")).not.toHaveLength(0);
   });
 
   it("creates a fresh backend session after closing a recording", async () => {
@@ -644,18 +797,15 @@ describe("LiveClassMonitor activity delivery", () => {
     });
 
     expect(mocks.createBackendSession).toHaveBeenCalledTimes(2);
-    expect(mocks.supabaseRpc).toHaveBeenCalledWith("close_teacher_session", { input_session_id: "session-1" });
+    expect(mocks.finalizeBackendSession).toHaveBeenCalledWith({ sessionId: "session-1" });
   });
 
-  it("retries activity generation for the completed session instead of creating an empty one", async () => {
+  it("keeps manual generation attached to the completed session if finalization fails", async () => {
     installFakeBrowserRecorder();
     mocks.listCandidates
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([mocks.candidate]);
-    mocks.requestActivityCandidates
-      .mockRejectedValueOnce(new Error("lesson state is not ready"))
-      .mockResolvedValueOnce({ inserted: 1, reused: 0, generated: 0, skippedReason: null });
+    mocks.finalizeBackendSession.mockRejectedValueOnce(new Error("lesson state is not ready"));
     useClassStore.getState().resetClasses();
     useClassStore.getState().startMonitoring("class-1");
 
@@ -676,8 +826,7 @@ describe("LiveClassMonitor activity delivery", () => {
     fireEvent.click(screen.getByRole("button", { name: /^hora de actividad$/i }));
 
     expect(await screen.findByRole("heading", { name: /aprobar y entregar actividad/i })).toBeInTheDocument();
-    expect(mocks.requestActivityCandidates).toHaveBeenNthCalledWith(1, { sessionId: "session-1" });
-    expect(mocks.requestActivityCandidates).toHaveBeenNthCalledWith(2, { sessionId: "session-1" });
+    expect(mocks.requestActivityCandidates).toHaveBeenCalledWith({ sessionId: "session-1" });
     expect(mocks.createBackendSession).toHaveBeenCalledTimes(1);
   });
 
@@ -709,14 +858,14 @@ describe("LiveClassMonitor activity delivery", () => {
       chunkIndex: 0,
     }));
     expect(mocks.uploadAudioChunk.mock.invocationCallOrder[0])
-      .toBeLessThan(mocks.supabaseRpc.mock.invocationCallOrder[0]);
+      .toBeLessThan(mocks.finalizeBackendSession.mock.invocationCallOrder[0]);
     expect(stopTrack).toHaveBeenCalled();
   });
 
   it("keeps recording restart disabled until the previous session close settles", async () => {
     installFakeBrowserRecorder();
-    let resolveClose!: (value: { data: Array<{ id: string }>; error: null }) => void;
-    mocks.supabaseRpc.mockImplementationOnce(() => new Promise((resolve) => {
+    let resolveClose!: (value: { sessionId: string; finalizationEnqueued: boolean }) => void;
+    mocks.finalizeBackendSession.mockImplementationOnce(() => new Promise((resolve) => {
       resolveClose = resolve;
     }));
     useClassStore.getState().resetClasses();
@@ -741,7 +890,7 @@ describe("LiveClassMonitor activity delivery", () => {
     expect(mocks.createBackendSession).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      resolveClose({ data: [{ id: "session-1" }], error: null });
+      resolveClose({ sessionId: "session-1", finalizationEnqueued: true });
       await Promise.resolve();
     });
     await waitFor(() => expect(screen.getByRole("button", { name: /iniciar grabación/i })).toBeEnabled());

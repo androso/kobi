@@ -17,6 +17,9 @@ import { loadSelectedCurriculumSourceIds } from "../curriculumSelections.js";
 
 export interface EvaluateCheckpointJobData {
   sessionId: string;
+  trigger?: "context" | "timer" | "session_end";
+  /** Session-end checkpoints reconsider the full lesson, even after an earlier ready checkpoint. */
+  force?: boolean;
   /** TODO(Area D): pull these from the session's class record once that table exists. */
   grade?: number;
   subject?: string;
@@ -78,15 +81,45 @@ export function registerEvaluateCheckpointJob(
 
   return boss.work<EvaluateCheckpointJobData>(
     "evaluate-checkpoint",
-    { batchSize: 1 },
+    { batchSize: 1, includeMetadata: true },
     async (jobs) => {
       const job = jobs[0];
       if (!job) return;
 
-      await runEvaluateCheckpointJob(supabase, boss, job.data, {
-        evaluator,
-        curriculumRetriever: options.curriculumRetriever,
+      const startedAt = Date.now();
+      console.info("[evaluateCheckpoint] job started", {
+        sessionId: job.data.sessionId,
+        jobId: job.id,
+        trigger: job.data.trigger ?? "timer",
+        force: Boolean(job.data.force),
+        retryCount: job.retryCount,
+        retryLimit: job.retryLimit,
       });
+      try {
+        const result = await runEvaluateCheckpointJob(supabase, boss, job.data, {
+          evaluator,
+          curriculumRetriever: options.curriculumRetriever,
+        });
+        console.info("[evaluateCheckpoint] job finished", {
+          sessionId: job.data.sessionId,
+          jobId: job.id,
+          durationMs: Date.now() - startedAt,
+          ...result,
+        });
+        return result;
+      } catch (error) {
+        console.error("[evaluateCheckpoint] job failed", {
+          sessionId: job.data.sessionId,
+          jobId: job.id,
+          trigger: job.data.trigger ?? "timer",
+          force: Boolean(job.data.force),
+          retryCount: job.retryCount,
+          retryLimit: job.retryLimit,
+          durationMs: Date.now() - startedAt,
+          error: error instanceof Error ? error.stack ?? error.message : error,
+        });
+        throw error;
+      }
     },
   );
 }
@@ -101,7 +134,7 @@ export async function runEvaluateCheckpointJob(
   const curriculumRetriever = options.curriculumRetriever ?? retrieveCurriculumMatches;
   const { sessionId } = data;
 
-  const since = await loadLastReadyCheckpointAt(supabase, sessionId);
+  const since = data.force ? null : await loadLastReadyCheckpointAt(supabase, sessionId);
   const lessonStates = await loadLessonStatesSince(supabase, sessionId, since);
 
   if (lessonStates.length === 0) {
@@ -111,19 +144,25 @@ export async function runEvaluateCheckpointJob(
   const sessionContext = buildActivitySessionContext(lessonStates);
   const decision = await evaluator({ sessionContext, lessonStates });
 
-  const { error: insertError } = await supabase.from("checkpoints").insert({
+  console.info("[evaluateCheckpoint] semantic decision", {
+    sessionId,
+    trigger: data.trigger ?? "timer",
+    force: Boolean(data.force),
+    segmentCount: lessonStates.length,
+    ready: decision.ready,
+    reason: decision.reason,
+  });
+
+  const checkpoint = {
     session_id: sessionId,
     ready: decision.ready,
     reason: decision.reason,
     summary: decision.summary,
     session_context: sessionContext,
-  });
-
-  if (insertError) {
-    throw new Error(`evaluateCheckpoint job: failed to insert checkpoint: ${insertError.message}`);
-  }
+  };
 
   if (!decision.ready) {
+    await insertCheckpoint(supabase, checkpoint);
     return { evaluated: true, ready: false, skippedReason: null };
   }
 
@@ -139,7 +178,7 @@ export async function runEvaluateCheckpointJob(
     sourceIds,
   });
 
-  await boss.send(
+  const generationJobId = await boss.send(
     JOB_GENERATE_ACTIVITY_ARTIFACTS,
     buildGenerateActivityArtifactsJobData({
       sessionId,
@@ -147,10 +186,41 @@ export async function runEvaluateCheckpointJob(
       curriculumMatches,
       curriculumFallback: { ...retrievalContext, sourceIds },
     }),
-    { singletonKey: sessionId },
+    {
+      singletonKey: sessionId,
+      retryLimit: 2,
+      retryDelay: 15,
+      retryBackoff: true,
+    },
   );
 
+  // Persist a ready checkpoint only after generation has been handed to the
+  // queue. Otherwise a transient retrieval/send failure makes the retry see
+  // "no new segments" and permanently loses generation for the lesson.
+  await insertCheckpoint(supabase, checkpoint);
+  console.info("[evaluateCheckpoint] generation enqueued", {
+    sessionId,
+    generationJobId,
+    curriculumMatchCount: curriculumMatches.length,
+  });
+
   return { evaluated: true, ready: true, skippedReason: null };
+}
+
+async function insertCheckpoint(
+  supabase: SupabaseClient,
+  checkpoint: {
+    session_id: string;
+    ready: boolean;
+    reason: string;
+    summary: string;
+    session_context: ReturnType<typeof buildActivitySessionContext>;
+  },
+) {
+  const { error } = await supabase.from("checkpoints").insert(checkpoint);
+  if (error) {
+    throw new Error(`evaluateCheckpoint job: failed to insert checkpoint: ${error.message}`);
+  }
 }
 
 async function resolveRetrievalContext(

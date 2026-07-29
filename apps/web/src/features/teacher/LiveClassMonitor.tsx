@@ -2,7 +2,6 @@ import { useMemo, useState, useEffect, useRef, type FormEvent } from "react";
 import {
   StopCircle,
   Sparkles,
-  AlertTriangle,
   Leaf,
   Circle,
 } from "lucide-react";
@@ -21,7 +20,12 @@ import {
   secureActivitySrcDoc,
 } from "../activityDelivery/activityIframeSecurity";
 import {
+  markActivityIframeAwaitingSource,
+  respondToActivitySdkRequest,
+} from "../activityDelivery/activitySdkHost";
+import {
   createBackendSession,
+  finalizeBackendSession,
   getPrerecordedAudioPath,
   getRecordingSource,
   getTranscriptionStatus,
@@ -32,12 +36,13 @@ import {
   uploadAudioChunk,
 } from "../../lib/audioApi";
 import { decodePrerecordedAudio } from "../../lib/prerecordedAudio";
-import { closeTeacherSession } from "./sessionReports";
 
-const AUDIO_CHUNK_MS = 15_000;
+const AUDIO_CHUNK_MS = 30_000;
 const PRERECORDED_UPLOAD_INTERVAL_MS = 2_100;
 const TRANSCRIPTION_STATUS_POLL_MS = 2_000;
 const TRANSCRIPTION_STATUS_TIMEOUT_MS = 20 * 60_000;
+const GENERATED_CANDIDATE_POLL_MS = 2_000;
+const GENERATED_CANDIDATE_TIMEOUT_MS = 20 * 60_000;
 
 interface LessonStateSnapshot {
   topic: string;
@@ -132,6 +137,10 @@ function TranscriptPlayerCard({
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isDemo = recordingSource === "prerecorded";
+  const hasProcessedAudio = isDemo && !isRecording && !recordingError && uploadedChunkCount > 0;
+  const processedChunkLabel = `${uploadedChunkCount} ${
+    uploadedChunkCount === 1 ? "fragmento procesado" : "fragmentos procesados"
+  }`;
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -149,6 +158,11 @@ function TranscriptPlayerCard({
           <span className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest uppercase text-emerald-600">
             <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
             {isDemo ? "Transcribiendo" : "En vivo"}
+          </span>
+        ) : hasProcessedAudio ? (
+          <span className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest uppercase text-emerald-600">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            Procesado
           </span>
         ) : (
           <span className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest uppercase text-slate-400">
@@ -173,6 +187,19 @@ function TranscriptPlayerCard({
                 {isDemo
                   ? "La demo envía el audio pregrabado y espera la transcripción automáticamente."
                   : "Los fragmentos se envían al análisis de la sesión."}
+              </p>
+            </div>
+          </div>
+        ) : hasProcessedAudio ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 py-10 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50">
+              <Circle className="h-5 w-5 fill-emerald-500 text-emerald-500" />
+            </span>
+            <div>
+              <p className="text-sm font-bold text-slate-700">Audio procesado</p>
+              <p className="mt-1 max-w-xs text-xs text-slate-400">
+                La transcripción terminó. Kobi analizó {processedChunkLabel} y ya puede preparar
+                actividades para esta sesión.
               </p>
             </div>
           </div>
@@ -212,8 +239,8 @@ function TranscriptPlayerCard({
             <p className="text-xs font-semibold text-red-600 truncate">{recordingError}</p>
           ) : uploadStatus ? (
             <p className="text-xs font-semibold text-slate-500 truncate">
-              {isDemo ? "Transcribiendo" : uploadStatus}
-              {!isDemo && uploadedChunkCount > 0 ? ` · ${uploadedChunkCount} fragmentos enviados` : ""}
+              {uploadStatus}
+              {uploadedChunkCount > 0 ? ` · ${processedChunkLabel}` : ""}
             </p>
           ) : null}
         </div>
@@ -311,23 +338,23 @@ function InsightsPanel({ lessonState }: { lessonState: LessonStateSnapshot | nul
         </div>
       </div>
 
-      {/* Conceptos erróneos */}
+      {/* Evidence for the inferred topic/objective */}
       <div className="flex flex-col gap-2">
         <label className="text-[10px] font-bold tracking-widest uppercase text-slate-400">
-          Conceptos erróneos detectados
+          Evidencia del análisis
         </label>
         {lessonState.evidence.reason ? (
-          <div className="bg-red-50 rounded-2xl p-4 border border-red-100 flex gap-3">
-            <AlertTriangle className="h-5 w-5 text-red-500 mt-0.5 shrink-0" />
+          <div className="flex gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+            <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-blue-600" />
             <div className="flex flex-col gap-1">
-              <h4 className="font-bold text-red-800 text-sm">Evidencia del analisis</h4>
-              <p className="text-red-700 text-xs leading-relaxed opacity-80">
+              <h4 className="text-sm font-bold text-blue-900">Por qué Kobi detectó este tema</h4>
+              <p className="text-xs leading-relaxed text-blue-800">
                 {lessonState.evidence.reason}
               </p>
             </div>
           </div>
         ) : (
-          <p className="text-sm text-slate-400">No hay evidencia adicional registrada.</p>
+          <p className="text-sm text-slate-400">Aún no hay evidencia suficiente.</p>
         )}
       </div>
     </div>
@@ -528,6 +555,29 @@ function ActivityCandidatePanel({
   onAssignStudentBand: (studentId: string, band: DifficultyBand) => void;
   onPublish: () => void;
 }) {
+  const previewIframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    if (!selectedCandidate) return;
+    const activeIframe = previewIframeRef.current;
+    if (!activeIframe) return;
+    const currentCandidate = selectedCandidate;
+
+    markActivityIframeAwaitingSource(activeIframe);
+
+    function handleMessage(event: MessageEvent) {
+      if (!activeIframe) return;
+      respondToActivitySdkRequest(event, {
+        iframe: activeIframe,
+        manifest: currentCandidate.manifest,
+        band: currentCandidate.difficultyBand,
+      });
+    }
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [selectedCandidate]);
+
   if (candidates.length === 0) return null;
 
   const supportIds = overridesByBand.support ?? [];
@@ -624,6 +674,8 @@ function ActivityCandidatePanel({
               <iframe
                 {...activityIframeSecurityAttributes}
                 className="h-[560px] w-full bg-white"
+                key={selectedCandidate.id}
+                ref={previewIframeRef}
                 srcDoc={secureActivitySrcDoc(selectedCandidate.bundleHtml)}
                 title={`Previsualizacion ${selectedCandidate.manifest.title}`}
               />
@@ -1226,7 +1278,7 @@ export function LiveClassMonitor() {
         let sessionClosed = false;
         if (closedSessionId && supabase) {
           try {
-            await closeTeacherSession(supabase, closedSessionId);
+            await finalizeBackendSession({ sessionId: closedSessionId });
             sessionClosed = true;
           } catch (error) {
             setRecordingError(error instanceof Error ? error.message : "No se pudo cerrar la sesion.");
@@ -1235,7 +1287,9 @@ export function LiveClassMonitor() {
         const session = buildSession(activeClass, durationSeconds, latestLessonStateRef.current);
         setCompletedSessionClassId(activeClass.id);
         endSession(session); // guarda en historial + limpia el monitor activo
-        if (generateActivity) void handleGenerateActivity(closedSessionId);
+        if (generateActivity && sessionClosed && closedSessionId) {
+          void handleAwaitGeneratedActivity(closedSessionId);
+        }
         if (sessionClosed) {
           completedSessionIdRef.current = closedSessionId;
           apiSessionIdRef.current = null;
@@ -1395,6 +1449,48 @@ export function LiveClassMonitor() {
     }
   }
 
+  async function handleAwaitGeneratedActivity(sessionId: string) {
+    if (!activeClass || !deliveryStore) return;
+    setActivityLoading(true);
+    setActivityError(null);
+    setPublishStatus(null);
+    const contextVersion = activityContextVersionRef.current;
+    const deadline = Date.now() + GENERATED_CANDIDATE_TIMEOUT_MS;
+
+    try {
+      while (
+        contextVersion === activityContextVersionRef.current
+        && Date.now() < deadline
+      ) {
+        if (await loadCandidatesForSession(
+          sessionId,
+          { allowEmpty: true },
+          contextVersion,
+        )) {
+          return;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, GENERATED_CANDIDATE_POLL_MS));
+      }
+      if (contextVersion === activityContextVersionRef.current) {
+        setActivityError(
+          "La sesión terminó, pero Kobi todavía no pudo preparar una actividad verificada.",
+        );
+      }
+    } catch (error) {
+      if (contextVersion === activityContextVersionRef.current) {
+        setActivityError(
+          error instanceof Error
+            ? error.message
+            : "No se pudieron cargar las actividades generadas.",
+        );
+      }
+    } finally {
+      if (contextVersion === activityContextVersionRef.current) {
+        setActivityLoading(false);
+      }
+    }
+  }
+
   /** Moves a student to the given band; picking "core" simply clears any override (back to default). */
   function assignStudentBand(studentId: string, band: DifficultyBand) {
     setOverridesByBand((current) => {
@@ -1451,7 +1547,12 @@ export function LiveClassMonitor() {
                     {isRecording ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-50 text-red-600 rounded-full text-[10px] font-bold uppercase tracking-wider">
                         <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                        Grabando
+                        {recordingSource === "prerecorded" ? "Procesando demo" : "Grabando"}
+                      </span>
+                    ) : recordingSource === "prerecorded" && uploadedChunkCount > 0 && !recordingError ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        Sesión procesada
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 text-slate-500 rounded-full text-[10px] font-bold uppercase tracking-wider">

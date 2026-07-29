@@ -1,13 +1,14 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { config } from "dotenv";
 import { buildActivitySessionContext, verifyActivityArtifact } from "@kobi/activities/server";
+import { loadRootEnv } from "@kobi/db";
 import {
   createOpenAiActivityDraftClient,
   createActivitySetId,
   generateOpenAiActivityCandidates,
 } from "../activity-generation/openaiArtifactGenerator.js";
 import { staticActivityContext } from "./staticActivityContext.js";
+import { createActivityRuntimeVerifierFromEnv } from "../activity-generation/runtimeVerifierFactory.js";
 
 logStep("Loading .env files");
 loadLocalEnv();
@@ -35,7 +36,8 @@ async function main() {
   );
   logStep(`Output directory: ${outputDir}`);
 
-  logStep("Calling OpenAI for support/core/challenge artifact drafts");
+  const runtimeVerifier = createActivityRuntimeVerifierFromEnv();
+  logStep(`Calling OpenAI and verifying artifacts with ${runtimeVerifier.backend}`);
   const result = await generateOpenAiActivityCandidates(
     {
       lessonState: staticActivityContext.lessonState,
@@ -47,6 +49,7 @@ async function main() {
     {
       client: createOpenAiActivityDraftClient(apiKey),
       model,
+      runtimeVerifier: runtimeVerifier.verifier,
     },
   );
   logStep(`OpenAI generation finished after ${result.attempts} attempt(s)`);
@@ -128,9 +131,7 @@ async function main() {
 }
 
 function loadLocalEnv() {
-  const rootEnvPath = resolve(process.cwd(), "..", "..", ".env");
-  config({ path: rootEnvPath, override: false });
-  config({ override: false });
+  loadRootEnv();
 }
 
 function logStep(message: string) {
