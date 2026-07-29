@@ -59,6 +59,10 @@ const mocks = vi.hoisted(() => {
       },
     ]),
     createBackendSession: vi.fn(async () => ({ sessionId: "session-1" })),
+    finalizeBackendSession: vi.fn(async () => ({
+      sessionId: "session-1",
+      finalizationEnqueued: true,
+    })),
     recordingSource: "microphone" as "microphone" | "prerecorded",
     uploadAudioChunk: vi.fn(async () => ({ audioChunkId: "uploaded-chunk" })),
     getTranscriptionStatus: vi.fn(async (_input: {
@@ -97,6 +101,7 @@ vi.mock("../../lib/supabase", () => ({ supabase: { from: mocks.supabaseFrom, rpc
 
 vi.mock("../../lib/audioApi", () => ({
   createBackendSession: mocks.createBackendSession,
+  finalizeBackendSession: mocks.finalizeBackendSession,
   getPrerecordedAudioPath: () => "/local-audio/demo-audio.mp3",
   getRecordingSource: () => mocks.recordingSource,
   getTranscriptionStatus: mocks.getTranscriptionStatus,
@@ -174,6 +179,10 @@ function dispatchActivityMessage(data: unknown, source: MessageEventSource) {
 
 beforeEach(() => {
   mocks.createBackendSession.mockReset().mockResolvedValue({ sessionId: "session-1" });
+  mocks.finalizeBackendSession.mockReset().mockResolvedValue({
+    sessionId: "session-1",
+    finalizationEnqueued: true,
+  });
   mocks.listCandidates.mockResolvedValue([mocks.candidate]);
   mocks.requestActivityCandidates.mockResolvedValue({ inserted: 1, reused: 0, generated: 0, skippedReason: null });
   mocks.submitManualLessonState.mockResolvedValue(undefined);
@@ -382,6 +391,41 @@ describe("LiveClassMonitor activity delivery", () => {
       sessionId: "session-1",
       expectedChunks: 2,
     }));
+  });
+
+  it("shows prerecorded audio as processed after transcription and activity generation finish", async () => {
+    mocks.recordingSource = "prerecorded";
+    mocks.decodePrerecordedAudio.mockResolvedValueOnce([
+      { audio: new Blob(["one"], { type: "audio/wav" }), chunkIndex: 0, startMs: 0, endMs: 10_000 },
+    ]);
+    mocks.getTranscriptionStatus.mockResolvedValueOnce({
+      expectedChunks: 1,
+      uploaded: 1,
+      pending: 0,
+      transcribing: 0,
+      transcribed: 1,
+      spokenChunks: 1,
+      terminalFailed: 0,
+      lessonStateThroughChunkIndex: 0,
+      complete: true,
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([1]))));
+    useClassStore.getState().resetClasses();
+    useClassStore.getState().startMonitoring("class-1");
+
+    render(
+      <MemoryRouter>
+        <LiveClassMonitor />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /iniciar demo/i }));
+
+    expect(await screen.findByText("Audio procesado")).toBeInTheDocument();
+    expect(screen.getByText("Sesión procesada")).toBeInTheDocument();
+    expect(screen.getByText(/sesion enviada al worker · 1 fragmento procesado/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^Transcribiendo$/i)).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /aprobar y entregar actividad/i })).toBeInTheDocument();
   });
 
   it("creates a fresh backend session when prerecorded playback starts again", async () => {
@@ -717,6 +761,9 @@ describe("LiveClassMonitor activity delivery", () => {
 
     expect(screen.queryByText(/sesión finalizada/i)).not.toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: /aprobar y entregar actividad/i })).toBeInTheDocument();
+    expect(screen.queryByText("Audio procesado")).not.toBeInTheDocument();
+    expect(screen.queryByText("Sesión procesada")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Listo para grabar")).not.toHaveLength(0);
   });
 
   it("creates a fresh backend session after closing a recording", async () => {
@@ -750,18 +797,15 @@ describe("LiveClassMonitor activity delivery", () => {
     });
 
     expect(mocks.createBackendSession).toHaveBeenCalledTimes(2);
-    expect(mocks.supabaseRpc).toHaveBeenCalledWith("close_teacher_session", { input_session_id: "session-1" });
+    expect(mocks.finalizeBackendSession).toHaveBeenCalledWith({ sessionId: "session-1" });
   });
 
-  it("retries activity generation for the completed session instead of creating an empty one", async () => {
+  it("keeps manual generation attached to the completed session if finalization fails", async () => {
     installFakeBrowserRecorder();
     mocks.listCandidates
       .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([mocks.candidate]);
-    mocks.requestActivityCandidates
-      .mockRejectedValueOnce(new Error("lesson state is not ready"))
-      .mockResolvedValueOnce({ inserted: 1, reused: 0, generated: 0, skippedReason: null });
+    mocks.finalizeBackendSession.mockRejectedValueOnce(new Error("lesson state is not ready"));
     useClassStore.getState().resetClasses();
     useClassStore.getState().startMonitoring("class-1");
 
@@ -782,8 +826,7 @@ describe("LiveClassMonitor activity delivery", () => {
     fireEvent.click(screen.getByRole("button", { name: /^hora de actividad$/i }));
 
     expect(await screen.findByRole("heading", { name: /aprobar y entregar actividad/i })).toBeInTheDocument();
-    expect(mocks.requestActivityCandidates).toHaveBeenNthCalledWith(1, { sessionId: "session-1" });
-    expect(mocks.requestActivityCandidates).toHaveBeenNthCalledWith(2, { sessionId: "session-1" });
+    expect(mocks.requestActivityCandidates).toHaveBeenCalledWith({ sessionId: "session-1" });
     expect(mocks.createBackendSession).toHaveBeenCalledTimes(1);
   });
 
@@ -815,14 +858,14 @@ describe("LiveClassMonitor activity delivery", () => {
       chunkIndex: 0,
     }));
     expect(mocks.uploadAudioChunk.mock.invocationCallOrder[0])
-      .toBeLessThan(mocks.supabaseRpc.mock.invocationCallOrder[0]);
+      .toBeLessThan(mocks.finalizeBackendSession.mock.invocationCallOrder[0]);
     expect(stopTrack).toHaveBeenCalled();
   });
 
   it("keeps recording restart disabled until the previous session close settles", async () => {
     installFakeBrowserRecorder();
-    let resolveClose!: (value: { data: Array<{ id: string }>; error: null }) => void;
-    mocks.supabaseRpc.mockImplementationOnce(() => new Promise((resolve) => {
+    let resolveClose!: (value: { sessionId: string; finalizationEnqueued: boolean }) => void;
+    mocks.finalizeBackendSession.mockImplementationOnce(() => new Promise((resolve) => {
       resolveClose = resolve;
     }));
     useClassStore.getState().resetClasses();
@@ -847,7 +890,7 @@ describe("LiveClassMonitor activity delivery", () => {
     expect(mocks.createBackendSession).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      resolveClose({ data: [{ id: "session-1" }], error: null });
+      resolveClose({ sessionId: "session-1", finalizationEnqueued: true });
       await Promise.resolve();
     });
     await waitFor(() => expect(screen.getByRole("button", { name: /iniciar grabación/i })).toBeEnabled());
