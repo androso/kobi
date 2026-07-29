@@ -22,6 +22,10 @@ export interface CreateSessionInput {
   classId: string;
 }
 
+export interface FinalizeSessionInput {
+  sessionId: string;
+}
+
 export interface UploadAudioChunkInput {
   sessionId: string;
   audio: Blob;
@@ -116,6 +120,25 @@ export async function createBackendSession({ classId }: CreateSessionInput) {
 
   const payload = await parseApiResponse<{ sessionId: string }>(response);
   logAudioApi("session created", payload);
+  return payload;
+}
+
+export async function finalizeBackendSession({ sessionId }: FinalizeSessionInput) {
+  if (!isAudioApiConfigured()) {
+    throw new Error("VITE_KOBI_API_URL is not configured");
+  }
+
+  const response = await fetch(`${API_URL}/api/sessions/${sessionId}/finalize`, {
+    method: "POST",
+    keepalive: true,
+    headers: await authenticatedHeaders({ "content-type": "application/json" }),
+  });
+  const payload = await parseApiResponse<{
+    sessionId: string;
+    finalizationEnqueued: boolean;
+    finalizationJobId?: string | null;
+  }>(response);
+  logAudioApi("session finalization accepted", payload);
   return payload;
 }
 
