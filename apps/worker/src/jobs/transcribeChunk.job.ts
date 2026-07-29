@@ -65,7 +65,11 @@ export function registerTranscribeChunkJob(boss: PgBoss, supabase: SupabaseClien
         }
 
         if (isTerminalAttempt) {
-          await boss.send(JOB_BUILD_LESSON_STATE, { sessionId });
+          await boss.send(
+            JOB_BUILD_LESSON_STATE,
+            { sessionId },
+            { singletonKey: sessionId },
+          );
         }
 
         throw error;
@@ -86,7 +90,11 @@ export function registerTranscribeChunkJob(boss: PgBoss, supabase: SupabaseClien
 
       safeLog("info", "transcription.chunk_saved", { audioChunkId, sessionId, transcriptBytes: Buffer.byteLength(transcriptText, "utf8") });
 
-      await boss.send(JOB_BUILD_LESSON_STATE, { sessionId });
+      await boss.send(
+        JOB_BUILD_LESSON_STATE,
+        { sessionId },
+        { singletonKey: sessionId },
+      );
     },
   );
 }

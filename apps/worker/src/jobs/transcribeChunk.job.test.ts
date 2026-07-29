@@ -42,7 +42,29 @@ describe("transcribeChunk job", () => {
       { status: "transcribing" },
       { status: "failed" },
     ]);
-    expect(send).toHaveBeenCalledWith("build-lesson-state", { sessionId: "session-1" });
+    expect(send).toHaveBeenCalledWith(
+      "build-lesson-state",
+      { sessionId: "session-1" },
+      { singletonKey: "session-1" },
+    );
+  });
+
+  it("coalesces successful lesson-state wake-ups by session", async () => {
+    vi.mocked(transcribeAudioChunk).mockResolvedValueOnce({ transcriptText: "Contenido nuevo" });
+    const updates: Array<Record<string, unknown>> = [];
+    const { handler, send } = await registerHandler(updates);
+
+    await handler([jobWithRetryMetadata({ retryCount: 0, retryLimit: 2 })]);
+
+    expect(updates).toEqual([
+      { status: "transcribing" },
+      { status: "transcribed", transcript_text: "Contenido nuevo" },
+    ]);
+    expect(send).toHaveBeenCalledWith(
+      "build-lesson-state",
+      { sessionId: "session-1" },
+      { singletonKey: "session-1" },
+    );
   });
 });
 
