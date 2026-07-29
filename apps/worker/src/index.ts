@@ -7,6 +7,7 @@ import { registerTranscribeChunkJob } from "./jobs/transcribeChunk.job.js";
 import { registerBuildLessonStateJob } from "./jobs/buildLessonState.job.js";
 import { registerGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
 import { registerEvaluateCheckpointJob } from "./jobs/evaluateCheckpoint.job.js";
+import { registerFinalizeSessionJob } from "./jobs/finalizeSession.job.js";
 import {
   registerCheckpointSchedulerJob,
   scheduleCheckpointSchedulerJob,
@@ -36,6 +37,18 @@ async function main() {
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+  const { error: checkpointSchemaError } = await supabase
+    .from("checkpoints")
+    .select("id")
+    .limit(1);
+  if (checkpointSchemaError) {
+    throw new Error(
+      "Worker database schema is incomplete: public.checkpoints is unavailable. " +
+        "Run `pnpm --filter @kobi/db db:migrate` before starting the worker. " +
+        `Supabase error: ${checkpointSchemaError.message}`,
+    );
+  }
+
   let boss: PgBoss | undefined;
   const server = startApiServer({ supabase, getBoss: () => boss });
 
@@ -45,12 +58,13 @@ async function main() {
   await registerBuildLessonStateJob(boss, supabase);
   await registerGenerateActivityArtifactsJob(boss, supabase);
   await registerEvaluateCheckpointJob(boss, supabase);
+  await registerFinalizeSessionJob(boss, supabase);
   await registerCheckpointSchedulerJob(boss, supabase);
   await registerIngestCurriculumSourceJob(boss, supabase);
   await reconcileCurriculumSourceCleanup(supabase);
   await scheduleCheckpointSchedulerJob(boss);
   console.log(
-    "Kobi worker running: API, transcribe-chunk, build-lesson-state, checkpoint-scheduler, evaluate-checkpoint, generate-activity-artifacts, ingest-curriculum-source",
+    "Kobi worker running: API, transcribe-chunk, build-lesson-state, checkpoint-scheduler, evaluate-checkpoint, finalize-session, generate-activity-artifacts, ingest-curriculum-source",
   );
 
   let shuttingDown = false;
