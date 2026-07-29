@@ -85,6 +85,7 @@ describe("generateActivityArtifacts job planning", () => {
           receivedMatches = input.curriculumMatches;
           return { candidates: [], attempted: true, attempts: 1, errors: [] };
         },
+        generationMode: "resilient",
       },
     );
 
@@ -123,6 +124,20 @@ describe("generateActivityArtifacts job planning", () => {
       "set-test",
       "set-test",
     ]);
+  });
+
+  it("keeps a partial generated set when the verified core is present", () => {
+    const openAiCore = candidate("core", "openai-core");
+    const openAiChallenge = candidate("challenge", "openai-challenge");
+
+    const planned = planSessionArtifacts({
+      reusableSet: [],
+      openAiCandidates: [openAiCore, openAiChallenge],
+      staticCandidates: [],
+    });
+
+    expect(planned.map((artifact) => artifact.band)).toEqual(["core", "challenge"]);
+    expect(planned.every((artifact) => artifact.origin === "openai")).toBe(true);
   });
 
   it("accepts a complete exact-curriculum legacy repository set", () => {
@@ -182,6 +197,7 @@ describe("generateActivityArtifacts job planning", () => {
           openAiCalls += 1;
           throw new Error("prompt file missing");
         },
+        generationMode: "resilient",
       },
     );
 
@@ -196,6 +212,105 @@ describe("generateActivityArtifacts job planning", () => {
     expect(supabase.bundleRefs.every((ref) => ref.startsWith("artifact-bundles/static/"))).toBe(true);
   });
 
+  it("runs browser verification before persisting generated bundles", async () => {
+    const supabase = fakeSupabase();
+    let runtimeChecks = 0;
+
+    await expect(runGenerateActivityArtifactsJob(
+      supabase.client,
+      { sessionId: "session-1", lessonState, curriculumMatches },
+      {
+        generationMode: "resilient",
+        openAiGenerator: null,
+        runtimeVerifier: async () => {
+          runtimeChecks += 1;
+          throw new Error("sandbox smoke failure");
+        },
+      },
+    )).rejects.toThrow("sandbox smoke failure");
+
+    expect(runtimeChecks).toBe(1);
+    expect(supabase.bundleRefs).toEqual([]);
+    expect(supabase.insertedCandidates).toEqual([]);
+  });
+  it("does not replace a failed model-only generation with deterministic puzzles", async () => {
+    const supabase = fakeSupabase();
+
+    const result = await runGenerateActivityArtifactsJob(
+      supabase.client,
+      { sessionId: "session-1", lessonState, curriculumMatches },
+      {
+        openAiGenerator: async () => ({
+          candidates: [],
+          attempted: true,
+          attempts: 3,
+          errors: ["generated activity did not pass verification"],
+        }),
+        generationMode: "model_only",
+      },
+    );
+
+    expect(result).toEqual({
+      inserted: 0,
+      reused: 0,
+      generated: 0,
+      skippedReason: "no candidates",
+    });
+    expect(supabase.insertedCandidates).toEqual([]);
+    expect(supabase.bundleRefs).toEqual([]);
+  });
+
+  it("persists verified core and challenge candidates when support is rejected", async () => {
+    const supabase = fakeSupabase();
+    const result = await runGenerateActivityArtifactsJob(
+      supabase.client,
+      { sessionId: "session-1", lessonState, curriculumMatches },
+      {
+        openAiGenerator: async () => ({
+          candidates: [
+            candidate("core", "openai-core"),
+            candidate("challenge", "openai-challenge"),
+          ],
+          attempted: true,
+          attempts: 4,
+          errors: ["support did not pass semantic review"],
+        }),
+        generationMode: "model_only",
+        runtimeVerifier: async () => ({
+          requests: ["getManifest", "getBand"],
+          events: ["reportAttempt", "reportHint", "reportComplete"],
+        }),
+      },
+    );
+
+    expect(result).toMatchObject({ inserted: 2, generated: 2, skippedReason: null });
+    expect(supabase.insertedCandidates).toHaveLength(2);
+    expect(supabase.bundleRefs).toHaveLength(2);
+  });
+
+  it("model-only generation ignores a reusable repository set", async () => {
+    const reusableSet = (["support", "core", "challenge"] as const).map((band) =>
+      repositoryRow(band, 0.95),
+    );
+    const supabase = fakeSupabase({ repositoryRows: reusableSet });
+    let requestedBands: string[] = [];
+
+    const result = await runGenerateActivityArtifactsJob(
+      supabase.client,
+      { sessionId: "session-1", lessonState, curriculumMatches },
+      {
+        openAiGenerator: async (input) => {
+          requestedBands = input.bands;
+          return { candidates: [], attempted: true, attempts: 1, errors: [] };
+        },
+        generationMode: "model_only",
+      },
+    );
+
+    expect(requestedBands).toEqual(["support", "core", "challenge"]);
+    expect(result.skippedReason).toBe("no candidates");
+    expect(supabase.insertedCandidates).toEqual([]);
+  });
   it("persists context snapshots from session lesson_state rows and evidence from curriculum matches", async () => {
     const earlierLessonState: LessonState = {
       ...lessonState,
@@ -340,7 +455,7 @@ function candidate(
     contract_version: ACTIVITY_ARTIFACT_CONTRACT_VERSION,
     manifest: manifest(band, `Candidate ${band}`),
     bundle_ref: `artifact-bundles/${refPart}/index.html`,
-    bundle_html: "<!doctype html><html><script>activity-sdk/v1 postMessage getManifest getBand reportAttempt reportHint reportComplete</script><body>Candidate</body></html>",
+    bundle_html: "<!doctype html><html lang='es'><style>:focus-visible{outline:3px solid blue}</style><script>const score_unit='normalized'; activity-sdk/v1 postMessage getManifest getBand reportAttempt reportHint reportComplete addEventListener</script><body><button aria-label='Practicar'>Interaccion guiada</button></body></html>",
     verifier_scores: {
       deterministic: "fail",
       rubric: {
@@ -385,6 +500,12 @@ function manifest(band: "support" | "core" | "challenge", title: string): Activi
     entry: "index.html" as const,
     sdk_version: ACTIVITY_SDK_VERSION,
     allowed_capabilities: ["dom", "css"],
+    experience: {
+      type: "practice_tool",
+      assessment_mode: "mastery",
+      interaction_model: "El estudiante practica con controles accesibles y recibe retroalimentacion.",
+      adaptive_features: [],
+    },
     learning_design: {
       learning_goal: "Reconocer las partes de una noticia.",
       interaction_summary: "Revisar fuentes y evidencias.",
@@ -620,6 +741,33 @@ describe("generateActivityArtifacts skip guard", () => {
     expect(supabase.rpcCalls).not.toContain("replace_session_activity_candidates");
   });
 
+  it("model-only mode replaces current deterministic candidates instead of keeping the puzzle", async () => {
+    const contextSnapshot = buildActivitySessionContext([lessonState]);
+    const supabase = fakeSupabase({
+      segments: [lessonState],
+      readyCandidates: [
+        { difficulty_band: "support", context_snapshot: contextSnapshot },
+        { difficulty_band: "core", context_snapshot: contextSnapshot },
+        { difficulty_band: "challenge", context_snapshot: contextSnapshot },
+      ],
+    });
+    let modelCalls = 0;
+
+    const result = await runGenerateActivityArtifactsJob(
+      supabase.client,
+      { sessionId: "session-1", lessonState, curriculumMatches },
+      {
+        generationMode: "model_only",
+        openAiGenerator: async () => {
+          modelCalls += 1;
+          return { candidates: [], attempted: true, attempts: 1, errors: [] };
+        },
+      },
+    );
+
+    expect(modelCalls).toBe(1);
+    expect(result.skippedReason).toBe("no candidates");
+  });
   it("regenerates when material session context changes", async () => {
     const previousSnapshot = buildActivitySessionContext([lessonState]);
     const changedLessonState: LessonState = {
@@ -647,4 +795,3 @@ describe("generateActivityArtifacts skip guard", () => {
     expect(supabase.rpcCalls).toContain("replace_session_activity_candidates");
   });
 });
-

@@ -35,7 +35,8 @@ import {
   type GenerateOpenAiActivityCandidatesInput,
   type OpenAiActivityGenerationResult,
 } from "../activity-generation/openaiArtifactGenerator.js";
-
+import type { ActivityRuntimeVerifier } from "../activity-generation/runtimeVerifier.js";
+import { createActivityRuntimeVerifierFromEnv } from "../activity-generation/runtimeVerifierFactory.js";
 
 export interface GenerateActivityArtifactsJobData {
   sessionId: string;
@@ -51,15 +52,20 @@ export interface GenerateActivityArtifactsJobData {
 }
 
 const activityBands: DifficultyBand[] = ["support", "core", "challenge"];
+const modelGenerationBands: DifficultyBand[] = ["core", "support", "challenge"];
 
 export type OpenAiActivityCandidateGenerator = (
   input: GenerateOpenAiActivityCandidatesInput,
 ) => Promise<OpenAiActivityGenerationResult>;
 
+export type ActivityGenerationMode = "model_only" | "resilient";
+
 export interface GenerateActivityArtifactsJobOptions {
   openAiGenerator?: OpenAiActivityCandidateGenerator | null;
   maxOpenAiGenerationsPerSession?: number;
   curriculumRetriever?: CurriculumRetriever;
+  generationMode?: ActivityGenerationMode;
+  runtimeVerifier?: ActivityRuntimeVerifier | null;
 }
 
 export type CurriculumRetriever = (
@@ -96,10 +102,18 @@ export function registerGenerateActivityArtifactsJob(
   supabase: SupabaseClient,
   options: GenerateActivityArtifactsJobOptions = {},
 ) {
+  const runtimeVerifier =
+    options.runtimeVerifier === undefined
+      ? createActivityRuntimeVerifierFromEnv().verifier
+      : options.runtimeVerifier;
   const openAiGenerator =
-    options.openAiGenerator === undefined ? createOpenAiActivityGeneratorFromEnv() : options.openAiGenerator;
+    options.openAiGenerator === undefined
+      ? createOpenAiActivityGeneratorFromEnv(process.env, { runtimeVerifier })
+      : options.openAiGenerator;
   const maxOpenAiGenerationsPerSession =
     options.maxOpenAiGenerationsPerSession ?? readPositiveIntegerEnv("OPENAI_ACTIVITY_MAX_GENERATIONS_PER_SESSION", 3);
+  const generationMode =
+    options.generationMode ?? readActivityGenerationMode(process.env, Boolean(openAiGenerator));
 
   return boss.work<GenerateActivityArtifactsJobData>(
     "generate-activity-artifacts",
@@ -122,6 +136,8 @@ export function registerGenerateActivityArtifactsJob(
         const result = await runGenerateActivityArtifactsJob(supabase, currentData, {
           openAiGenerator,
           maxOpenAiGenerationsPerSession,
+          generationMode,
+          runtimeVerifier,
         });
         console.info("[activityGenerator] queued job finished", {
           sessionId: job.data.sessionId,
@@ -186,6 +202,8 @@ export async function runGenerateActivityArtifactsJob(
   options: GenerateActivityArtifactsJobOptions = {},
 ): Promise<GenerateActivityArtifactsJobResult> {
   const { sessionId, lessonState } = data;
+  const generationMode =
+    options.generationMode ?? readActivityGenerationMode(process.env, Boolean(options.openAiGenerator));
   const curriculumMatches =
     data.curriculumMatches.length > 0
       ? data.curriculumMatches
@@ -205,34 +223,16 @@ export async function runGenerateActivityArtifactsJob(
   const lessonStates = await loadLessonStates(supabase, sessionId, lessonState);
   const sessionContext = buildActivitySessionContext(lessonStates);
 
-  if (await hasCurrentReadyCandidates(supabase, sessionId, sessionContext)) {
+  if (await hasCurrentReadyCandidates(supabase, sessionId, sessionContext, generationMode)) {
     console.info("[activityGenerator] current candidates already exist", { sessionId });
     return { inserted: 0, reused: 0, generated: 0, skippedReason: "ready candidates are current" };
   }
 
-  const repositoryRows = await loadRepositoryRows(supabase, curriculumMatches);
-  const rankedRows = rankActivityRepositoryRows(repositoryRows, curriculumMatches, sessionContext);
-  const coherentSet = pickCoherentActivitySet(rankedRows);
-  const legacySet = coherentSet.length === 0 ? pickLegacyActivitySet(rankedRows) : [];
-  const reusableSet = coherentSet.length === 3 ? coherentSet : legacySet;
-  const adaptationSource = reusableSet.length === 0 ? pickAdaptationSource(rankedRows) : [];
-  const adapting = adaptationSource.length > 0;
-  const parentIdByBand = adapting ? parentIdsByBand(adaptationSource) : {};
-  const missingBands = reusableSet.length === 3 ? [] : activityBands;
+  const missingBands = modelGenerationBands;
   const activitySetId = createActivitySetId();
-  const gamePlan = adapting
-    ? createAdaptedGamePlan(sessionContext, curriculumMatches, adaptationSource[0].manifest)
-    : createGamePlan(sessionContext, curriculumMatches);
-  const generatedSource: "adapted" | "new" = adapting ? "adapted" : "new";
-  const staticCandidates = createActivityArtifactCandidates({
-    lessonState,
-    sessionContext,
-    curriculumMatches,
-    activitySetId,
-    gamePlan,
-  }).map((candidate) => withServerDerivedCandidateFields(candidate, parentIdByBand));
 
   let openAiCandidates: ActivityArtifactCandidate[] = [];
+  let openAiErrors: string[] = [];
   if (missingBands.length > 0 && options.openAiGenerator) {
     const maxOpenAiGenerationsPerSession = options.maxOpenAiGenerationsPerSession ?? 3;
     const generationAttemptClaimed = await claimOpenAiGenerationAttempt(
@@ -254,54 +254,60 @@ export async function runGenerateActivityArtifactsJob(
           sessionContext,
           curriculumMatches,
           bands: missingBands,
-          parentIdByBand,
           activitySetId,
-          gamePlan,
         });
         openAiCandidates = result.candidates;
+        openAiErrors = result.errors;
         console.info("[activityGenerator] OpenAI candidates received", {
           sessionId,
           candidateCount: openAiCandidates.length,
           errors: result.errors.length > 0 ? result.errors : undefined,
+          recoveredIssueCount:
+            result.diagnostics && result.diagnostics.length > 0
+              ? result.diagnostics.length
+              : undefined,
         });
       } catch (error) {
-        console.error("[activityGenerator] OpenAI generation failed; using static candidates", {
+        console.error("[activityGenerator] OpenAI generation failed", {
           sessionId,
           bands: missingBands,
+          generationMode,
           error: error instanceof Error ? error.stack ?? error.message : error,
         });
+        if (generationMode === "model_only") {
+          throw error;
+        }
         openAiCandidates = [];
       }
     }
   }
 
   const planned = planSessionArtifacts({
-    reusableSet,
+    reusableSet: [],
     openAiCandidates,
-    staticCandidates,
+    staticCandidates: [],
   });
 
   if (planned.length === 0) {
+    if (generationMode === "model_only" && options.openAiGenerator) {
+      const diagnostics = openAiErrors.length > 0
+        ? openAiErrors.slice(0, 6).join("; ")
+        : "the model returned no core activity";
+      throw new Error(`activity generation produced no verified candidates: ${diagnostics}`);
+    }
     return { inserted: 0, reused: 0, generated: 0, skippedReason: "no candidates" };
   }
 
   const candidatesToInsert: SessionCandidateToInsert[] = [];
   for (const artifact of planned) {
-    if (artifact.reusable) {
-      candidatesToInsert.push({
-        sessionId,
-        activityId: artifact.reusable.id,
-        band: artifact.band,
-        sessionContext,
-        artifact: artifact.reusable,
-        source: artifact.reusable.source === "seeded" ? "seeded" : "reused",
-        origin: "repository",
-      });
-      continue;
-    }
 
     if (!artifact.candidate) continue;
-    const persisted = await persistGeneratedArtifact(supabase, artifact.candidate, generatedSource);
+    const persisted = await persistGeneratedArtifact(
+      supabase,
+      artifact.candidate,
+      "new",
+      options.runtimeVerifier ?? null,
+    );
 
     candidatesToInsert.push({
       sessionId,
@@ -310,7 +316,7 @@ export async function runGenerateActivityArtifactsJob(
       sessionContext,
       artifact: persisted.artifact,
       source: persisted.source,
-      origin: artifact.origin ?? "static",
+      origin: "openai",
     });
   }
 
@@ -356,20 +362,13 @@ export function planSessionArtifacts(input: {
   openAiCandidates: ActivityArtifactCandidate[];
   staticCandidates: ActivityArtifactCandidate[];
 }): PlannedSessionArtifact[] {
-  const reusable = completeRepositorySet(input.reusableSet);
-  if (reusable) {
-    return activityBands.map((band) => ({ band, reusable: reusable.get(band) }));
-  }
-
   const openAi = completeCandidateSet(input.openAiCandidates);
-  if (openAi) {
-    return activityBands.map((band) => ({ band, candidate: openAi.get(band), origin: "openai" }));
-  }
+  if (!openAi) return [];
 
-  const fallback = completeCandidateSet(input.staticCandidates);
-  return fallback
-    ? activityBands.map((band) => ({ band, candidate: fallback.get(band), origin: "static" }))
-    : [];
+  return modelGenerationBands.flatMap((band) => {
+    const candidate = openAi.get(band);
+    return candidate ? [{ band, candidate, origin: "openai" as const }] : [];
+  });
 }
 
 async function loadLessonStates(
@@ -429,10 +428,11 @@ async function hasCurrentReadyCandidates(
   supabase: SupabaseClient,
   sessionId: string,
   nextContext: SessionContext,
+  generationMode: ActivityGenerationMode,
 ): Promise<boolean> {
   const { data, error } = await supabase
     .from("session_activity_candidates")
-    .select("difficulty_band, context_snapshot")
+    .select("difficulty_band, context_snapshot, activities(bundle_ref)")
     .eq("session_id", sessionId)
     .eq("status", "ready")
     .order("created_at", { ascending: false })
@@ -444,10 +444,18 @@ async function hasCurrentReadyCandidates(
 
   const rows = data ?? [];
   const readyBands = new Set(rows.map((row) => row.difficulty_band));
-  if (!activityBands.every((band) => readyBands.has(band))) return false;
+  if (!readyBands.has("core") || !rows.every(isModelGeneratedCandidateRow)) return false;
 
   const previousContext = parseSessionContext(rows[0]?.context_snapshot);
   return previousContext ? !hasMaterialContextChange(previousContext, nextContext) : false;
+}
+
+function isModelGeneratedCandidateRow(row: Record<string, unknown>): boolean {
+  const related = row.activities;
+  const activity = Array.isArray(related) ? related[0] : related;
+  if (!activity || typeof activity !== "object" || !("bundle_ref" in activity)) return false;
+  return typeof activity.bundle_ref === "string"
+    && activity.bundle_ref.startsWith("artifact-bundles/openai/");
 }
 
 async function claimOpenAiGenerationAttempt(
@@ -531,6 +539,7 @@ async function persistGeneratedArtifact(
   supabase: SupabaseClient,
   candidate: ActivityArtifactCandidate,
   source: "adapted" | "new",
+  runtimeVerifier: ActivityRuntimeVerifier | null,
 ): Promise<{
   id: string;
   artifact: ActivityArtifact;
@@ -543,6 +552,12 @@ async function persistGeneratedArtifact(
     );
   }
 
+  if (runtimeVerifier) {
+    await runtimeVerifier({
+      bundleHtml: candidate.bundle_html,
+      manifest: candidate.manifest,
+    });
+  }
 
   const { error: bundleError } = await supabase.from("activity_bundles").upsert(
     {
@@ -697,4 +712,13 @@ function readPositiveIntegerEnv(name: string, fallback: number): number {
 
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+export function readActivityGenerationMode(
+  env: NodeJS.ProcessEnv = process.env,
+  modelConfigured = Boolean(env.OPENAI_API_KEY?.trim()),
+): ActivityGenerationMode {
+  const configured = env.OPENAI_ACTIVITY_GENERATION_MODE?.trim();
+  if (configured === "model_only" || configured === "resilient") return configured;
+  return modelConfigured ? "model_only" : "resilient";
 }
