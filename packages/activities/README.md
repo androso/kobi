@@ -12,7 +12,7 @@ Gate 0 decision on 2026-07-04: v0 uses only self-contained HTML/CSS/JavaScript `
 - `CurriculumMatch[]` (from `@kobi/curriculum`'s `retrieveCurriculumMatches()`) — top-3 curriculum chunks grounding the current lesson segment.
 - The activity repository (`activities` table) — for the reuse-vs-generate decision.
 
-**Expected usage flow:** build bounded context from `lesson_state` + `CurriculumMatch[]`, check the repository for a complete reusable set first, then adapt or generate a coherent `GamePlan` set only when needed. The interactive deterministic static fallback uses the same contract and is not model-generated. Verify each candidate before persistence and produce 3 ranked candidates for the teacher shortlist. The teacher can assign selected students to support/challenge; unselected students receive core by default.
+**Expected usage flow:** build bounded context from `lesson_state` + `CurriculumMatch[]`, let the model invent a self-contained learning experience, verify it statically and in the isolated runtime, repair failures selectively, and persist only reviewed model-generated artifacts. Core is the required deliverable; support and challenge are optional differentiated experiences. Repository and static generators are not selected by the production activity job.
 
 The manifest keeps one of three family taxonomy values—`match_classify`, `sequence_order`, or `guided_practice`—as a prompt, ranking, reuse, and quality exemplar. Families are not renderer selectors or an interaction whitelist. Each new artifact also has a required validated free-form snake_case `mechanic` slug (1–64 characters); all three bands in a generated/adapted set share one family and mechanic. Mechanics may vary freely within the sandbox, SDK, and verifier contract.
 
@@ -62,7 +62,7 @@ Implemented exports:
 
 - manifest, artifact, evidence, verifier-score, source, and SDK `postMessage` validators
 - `buildActivitySessionContext()` for bounded context from structured `lesson_state` rows only
-- `createActivityArtifactCandidates()` for interactive deterministic support/core/challenge HTML fallback artifacts
+- `createActivityArtifactCandidates()` remains a development fixture for local demos; the production job does not select it
 - `verifyActivityArtifact()` for manifest schema, structural HTML, forbidden APIs, SDK hooks, embedded-content rejection, manifest/code consistency, and required secured-browser smoke before persistence
 - `createUnguessableBundleRef()` for cryptographically random, opaque bundle locators
 - `authorizeActivityTelemetryMessage()` for parent-owned assignment telemetry validation

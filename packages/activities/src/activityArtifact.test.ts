@@ -502,7 +502,6 @@ describe("activity artifact contracts", () => {
     const embeddedValues = [
       ["manifest.title", candidate.manifest.title],
       ["manifest.content.items[0].prompt", item.prompt],
-      ["manifest.content.items[0].answer_key[0]", item.answer_key[0]],
       ["manifest.content.items[0].hints[0]", item.hints[0]],
     ] as const;
 
@@ -516,6 +515,35 @@ describe("activity artifact contracts", () => {
     }
   });
 
+  it("allows answer constants and W3C SVG namespace identifiers without allowing network URLs", () => {
+    const context = buildActivitySessionContext([lessonState]);
+    const [candidate] = createActivityArtifactCandidates({
+      lessonState,
+      sessionContext: context,
+      curriculumMatches,
+      activitySetId: "set-free-form-runtime-constants",
+    });
+    const answer = candidate.manifest.content.items[0].answer_key[0];
+    const safeBundle = candidate.bundle_html.replace(
+      "</script>",
+      `const SVG_NAMESPACE = "http://www.w3.org/2000/svg"; const DOMAIN_ANSWER = ${JSON.stringify(answer)};</script>`,
+    );
+
+    const safeResult = verifyActivityArtifact({ ...candidate, bundle_html: safeBundle });
+    expect(safeResult.errors).not.toContain("absolute network URLs are forbidden");
+    expect(safeResult.errors).not.toContain(
+      "bundle embeds editable runtime content from manifest.content.items[0].answer_key[0]",
+    );
+
+    const unsafeResult = verifyActivityArtifact({
+      ...candidate,
+      bundle_html: candidate.bundle_html.replace(
+        "</script>",
+        'const REMOTE_ASSET = "https://example.com/shape.svg";</script>',
+      ),
+    });
+    expect(unsafeResult.errors).toContain("absolute network URLs are forbidden");
+  });
   it("keeps legacy manifests readable and validates free-form mechanic slugs", () => {
     const context = buildActivitySessionContext([lessonState]);
     const [candidate] = createActivityArtifactCandidates({
