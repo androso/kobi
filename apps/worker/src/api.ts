@@ -5,14 +5,20 @@ import { buildCurriculumQueryText, embedText, retrieveCurriculumMatches } from "
 import { classifySafeError, lessonStateFromManualEntry, lessonStateSchema, safeLog, type LessonState } from "@kobi/ai-core";
 import type PgBoss from "pg-boss";
 import { z } from "zod";
-import { JOB_BUILD_LESSON_STATE, JOB_INGEST_CURRICULUM_SOURCE, JOB_TRANSCRIBE_CHUNK } from "./queue.js";
+import {
+  JOB_BUILD_LESSON_STATE,
+  JOB_FINALIZE_SESSION,
+  JOB_INGEST_CURRICULUM_SOURCE,
+  JOB_TRANSCRIBE_CHUNK,
+} from "./queue.js";
 import { loadSelectedCurriculumSourceIds } from "./curriculumSelections.js";
-import { runGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
+import { readActivityGenerationMode, runGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
 import {
   createOpenAiActivityGeneratorFromEnv,
   validateOpenAiActivityConfig,
 } from "./activity-generation/openaiArtifactGenerator.js";
 import { isSilentLessonState } from "./silentLessonState.js";
+import { createActivityRuntimeVerifierFromEnv } from "./activity-generation/runtimeVerifierFactory.js";
 
 interface ApiServerOptions {
   supabase: SupabaseClient;
@@ -358,6 +364,35 @@ async function createSession(req: IncomingMessage, res: ServerResponse, supabase
   writeJson(res, 201, { sessionId: data.id });
 }
 
+async function closeAndFinalizeSession(
+  res: ServerResponse,
+  sessionId: string,
+  supabase: SupabaseClient,
+  boss: PgBoss,
+) {
+  const { error } = await supabase
+    .from("sessions")
+    .update({ status: "ended", ended_at: new Date().toISOString() })
+    .eq("id", sessionId)
+    .eq("status", "active");
+  if (error) {
+    throw new ApiRequestError("session_close_failed", 500);
+  }
+
+  const jobId = await boss.send(
+    JOB_FINALIZE_SESSION,
+    { sessionId },
+    {
+      singletonKey: sessionId,
+      retryLimit: 60,
+      retryDelay: 5,
+      retryBackoff: false,
+    },
+  );
+  logApi("session finalization enqueued", { sessionId, jobId });
+  writeJson(res, 202, { sessionId, finalizationEnqueued: true, finalizationJobId: jobId });
+}
+
 async function createManualLessonState(
   req: IncomingMessage,
   res: ServerResponse,
@@ -627,11 +662,17 @@ async function createActivityCandidates(
       curriculumMatchCount: curriculumMatches.length,
     });
     const activityConfig = validateOpenAiActivityConfig(process.env);
-    const openAiGenerator = createOpenAiActivityGeneratorFromEnv(process.env);
+    const runtimeVerifier = createActivityRuntimeVerifierFromEnv();
+    const openAiGenerator = createOpenAiActivityGeneratorFromEnv(process.env, {
+      runtimeVerifier: runtimeVerifier.verifier,
+    });
+    const generationMode = readActivityGenerationMode(process.env, Boolean(openAiGenerator));
     logApi("activity generator configured", {
       sessionId,
       provider: openAiGenerator ? "openai" : "static fallback",
       model: openAiGenerator ? activityConfig.model : null,
+      generationMode,
+      runtimeVerifier: runtimeVerifier.backend,
     });
     const result = await runGenerateActivityArtifactsJob(supabase, {
       sessionId,
@@ -640,6 +681,8 @@ async function createActivityCandidates(
       curriculumFallback: { ...classContext, sourceIds },
     }, {
       openAiGenerator,
+      generationMode,
+      runtimeVerifier: runtimeVerifier.verifier,
     });
 
     logApi("activity generation finished", {
@@ -1152,6 +1195,15 @@ export async function routeRequest(
 
     if (req.method === "POST" && url.pathname === "/api/sessions") {
       await createSession(req, res, supabase, actor);
+      return;
+    }
+
+    const sessionFinalizeMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/finalize$/);
+    if (req.method === "POST" && sessionFinalizeMatch?.[1]) {
+      const sessionId = parseBody(uuidSchema, sessionFinalizeMatch[1]);
+      await authorizeSession(supabase, sessionId, actor);
+      if (!boss) throw new ApiRequestError("background_queue_starting", 503);
+      await closeAndFinalizeSession(res, sessionId, supabase, boss);
       return;
     }
 

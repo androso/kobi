@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { routeRequest } from "./api.js";
 import { runGenerateActivityArtifactsJob } from "./jobs/generateActivityArtifacts.job.js";
 import { silentLessonState } from "./silentLessonState.js";
+import { JOB_FINALIZE_SESSION } from "./queue.js";
 
 vi.mock("@kobi/curriculum", async (importOriginal) => {
   const original = await importOriginal<typeof import("@kobi/curriculum")>();
@@ -17,6 +18,7 @@ vi.mock("@kobi/curriculum", async (importOriginal) => {
 });
 
 vi.mock("./jobs/generateActivityArtifacts.job.js", () => ({
+  readActivityGenerationMode: vi.fn(() => "model_only"),
   runGenerateActivityArtifactsJob: vi.fn(async () => ({
     inserted: 3,
     reused: 0,
@@ -202,8 +204,40 @@ describe("worker API", () => {
           sourceIds: [],
         },
       },
-      { openAiGenerator: expect.any(Function) },
+      {
+        openAiGenerator: expect.any(Function),
+        generationMode: "model_only",
+        runtimeVerifier: expect.any(Function),
+      },
     );
+  });
+
+  it("closes the session and enqueues retrying server-owned finalization", async () => {
+    const supabase = fakeSupabase();
+    const boss = fakeBoss();
+    const response = await callRoute(
+      `/api/sessions/${SESSION_ID}/finalize`,
+      supabase,
+      boss,
+      {},
+    );
+
+    expect(response.statusCode).toBe(202);
+    expect(response.body).toEqual({
+      sessionId: SESSION_ID,
+      finalizationEnqueued: true,
+    });
+    expect(supabase.sessions[0]).toMatchObject({ status: "ended" });
+    expect(boss.sent).toEqual([{
+      name: JOB_FINALIZE_SESSION,
+      data: { sessionId: SESSION_ID },
+      options: {
+        singletonKey: SESSION_ID,
+        retryLimit: 60,
+        retryDelay: 5,
+        retryBackoff: false,
+      },
+    }]);
   });
 
   it("passes class fallback context when manual curriculum retrieval is empty", async () => {
@@ -237,7 +271,11 @@ describe("worker API", () => {
           sourceIds: [],
         },
       }),
-      { openAiGenerator: expect.any(Function) },
+      {
+        openAiGenerator: expect.any(Function),
+        generationMode: "model_only",
+        runtimeVerifier: expect.any(Function),
+      },
     );
   });
 
@@ -255,6 +293,7 @@ describe("worker API", () => {
     ["session creation", "/api/sessions", { classId: CLASS_ID }],
     ["audio upload", `/api/sessions/${SESSION_ID}/audio-chunks`, {}],
     ["manual lesson state", `/api/sessions/${SESSION_ID}/manual-lesson-state`, {}],
+    ["session finalization", `/api/sessions/${SESSION_ID}/finalize`, {}],
     ["activity generation", `/api/sessions/${SESSION_ID}/activity-candidates`, {}],
   ])("returns 403 before privileged work for cross-teacher %s", async (_name, url, body) => {
     const supabase = fakeSupabase();
@@ -334,10 +373,10 @@ function fakeResponse() {
 type ApiTestResponse = ServerResponse & { statusCode: number; body: unknown; headers: Record<string, string> };
 
 function fakeBoss() {
-  const sent: Array<{ name: string; data: unknown }> = [];
+  const sent: Array<{ name: string; data: unknown; options?: unknown }> = [];
   const instance = {
-    send: async (name: string, data: unknown) => {
-      sent.push({ name, data });
+    send: async (name: string, data: unknown, options?: unknown) => {
+      sent.push({ name, data, options });
       return "job-id";
     },
   } as unknown as PgBoss;
@@ -353,6 +392,7 @@ function fakeSupabase() {
     {
       id: SESSION_ID,
       class_id: CLASS_ID,
+      status: "active",
       classes: { teacher_id: TEACHER_ID, grade: 7, subject: "lenguaje", unit: "U4" },
     },
   ];
@@ -401,6 +441,7 @@ class FakeQuery {
   private filters = new Map<string, unknown>();
   private notNullFilters = new Set<string>();
   private pendingInsert: Record<string, unknown> | null = null;
+  private pendingUpdate: Record<string, unknown> | null = null;
 
   constructor(
     private readonly table: string,
@@ -443,6 +484,11 @@ class FakeQuery {
       this.state.curriculumChunks.push(value);
       return Promise.resolve({ data: null, error: null });
     }
+    return this;
+  }
+
+  update(value: Record<string, unknown>) {
+    this.pendingUpdate = value;
     return this;
   }
 
@@ -505,6 +551,14 @@ class FakeQuery {
         chunk.session_id === this.filters.get("session_id"),
       );
       return Promise.resolve({ data: rows, error: null }).then(onfulfilled, onrejected);
+    }
+
+    if (this.table === "sessions" && this.pendingUpdate) {
+      const match = this.state.sessions.find((session) =>
+        Array.from(this.filters).every(([column, value]) => session[column] === value),
+      );
+      if (match) Object.assign(match, this.pendingUpdate);
+      return Promise.resolve({ data: [], error: null }).then(onfulfilled, onrejected);
     }
 
     return Promise.resolve({ data: [], error: null }).then(onfulfilled, onrejected);
