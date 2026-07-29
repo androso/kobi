@@ -62,8 +62,14 @@ export async function runCheckpointSchedulerTick(
   for (const sessionId of dueSessionIds) {
     await boss.send(
       JOB_EVALUATE_CHECKPOINT,
-      { sessionId },
-      { singletonKey: sessionId, singletonSeconds: Math.max(intervalMinutes * 60 - 5, 30) },
+      { sessionId, trigger: "timer" },
+      {
+        singletonKey: sessionId,
+        singletonSeconds: Math.max(intervalMinutes * 60 - 5, 30),
+        retryLimit: 3,
+        retryDelay: 10,
+        retryBackoff: true,
+      },
     );
   }
 
