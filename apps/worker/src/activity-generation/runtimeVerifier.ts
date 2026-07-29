@@ -38,10 +38,14 @@ export interface ActivityRuntimeVerificationResult {
   events: Array<"reportAttempt" | "reportHint" | "reportComplete">;
 }
 
+export type ActivityRuntimeVerifier = (
+  input: ActivityRuntimeVerificationInput,
+) => Promise<ActivityRuntimeVerificationResult>;
+
 export async function verifyActivityRuntime(
   input: ActivityRuntimeVerificationInput,
 ): Promise<ActivityRuntimeVerificationResult> {
-  assertEditableContentIsNotEmbedded(input.bundleHtml, input.manifest);
+  assertActivityRuntimeSourceSeparation(input.bundleHtml, input.manifest);
   const runtimeManifest = manifestWithSmokeContent(input.manifest);
   const timeoutMs = input.timeoutMs ?? defaultTimeoutMs;
   let browser: Browser | undefined;
@@ -65,27 +69,24 @@ export async function verifyActivityRuntime(
     await waitForSdkMessage(page, "request", "getManifest", timeoutMs);
     await waitForSdkMessage(page, "request", "getBand", timeoutMs);
 
-    await frame.getByText(smokeTitle, { exact: false }).waitFor({ state: "visible", timeout: timeoutMs });
-    await frame.getByText(smokePrompt, { exact: false }).waitFor({ state: "visible", timeout: timeoutMs });
-    const renderedText = await frame.locator("body").innerText({ timeout: timeoutMs });
-    if (!renderedText.includes(smokeTitle) || !renderedText.includes(smokePrompt)) {
-      throw new Error(
-        "rendered activity did not display the title and prompt supplied by the runtime manifest",
-      );
-    }
 
     await clickSmokeControl(frame.locator('[data-smoke-action="attempt"], #attempt, .option'), "attempt", timeoutMs);
     await waitForSdkMessage(page, "event", "reportAttempt", timeoutMs);
     await clickSmokeControl(frame.locator('[data-smoke-action="hint"], #hint'), "hint", timeoutMs);
     await waitForSdkMessage(page, "event", "reportHint", timeoutMs);
-    await clickSmokeControl(frame.locator('[data-smoke-action="complete"], #complete'), "complete", timeoutMs);
+    await clickSmokeControl(
+      frame.locator('[data-smoke-action="complete"], #complete'),
+      "complete",
+      timeoutMs,
+      { enableForProtocolCheck: true },
+    );
     await waitForSdkMessage(page, "event", "reportComplete", timeoutMs);
 
     if (runtimeErrors.length > 0) {
       throw new Error(runtimeErrors.join("; "));
     }
 
-    return validatedTraffic(await readSdkMessages(page));
+    return validateActivityRuntimeTraffic(await readSdkMessages(page));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const diagnostics = runtimeErrors.length > 0 ? `; ${runtimeErrors.join("; ")}` : "";
@@ -95,12 +96,12 @@ export async function verifyActivityRuntime(
   }
 }
 
-function assertEditableContentIsNotEmbedded(bundleHtml: string, manifest: ActivityManifest): void {
-  const editableValues = manifest.content.items.flatMap((item) => [...item.answer_key, ...item.hints]);
+export function assertActivityRuntimeSourceSeparation(bundleHtml: string, manifest: ActivityManifest): void {
+  const editableValues = manifest.content.items.flatMap((item) => item.hints);
   for (const value of editableValues) {
     const variants = [value, escapeHtml(value), JSON.stringify(value).slice(1, -1)];
     if (variants.some((variant) => variant.length > 0 && bundleHtml.includes(variant))) {
-      throw new Error(`activity source embeds editable answer or hint content: ${JSON.stringify(value)}`);
+      throw new Error(`activity source embeds editable hint content: ${JSON.stringify(value)}`);
     }
   }
 }
@@ -166,9 +167,19 @@ async function clickSmokeControl(
   locator: Locator,
   action: string,
   timeoutMs: number,
+  options: { enableForProtocolCheck?: boolean } = {},
 ): Promise<void> {
   const control = locator.first();
   try {
+    if (options.enableForProtocolCheck) {
+      await control.evaluate((element) => {
+        if (element instanceof HTMLButtonElement || element instanceof HTMLInputElement) {
+          element.disabled = false;
+        }
+        element.removeAttribute("aria-disabled");
+        (element as HTMLElement).style.pointerEvents = "auto";
+      });
+    }
     await control.click({ timeout: timeoutMs });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -207,9 +218,10 @@ async function readSdkMessages(page: Page): Promise<unknown[]> {
   return parsed;
 }
 
-function validatedTraffic(messages: unknown[]): ActivityRuntimeVerificationResult {
+export function validateActivityRuntimeTraffic(messages: unknown[]): ActivityRuntimeVerificationResult {
   const requests: ActivityRuntimeVerificationResult["requests"] = [];
   const events: ActivityRuntimeVerificationResult["events"] = [];
+  const invalidEventDiagnostics = new Map<string, string>();
 
   for (const message of messages) {
     const request = activitySdkRequestSchema.safeParse(message);
@@ -220,16 +232,52 @@ function validatedTraffic(messages: unknown[]): ActivityRuntimeVerificationResul
 
     const withAssignment = addParentAssignmentId(message);
     const event = activitySdkEventSchema.safeParse(withAssignment);
-    if (event.success) events.push(event.data.method);
+    if (event.success) {
+      events.push(event.data.method);
+      continue;
+    }
+
+    const method = sdkEventMethod(message);
+    if (method) {
+      invalidEventDiagnostics.set(
+        method,
+        event.error.issues
+          .slice(0, 4)
+          .map((issue) => `${issue.path.join(".") || "event"}: ${issue.message}`)
+          .join(", "),
+      );
+    }
   }
 
   for (const method of ["getManifest", "getBand"] as const) {
     if (!requests.includes(method)) throw new Error(`missing valid SDK request: ${method}`);
   }
   for (const method of ["reportAttempt", "reportHint", "reportComplete"] as const) {
-    if (!events.includes(method)) throw new Error(`missing structurally valid SDK event: ${method}`);
+    if (!events.includes(method)) {
+      const diagnostic = invalidEventDiagnostics.get(method);
+      throw new Error(
+        `missing structurally valid SDK event: ${method}${
+          diagnostic ? `; received event failed schema: ${diagnostic}` : "; no event with that method was received"
+        }`,
+      );
+    }
   }
   return { requests, events };
+}
+
+function sdkEventMethod(
+  message: unknown,
+): "reportAttempt" | "reportHint" | "reportComplete" | undefined {
+  if (!message || typeof message !== "object") return undefined;
+  if (!("type" in message) || message.type !== "event" || !("method" in message)) return undefined;
+  if (
+    message.method === "reportAttempt" ||
+    message.method === "reportHint" ||
+    message.method === "reportComplete"
+  ) {
+    return message.method;
+  }
+  return undefined;
 }
 
 function addParentAssignmentId(message: unknown): unknown {

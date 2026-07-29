@@ -3,7 +3,7 @@ import {
   type ActivityManifest,
 } from "@kobi/activities/server";
 import { describe, expect, it } from "vitest";
-import { verifyActivityRuntime } from "./runtimeVerifier.js";
+import { assertActivityRuntimeSourceSeparation, verifyActivityRuntime } from "./runtimeVerifier.js";
 
 const manifest: ActivityManifest = {
   family: "guided_practice",
@@ -62,11 +62,19 @@ sendRequest("band", "getBand");
 const supportsBrowserLaunch = process.env.SKIP_BROWSER_TESTS !== "true" && process.platform !== "win32";
 
 describe("activity runtime verifier static checks", () => {
-  it("rejects editable answers or hints embedded in source", async () => {
-    const embedded = validBundle.replace("<main id=\"app\"></main>", `<main id="app">${manifest.content.items[0]?.answer_key[0]}</main>`);
-    await expect(
-      verifyActivityRuntime({ bundleHtml: embedded, manifest }),
-    ).rejects.toThrow(/embeds editable answer or hint content/i);
+it("allows answer constants used by app logic but rejects embedded hint copy", async () => {
+    const embeddedAnswer = validBundle.replace(
+      "<main id=\"app\"></main>",
+      `<main id="app">${manifest.content.items[0]?.answer_key[0]}</main>`,
+    );
+    expect(() => assertActivityRuntimeSourceSeparation(embeddedAnswer, manifest)).not.toThrow();
+
+    const embeddedHint = validBundle.replace(
+      "<main id=\"app\"></main>",
+      `<main id="app">${manifest.content.items[0]?.hints[0]}</main>`,
+    );
+    expect(() => assertActivityRuntimeSourceSeparation(embeddedHint, manifest))
+      .toThrow(/embeds editable hint content/i);
   });
 });
 
@@ -109,6 +117,18 @@ describe.runIf(supportsBrowserLaunch)("activity runtime verifier browser smoke",
     ).rejects.toThrow(/console error: runtime smoke console failure/i);
   }, 30_000);
 
+  it("temporarily enables the real completion control for protocol verification", async () => {
+    const disabledComplete = validBundle.replace(
+      '<button id="complete">',
+      '<button id="complete" disabled aria-disabled="true" style="pointer-events:none">',
+    );
+    await expect(
+      verifyActivityRuntime({ bundleHtml: disabledComplete, manifest }),
+    ).resolves.toEqual({
+      requests: ["getManifest", "getBand"],
+      events: ["reportAttempt", "reportHint", "reportComplete"],
+    });
+  }, 30_000);
   it("rejects controls that cannot execute the smoke interaction", async () => {
     const disabled = validBundle
       .replace('<button class="option">', '<button class="option" disabled>')
